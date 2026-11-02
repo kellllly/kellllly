@@ -27,6 +27,9 @@ if (!basePath) {
   );
 }
 
+// Local development only: Replit routes /api to the API server itself.
+const apiProxyTarget = process.env.API_PROXY_TARGET;
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -72,6 +75,9 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    ...(apiProxyTarget
+      ? { proxy: { '/api': { target: apiProxyTarget, changeOrigin: false } } }
+      : {}),
   },
   preview: {
     port,

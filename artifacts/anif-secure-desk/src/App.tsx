@@ -7,6 +7,7 @@ import { shadcn } from '@clerk/themes';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { clearSyncRecoveryDraft, StoreProvider } from '@/lib/store';
+import { missingLocalClerkKey } from '@/lib/clerk-config';
 import { Shell } from '@/components/shell';
 import Dashboard from '@/pages/dashboard';
 import MessagesPage from '@/pages/messages';
@@ -17,7 +18,11 @@ import AuditPage from '@/pages/audit';
 import GovernancePage from '@/pages/governance';
 import SettingsPage from '@/pages/settings';
 
-const clerkPubKey = publishableKeyFromHost(
+const clerkKeyMissing = missingLocalClerkKey(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkPubKey = clerkKeyMissing ? '' : publishableKeyFromHost(
   window.location.hostname,
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
@@ -194,7 +199,20 @@ function ClerkRouter() {
   </ClerkProvider>;
 }
 
+function AuthSetupPage() {
+  return <main className="grid min-h-[100dvh] place-items-center bg-[#f4f3ed] px-5 py-12 text-[#20363a]">
+    <section role="alert" className="w-full max-w-2xl rounded-[24px] border border-[#dce2dc] bg-[#fffefa] p-7 shadow-sm md:p-10">
+      <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-[#315f50] text-white"><ShieldCheck size={22} /></span><div><div className="text-sm font-bold tracking-[.08em]">ANIF GABON</div><div className="eyebrow mt-1">CONFIGURATION LOCALE</div></div></div>
+      <h1 className="serif mt-8 text-3xl leading-tight">Authentification non configurée</h1>
+      <p className="mt-4 text-sm leading-7 text-[#526767]">Ce poste local n’a pas de clé Clerk. Créez une instance de développement sur dashboard.clerk.com, puis renseignez dans le fichier <code>.env</code> :</p>
+      <ul className="mt-3 list-disc space-y-1 pl-5 font-mono text-xs text-[#20363a]"><li>VITE_CLERK_PUBLISHABLE_KEY et CLERK_PUBLISHABLE_KEY (pk_test_…)</li><li>CLERK_SECRET_KEY (sk_test_…), côté API uniquement</li></ul>
+      <p className="mt-4 text-sm leading-7 text-[#526767]">Redémarrez ensuite le serveur de développement. Voir <code>DEVELOPPEMENT.md</code>.</p>
+    </section>
+  </main>;
+}
+
 function App() {
+  if (clerkKeyMissing) return <AuthSetupPage />;
   return <WouterRouter base={basePath}><ClerkRouter /></WouterRouter>;
 }
 

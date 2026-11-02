@@ -11,6 +11,15 @@ import {
 import router from "./routes";
 import { logger } from "./lib/logger";
 import {
+  ITSM_JSON_BODY_LIMIT,
+  authNotConfigured,
+  corsOptions,
+  isAuthConfigured,
+  jsonErrorHandler,
+  securityHeaders,
+} from "./lib/http-hardening";
+import healthRouter from "./routes/health";
+import {
   DEVELOPMENT_ROLE_ARCHIVE_PATH,
   developmentRoleArchiveConfig,
   developmentRoleArchiveEnabled,
@@ -19,6 +28,8 @@ import { developmentArchiveRepository } from "./lib/development-role-archive-sto
 import { createDevelopmentRoleArchiveRouter } from "./routes/development-role-archive";
 
 const app: Express = express();
+app.disable("x-powered-by");
+app.use(securityHeaders);
 
 app.use(
   pinoHttp({
@@ -52,19 +63,28 @@ if (developmentRoleArchiveEnabled()) {
   }));
 }
 
-app.use(cors({ credentials: true, origin: true }));
-app.use(express.json());
+app.use(cors(corsOptions()));
+app.use(express.json({ limit: ITSM_JSON_BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  clerkMiddleware((req) => ({
-    publishableKey: publishableKeyFromHost(
-      getClerkProxyHost(req) ?? "",
-      process.env.CLERK_PUBLISHABLE_KEY,
-    ),
-  })),
-);
+// Public health check: must answer even when authentication is misconfigured.
+app.use("/api", healthRouter);
 
-app.use("/api", router);
+if (isAuthConfigured()) {
+  app.use(
+    clerkMiddleware((req) => ({
+      publishableKey: publishableKeyFromHost(
+        getClerkProxyHost(req) ?? "",
+        process.env.CLERK_PUBLISHABLE_KEY,
+      ),
+    })),
+  );
+  app.use("/api", router);
+} else {
+  logger.error({ component: "auth" }, "CLERK_SECRET_KEY is not set; authenticated API routes answer 503");
+  app.use("/api", authNotConfigured);
+}
+
+app.use(jsonErrorHandler(logger));
 
 export default app;

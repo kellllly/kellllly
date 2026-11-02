@@ -8,6 +8,7 @@ import {
   changedPaths, confirmSharedRecovery, conflictDetails, mergeSharedChanges, RecoveryFlightGuard,
   recoveryEditDetails, serverRefusalReason, type ConflictChoices,
 } from './sync-recovery';
+import { saveRefusalOutcome, SUSPENDED_EDIT_MESSAGE } from './save-refusal';
 import type { Store } from './types';
 
 export { STORAGE_KEY } from './storage';
@@ -22,6 +23,10 @@ type Ctx = {
   recovery: SyncRecovery | null;
   resumeConflict: (choices?: ConflictChoices, reviewedVersion?: number) => Promise<void>;
   acceptRemoteSnapshot: () => void;
+  /** True while this tab refuses shared edits (refused save not yet reconciled). */
+  writesSuspended: boolean;
+  /** Reload the canonical shared workspace and resume saving. */
+  resync: () => void;
 };
 type SyncRecovery = {
   changed: string[];
@@ -226,6 +231,13 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   const [recovery, setRecovery] = useState<SyncRecovery | null>(null);
   const writeQueue = useRef(Promise.resolve());
   const writeBlocked = useRef(false);
+  const [writesSuspended, setWritesSuspended] = useState(false);
+  const blockWrites = (blocked: boolean) => {
+    writeBlocked.current = blocked;
+    setWritesSuspended(blocked);
+  };
+  // Saves queued before a refusal carry the refused snapshot; they must not be replayed.
+  const writeGeneration = useRef(0);
   const pendingWrites = useRef(0);
   const recoveryFlight = useRef<RecoveryFlightGuard | null>(null);
   recoveryFlight.current ??= new RecoveryFlightGuard();
@@ -236,7 +248,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     pendingConflict.current = null;
     setRecovery(null);
     // Keep writes blocked until the canonical snapshot has been fetched.
-    writeBlocked.current = true;
+    blockWrites(true);
     setIssue({
       kind: 'save',
       message: 'Cette modification a été abandonnée, reprise ou remplacée dans un autre onglet. Sa reprise est bloquée. L’état partagé va être rechargé.',
@@ -257,7 +269,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
 
   const hydrate = useCallback(async () => {
     setStatus('loading');
-    writeBlocked.current = false;
+    blockWrites(false);
     try {
       const source = local.current!;
       const savedDraft = readRecoveryDraft(userId);
@@ -283,7 +295,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
         };
         pendingConflict.current = pending;
         draftGuard.current.track(pending, true);
-        writeBlocked.current = true;
+        blockWrites(true);
         const changed = changedPaths(pending.base, pending.local);
         const collisions = mergeSharedChanges(
           pending.base,
@@ -338,16 +350,21 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     const previous = storeRef.current;
     const next = typeof action === 'function' ? action(previous) : action;
     const sharedChanged = JSON.stringify(sharedData(previous)) !== JSON.stringify(sharedData(next));
-    if (writeBlocked.current && sharedChanged) return;
+    if (writeBlocked.current && sharedChanged) {
+      // Never drop an edit silently: say why it was not applied.
+      if (!pendingConflict.current) setIssue({ kind: 'save', message: SUSPENDED_EDIT_MESSAGE });
+      return;
+    }
     storeRef.current = next;
     setLocalStore(next);
     const before = JSON.stringify(sharedData(previous));
     const after = JSON.stringify(sharedData(next));
     if (status === 'ready' && before !== after) {
       const captured = sharedData(next);
+      const generation = writeGeneration.current;
       pendingWrites.current += 1;
       writeQueue.current = writeQueue.current.then(async () => {
-        if (writeBlocked.current) return;
+        if (writeBlocked.current || generation !== writeGeneration.current) return;
         try {
           const saved = await saveItsmWorkspace({ store: captured, version: version.current });
           version.current = saved.version;
@@ -356,17 +373,13 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
           lastSynced.current = sharedData(canonical);
           setLocalStore(canonical);
         } catch (error) {
-          writeBlocked.current = true;
+          blockWrites(true);
+          writeGeneration.current += 1;
           const base = lastSynced.current;
           const localChanges = sharedData(storeRef.current);
           const changed = changedPaths(base, localChanges);
           if (!isVersionConflict(error)) {
-            setIssue({
-              kind: 'save',
-              message: error instanceof Error
-                ? `${error.message} L’enregistrement est suspendu ; les changements non confirmés restent visibles dans cet onglet.`
-                : 'L’enregistrement a échoué. Les changements non confirmés restent visibles dans cet onglet.',
-            });
+            let refreshed = false;
             try {
               const latest = await getItsmWorkspace();
               version.current = latest.version;
@@ -374,7 +387,11 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
               storeRef.current = canonical;
               lastSynced.current = sharedData(canonical);
               setLocalStore(canonical);
-            } catch { /* Preserve the visible local changes and explicit save error. */ }
+              refreshed = true;
+            } catch { /* Keep writes suspended; the person can resynchronize explicitly. */ }
+            const outcome = saveRefusalOutcome(error, refreshed);
+            if (outcome.resumeWrites) blockWrites(false);
+            setIssue({ kind: 'save', message: outcome.message });
             return;
           }
           let latest = snapshotFromError(error);
@@ -517,7 +534,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
       pendingConflict.current = null;
       draftGuard.current.invalidate();
       clearSyncRecoveryDraft(userId);
-      writeBlocked.current = false;
+      blockWrites(false);
       setRecovery(null);
       setIssue(null);
     } catch (error) {
@@ -545,7 +562,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     pendingConflict.current = null;
     draftGuard.current.invalidate();
     clearSyncRecoveryDraft(userId);
-    writeBlocked.current = false;
+    blockWrites(false);
     setRecovery(null);
     setIssue(null);
   }, [userId, isCurrentRecovery]);
@@ -586,12 +603,18 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   const dismissIssue = useCallback(() => {
     if (!pendingConflict.current) setIssue(null);
   }, []);
+  const resync = useCallback(() => {
+    if (pendingConflict.current) return; // The recovery panel owns that decision.
+    setIssue(null);
+    setRetry((value) => value + 1);
+  }, []);
 
   if (status === 'loading') return <main className="grid min-h-[100dvh] place-items-center text-sm text-muted-foreground">Chargement des données partagées…</main>;
   if (status === 'error') return <SyncPanel error={storageIssue?.message ?? 'Impossible de joindre le service ITSM.'} onRetry={() => setRetry((value) => value + 1)} />;
 
   return <StoreContext.Provider value={{
     store, setStore, log, storageIssue, dismissIssue, recovery, resumeConflict, acceptRemoteSnapshot,
+    writesSuspended, resync,
   }}>{children}</StoreContext.Provider>;
 }
 

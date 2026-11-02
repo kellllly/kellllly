@@ -74,7 +74,8 @@ et le test d’intégration PostgreSQL est ignoré.
 ## Lancer l’application
 
 Copiez `.env.example` en `.env`, renseignez les clés Clerk et
-`ITSM_BOOTSTRAP_ADMIN_EMAILS` avec votre adresse vérifiée, puis :
+`ITSM_BOOTSTRAP_ADMIN_EMAILS` avec votre adresse vérifiée, puis lancez l’API
+et le frontend dans deux terminaux :
 
 ```bash
 set -a; . ./.env; set +a; pnpm --filter @workspace/api-server run dev
@@ -84,6 +85,34 @@ set -a; . ./.env; set +a; pnpm --filter @workspace/api-server run dev
 set -a; . ./.env; set +a; PORT=5173 pnpm --filter @workspace/anif-secure-desk run dev
 ```
 
-Le frontend appelle `/api/...` sur sa propre origine. Sur Replit, un routeur
-place l’API et le frontend sous le même domaine. En local, il faut un proxy
-`/api` vers le port 5000 (non configuré dans `vite.config.ts` à ce stade).
+Ouvrez http://localhost:5173. Avec `API_PROXY_TARGET=http://localhost:5000`
+(déjà dans `.env.example`), Vite relaie `/api` vers l’API : navigateur et API
+partagent la même origine, comme sur Replit. Sans ce paramètre, rien ne change
+sur Replit.
+
+Comportements attendus sans configuration complète :
+
+- Sans `VITE_CLERK_PUBLISHABLE_KEY` en local, la page affiche « Authentification
+  non configurée » au lieu d’une page blanche.
+- Sans `CLERK_SECRET_KEY`, `/api/healthz` répond toujours `200` et les routes
+  authentifiées répondent `503` avec un message explicite.
+
+## Sécurité HTTP de l’API
+
+- CORS fermé par défaut : seules les origines listées dans
+  `CORS_ALLOWED_ORIGINS` (séparées par des virgules) et les domaines de
+  `REPLIT_DOMAINS` reçoivent les en-têtes cross-origin. L’application elle-même
+  n’en a pas besoin, car elle est servie sur la même origine que l’API.
+- En-têtes défensifs sur chaque réponse (`nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`).
+- Les erreurs inattendues renvoient un JSON générique ; la pile d’exécution
+  reste dans les journaux du serveur.
+- Corps JSON limité à 5 Mo, ce qui couvre un espace avec 5 000 événements de journal
+  (environ 1 Mo). L’ancienne limite par défaut (100 Ko) bloquait les
+  sauvegardes après environ 450 événements.
+
+## Intégration continue
+
+`.github/workflows/ci.yml` exécute, à chaque envoi, l’installation figée, le
+typecheck complet (y compris la vérification du code généré), le schéma Drizzle
+sur un PostgreSQL 16, les tests frontend et API, puis les builds.

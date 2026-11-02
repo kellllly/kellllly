@@ -32,7 +32,7 @@ const initials = (n: string) => n.split(' ').filter(Boolean).map(x => x[0]).join
 
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { store, storageIssue, dismissIssue, recovery } = useStore();
+  const { store, storageIssue, dismissIssue, recovery, writesSuspended, resync } = useStore();
   const { signOut } = useClerk();
   const [mobileNav, setMobileNav] = useState(false);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
@@ -89,6 +89,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </details>}
             <SyncRecoveryActions key={recovery.remoteVersion} />
           </div>}
+          {!recovery && writesSuspended && <div className="mt-2"><button data-testid="button-resync" onClick={resync} className="focus-ring rounded-lg border border-[#9e655d] bg-white/70 px-3 py-1.5 font-semibold dark:bg-black/10">Resynchroniser</button></div>}
         </div>
         {!recovery && <button onClick={dismissIssue} aria-label="Masquer l’alerte de synchronisation" className="focus-ring rounded p-1 hover:bg-black/5"><X size={14} /></button>}
       </div>}
