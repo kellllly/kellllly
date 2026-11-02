@@ -1,0 +1,114 @@
+import { formatWAT, getDeadlines, slaProgress, type Priority } from './itsm';
+import type { Conversation, Store, Ticket, TicketKind, TicketStatus } from './types';
+
+export const KINDS: TicketKind[] = ['Incident', 'Demande', 'Problème', 'Changement'];
+export const STATUSES: TicketStatus[] = ['Nouveau', 'Pris en compte', 'En cours', 'En attente', 'Résolu', 'Clos', 'Rejeté'];
+export const PRIORITIES: Priority[] = ['P1', 'P2', 'P3', 'P4'];
+export const LEVEL_LABEL: Record<number, string> = { 1: '1 · fort', 2: '2 · moyen', 3: '3 · faible' };
+export const ASSIGNEES = ['Équipe support', 'Olivier Nguema', 'Jean-Pierre Obame', 'Équipe infrastructure', 'Support applicatif'];
+export const CATEGORIES = ['Applications', 'Poste de travail', 'Équipement', 'Réseau', 'Accès'];
+const PREFIX: Record<TicketKind, string> = { Incident: 'INC', Demande: 'REQ', Problème: 'PRB', Changement: 'CHG' };
+
+export const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+export const nowIso = () => new Date().toISOString();
+export const isOpen = (t: Ticket) => t.status !== 'Clos' && t.status !== 'Rejeté';
+export const unreadOf = (c: Conversation) => Math.max(0, c.messages.length - c.readCount);
+export const priorityTone = (p: string) => (p === 'P1' ? 'red' : p === 'P2' ? 'amber' : p === 'P3' ? 'blue' : 'neutral');
+export const statusTone = (s: string) => (s === 'Clos' ? 'green' : s === 'Résolu' ? 'green' : s === 'Rejeté' ? 'red' : s === 'En cours' || s === 'Pris en compte' ? 'blue' : s === 'En attente' ? 'amber' : 'neutral');
+
+export function nextTicketId(kind: TicketKind, tickets: Ticket[]) {
+  const max = tickets.reduce((m, t) => Math.max(m, Number(t.id.replace(/\D/g, '')) || 0), 2400);
+  return `${PREFIX[kind]}-${max + 1}`;
+}
+export function nextKedbId(s: Store) {
+  const max = s.kedb.reduce((m, a) => Math.max(m, Number(a.id.replace(/\D/g, '')) || 0), 100);
+  return `KEDB-${String(max + 1).padStart(4, '0')}`;
+}
+
+export function messageTime(m: { time: string; at?: string }) { return m.at ? formatWAT(m.at, 'time') : m.time; }
+
+/** Ajoute un événement au ticket et le reflète dans la discussion liée si elle existe. */
+export function withTicketEvent(s: Store, id: string, body: string, patch: Partial<Ticket> = {}, author = s.profile.name, asComment = false): Store {
+  const at = nowIso();
+  const tickets = s.tickets.map(t => (t.id === id ? { ...t, ...patch, updates: [...t.updates, { author, body, time: formatWAT(at, 'datetime'), at }] } : t));
+  const t = tickets.find(x => x.id === id);
+  const conversations = t?.conversationId
+    ? s.conversations.map(c => (c.id === t.conversationId ? { ...c, messages: [...c.messages, { id: uid(), author: asComment ? author : `Suivi ${id}`, body: asComment ? `Commentaire sur ${id} : ${body}` : body, time: '', at, system: !asComment, ticketId: id }] } : c))
+    : s.conversations;
+  return { ...s, tickets, conversations };
+}
+
+export function resolveTicket(s: Store, id: string, rootCause: string, resolution: string): Store {
+  const ticket = s.tickets.find(t => t.id === id);
+  if (!ticket || !['Pris en compte', 'En cours', 'En attente', 'Résolu'].includes(ticket.status)) {
+    throw new Error('Le ticket doit être pris en charge avant sa résolution.');
+  }
+  if (ticket.kind === 'Changement' && ticket.cab?.decision !== 'Approuvé') {
+    throw new Error('Une approbation CAB est nécessaire avant la résolution.');
+  }
+  if (rootCause.trim().length < 10 || resolution.trim().length < 10) {
+    throw new Error('Documentez la cause racine et la solution (10 caractères minimum).');
+  }
+  return withTicketEvent(s, id, 'Résolution proposée. Cause racine et solution documentées ; en attente de confirmation du demandeur.', {
+    status: 'Résolu', resolvedAt: ticket.resolvedAt ?? nowIso(),
+    rootCause: rootCause.trim(), resolution: resolution.trim(),
+  });
+}
+
+/** Requester agreement is simulated in the UI, not authenticated authorization. */
+export function closeResolvedTicket(s: Store, id: string): Store {
+  const ticket = s.tickets.find(t => t.id === id);
+  if (ticket?.status === 'Clos') return s;
+  if (!ticket || ticket.status !== 'Résolu' || !ticket.resolvedAt
+    || (ticket.rootCause?.trim().length ?? 0) < 10 || (ticket.resolution?.trim().length ?? 0) < 10) {
+    throw new Error('Une résolution documentée est nécessaire avant la confirmation.');
+  }
+  const existing = s.kedb.find(a => a.ticketId === id);
+  const kedbId = existing?.id ?? nextKedbId(s);
+  const at = nowIso();
+  const next = withTicketEvent(s, id, `Confirmation du demandeur simulée. Ticket clos ; article ${kedbId} disponible dans la base d’erreurs connues.`, {
+    status: 'Clos', closedAt: at, kedbId,
+  });
+  if (existing) return next;
+  return {
+    ...next,
+    kedb: [{
+      id: kedbId, title: ticket.title, symptom: ticket.description,
+      rootCause: ticket.rootCause!, resolution: ticket.resolution!,
+      ticketId: id, serviceId: ticket.serviceId ?? null, category: ticket.category,
+      createdAt: at, author: s.profile.name,
+    }, ...next.kedb],
+  };
+}
+
+export function ticketSla(t: Ticket, now: number) {
+  const d = getDeadlines(t.openedAt, t.priority);
+  return {
+    deadlines: d,
+    ack: slaProgress(t.openedAt, d.acknowledgeBy, t.acknowledgedAt, now),
+    res: slaProgress(t.openedAt, d.resolveBy, t.resolvedAt, now),
+  };
+}
+
+export function fmtDuration(ms: number) {
+  const a = Math.abs(ms); const h = Math.floor(a / 3_600_000); const m = Math.floor((a % 3_600_000) / 60_000); const s = Math.floor((a % 60_000) / 1000);
+  if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;
+  if (h) return `${h} h ${String(m).padStart(2, '0')} min`;
+  return `${m} min ${String(s).padStart(2, '0')} s`;
+}
+
+export type DerivedNotification = { id: string; ticketId: string; title: string; body: string; tone: 'amber' | 'red' | 'blue'; at: string; read: boolean };
+
+export function deriveNotifications(s: Store, now: number): DerivedNotification[] {
+  const list: DerivedNotification[] = [];
+  for (const t of s.tickets) {
+    if (!isOpen(t) || t.status === 'Résolu') continue;
+    const { ack, res, deadlines } = ticketSla(t, now);
+    if (!t.acknowledgedAt && (ack.state === 'warning' || ack.state === 'breach'))
+      list.push({ id: `${t.id}:ack:${ack.state}`, ticketId: t.id, title: ack.state === 'breach' ? `Prise en charge dépassée · ${t.id}` : `Prise en charge bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.acknowledgeBy, 'datetime')}`, tone: ack.state === 'breach' ? 'red' : 'amber', at: deadlines.acknowledgeBy, read: false });
+    if (!t.resolvedAt && (res.state === 'warning' || res.state === 'breach'))
+      list.push({ id: `${t.id}:res:${res.state}`, ticketId: t.id, title: res.state === 'breach' ? `Résolution dépassée · ${t.id}` : `Résolution bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.resolveBy, 'datetime')}`, tone: res.state === 'breach' ? 'red' : 'amber', at: deadlines.resolveBy, read: false });
+  }
+  for (const n of s.notifications) list.push({ ...n, tone: 'blue', read: false });
+  return list.map(n => ({ ...n, read: s.notifRead.includes(n.id) })).sort((a, b) => Number(a.read) - Number(b.read) || b.at.localeCompare(a.at));
+}
