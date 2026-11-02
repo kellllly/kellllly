@@ -1,0 +1,503 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+security:
+  - ClerkSession: []
+tags:
+  - name: health
+    description: Health operations
+  - name: itsm
+    description: Shared pilot ITSM workspace
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      security: []
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /itsm:
+    get:
+      operationId: getItsmWorkspace
+      tags: [itsm]
+      summary: Read the shared ITSM workspace
+      responses:
+        "200":
+          description: Shared workspace and its version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmSnapshot"
+        "401":
+          description: Authentication required
+        "403":
+          description: A role assignment is required or the role lacks permission
+    put:
+      operationId: saveItsmWorkspace
+      tags: [itsm]
+      summary: Save validated changes to the shared ITSM workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmSaveInput"
+      responses:
+        "200":
+          description: Updated shared workspace and its version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmSnapshot"
+        "400":
+          description: Invalid workspace change
+        "401":
+          description: Authentication required
+        "409":
+          description: Workspace changed; latest snapshot is included for controlled recovery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmWorkspaceConflict"
+        "403":
+          description: The assigned role cannot perform this change
+    post:
+      operationId: importItsmExamples
+      tags: [itsm]
+      summary: Import local demo examples without overwriting shared data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmImportInput"
+      responses:
+        "200":
+          description: Shared workspace after a safe one-time import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmSnapshot"
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot import examples
+  /itsm/audit/export:
+    get:
+      operationId: exportItsmAudit
+      tags: [itsm]
+      summary: Export filtered audit events as CSV
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: scope
+          schema: { type: string }
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Filtered CSV audit events
+          content:
+            text/csv:
+              schema: { type: string }
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+  /itsm/users:
+    get:
+      operationId: getItsmUserDirectory
+      tags: [itsm]
+      summary: List pilot accounts for N1 role management
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Minimal account identity and current ITSM role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmUserDirectoryPage"
+        "400":
+          description: Invalid pagination or search parameters
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 can list pilot accounts
+        "503":
+          description: Account directory is temporarily unavailable
+  /itsm/role-archive/check:
+    post:
+      operationId: checkItsmRoleArchive
+      tags: [itsm]
+      summary: Check the external role archive connection without creating an event
+      responses:
+        "200":
+          description: The configured archive responded to the connection check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRoleArchiveCheckResponse"
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 can check the role archive
+        "503":
+          description: The configured archive is unavailable or does not support the check
+  /itsm/users/{userId}/role:
+    put:
+      operationId: assignItsmRole
+      tags: [itsm]
+      summary: Change an ITSM role, name an N1 successor, or revoke access
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmRoleAssignmentInput"
+      responses:
+        "200":
+          description: Role assignment saved to Clerk metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRoleAssignment"
+        "400":
+          description: Invalid role assignment
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 can assign roles
+        "404":
+          description: Clerk account not found
+  /itsm/development-role-archive:
+    head:
+      operationId: checkDevelopmentRoleArchive
+      tags: [itsm]
+      summary: Check the development-only archive receiver and its storage
+      security:
+        - DevelopmentArchiveToken: []
+      responses:
+        "204":
+          description: Authenticated receiver and storage available
+        "401":
+          description: Invalid archive credential
+        "404":
+          description: Receiver disabled outside explicitly configured development
+        "503":
+          description: Storage unavailable
+    post:
+      operationId: appendDevelopmentRoleArchive
+      tags: [itsm]
+      summary: Persist an event in the development-only, same-environment archive
+      description: Not an independent or immutable production archive. No read, update or delete API.
+      security:
+        - DevelopmentArchiveToken: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DevelopmentRoleArchiveEnvelope"
+      responses:
+        "200":
+          description: Event persisted, or identical event already persisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevelopmentRoleArchiveReceipt"
+        "400":
+          description: Invalid event or idempotency key
+        "401":
+          description: Invalid archive credential
+        "404":
+          description: Development receiver disabled
+        "409":
+          description: Event identifier already used for different content
+        "503":
+          description: Event not confirmed in storage
+  /itsm/users/{userId}/role/attest:
+    post:
+      operationId: attestItsmRole
+      tags: [itsm]
+      summary: Attest the current ITSM role without changing Clerk metadata
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmRoleAttestationInput"
+      responses:
+        "200":
+          description: Current role attestation recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRoleAttestation"
+        "400":
+          description: Invalid target account
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 can attest roles
+        "404":
+          description: Clerk account not found
+        "409":
+          description: Target account has no valid ITSM role to attest
+        "503":
+          description: Role archive or journal is unavailable
+components:
+  securitySchemes:
+    DevelopmentArchiveToken:
+      type: http
+      scheme: bearer
+    ClerkSession:
+      type: apiKey
+      in: cookie
+      name: __session
+  schemas:
+    DevelopmentRoleArchiveEnvelope:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, source, event]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        source:
+          type: string
+          enum: [anif-secure-desk]
+        event:
+          type: object
+          additionalProperties: false
+          required: [id, type, actor, targetUserId, previousRole, nextRole, previousServiceIds, serviceIds, scope, at]
+          properties:
+            id:
+              type: string
+              minLength: 1
+              maxLength: 200
+            type:
+              type: string
+              enum: [itsm.role.changed, itsm.role.attested]
+            actor:
+              type: string
+              minLength: 1
+              maxLength: 200
+            targetUserId:
+              type: string
+              minLength: 1
+              maxLength: 200
+            previousRole:
+              type: [string, "null"]
+              maxLength: 64
+            nextRole:
+              type: [string, "null"]
+              maxLength: 64
+            previousServiceIds:
+              type: array
+              maxItems: 100
+              items:
+                type: string
+                maxLength: 200
+            serviceIds:
+              type: array
+              maxItems: 100
+              items:
+                type: string
+                maxLength: 200
+            scope:
+              type: string
+              maxLength: 10000
+            at:
+              type: string
+              minLength: 1
+              maxLength: 40
+            action:
+              type: string
+              maxLength: 200
+            time:
+              type: string
+              maxLength: 40
+            origin:
+              type: string
+              enum: [bootstrap]
+    DevelopmentRoleArchiveReceipt:
+      type: object
+      required: [eventId, duplicate]
+      properties:
+        eventId:
+          type: string
+        duplicate:
+          type: boolean
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    ItsmStore:
+      type: object
+      description: ITSM pilot state; server-owned identity and timestamps are canonicalized on save.
+      additionalProperties: true
+    ItsmSnapshot:
+      type: object
+      properties:
+        store:
+          $ref: "#/components/schemas/ItsmStore"
+        version:
+          type: integer
+          minimum: 0
+      required: [store, version]
+    ItsmWorkspaceConflict:
+      type: object
+      properties:
+        error:
+          type: string
+        current:
+          $ref: "#/components/schemas/ItsmSnapshot"
+      required: [error, current]
+    ItsmSaveInput:
+      type: object
+      properties:
+        store:
+          $ref: "#/components/schemas/ItsmStore"
+        version:
+          type: integer
+          minimum: 0
+      required: [store, version]
+    ItsmImportInput:
+      type: object
+      properties:
+        store:
+          $ref: "#/components/schemas/ItsmStore"
+      required: [store]
+    ItsmRoleAssignmentInput:
+      type: object
+      properties:
+        role:
+          type: [string, "null"]
+          enum: [N1, N2, N3, N4, N5, null]
+        serviceIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 120
+      required: [role, serviceIds]
+    ItsmRoleAssignment:
+      type: object
+      properties:
+        userId: { type: string }
+        role:
+          type: [string, "null"]
+          enum: [N1, N2, N3, N4, N5, null]
+        label: { type: string }
+        serviceIds:
+          type: array
+          items: { type: string }
+      required: [userId, role, label, serviceIds]
+    ItsmRoleAttestation:
+      type: object
+      additionalProperties: false
+      properties:
+        userId: { type: string }
+        role: { type: string, enum: [N1, N2, N3, N4, N5] }
+        serviceIds:
+          type: array
+          items: { type: string }
+        attestedAt: { type: string, format: date-time }
+      required: [userId, role, serviceIds, attestedAt]
+    ItsmRoleAttestationInput:
+      type: object
+      additionalProperties: false
+      properties:
+        role: { type: string, enum: [N1, N2, N3, N4, N5] }
+        serviceIds:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 120 }
+      required: [role, serviceIds]
+    ItsmRoleArchiveCheckResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [available] }
+        message: { type: string }
+      required: [status, message]
+    ItsmUserDirectoryAccount:
+      type: object
+      additionalProperties: false
+      properties:
+        userId: { type: string }
+        email: { type: [string, "null"] }
+        role:
+          type: [string, "null"]
+          enum: [N1, N2, N3, N4, N5, null]
+        serviceIds:
+          type: array
+          items: { type: string }
+      required: [userId, email, role, serviceIds]
+    ItsmUserDirectoryPage:
+      type: object
+      additionalProperties: false
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItsmUserDirectoryAccount"
+        totalCount:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        offset:
+          type: integer
+          minimum: 0
+      required: [accounts, totalCount, limit, offset]
+
