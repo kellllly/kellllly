@@ -1,0 +1,41 @@
+{
+  "name": "ANIF — Messagerie & ITSM",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  // Demandées à la création du Codespace (Settings → Codespaces → Secrets pour les modifier).
+  "secrets": {
+    "CLERK_SECRET_KEY": {
+      "description": "Clé secrète Clerk de votre instance de développement (sk_test_…), dashboard.clerk.com → API Keys."
+    },
+    "VITE_CLERK_PUBLISHABLE_KEY": {
+      "description": "Clé publique Clerk (pk_test_…), même page."
+    },
+    "ITSM_BOOTSTRAP_ADMIN_EMAILS": {
+      "description": "Adresse e-mail autorisée à devenir le premier administrateur N1."
+    }
+  },
+
+  "containerEnv": {
+    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/anif",
+    "NODE_ENV": "development",
+    "ITSM_ROLE_ARCHIVE_MODE": "development-db",
+    "BASE_PATH": "/",
+    "API_PROXY_TARGET": "http://localhost:5000"
+  },
+
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": { "label": "Application ANIF", "onAutoForward": "openBrowser" },
+    "5000": { "label": "API (interne)", "onAutoForward": "silent" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postAttachCommand": "bash .devcontainer/start.sh",
+
+  "customizations": {
+    "codespaces": { "openFiles": ["DEVELOPPEMENT.md"] }
+  }
+}

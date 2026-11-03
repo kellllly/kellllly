@@ -1,0 +1,24 @@
+# Codespaces / Dev Containers : application + PostgreSQL 16.
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/javascript-node:24
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    # Partage le réseau de la base : PostgreSQL est joignable sur localhost:5432.
+    network_mode: service:db
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: anif
+    volumes:
+      - anif-postgres:/var/lib/postgresql/data
+
+volumes:
+  anif-postgres:

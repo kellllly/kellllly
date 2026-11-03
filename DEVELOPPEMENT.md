@@ -25,6 +25,24 @@ et `docs/`.
     verrou est créé au premier `pnpm install`, dans les mêmes plages de versions.
   - `attached_assets/` (PDF du cahier des charges et captures d’écran).
 
+## Le plus simple : GitHub Codespaces (rien à installer)
+
+Le dossier `.devcontainer/` prépare tout seul Node 24, pnpm, PostgreSQL 16,
+les dépendances et le schéma, puis lance l’API et le site.
+
+1. Sur la page GitHub du dépôt, choisissez cette branche, puis **Code** →
+   **Codespaces** → **…** → **New with options**.
+2. Renseignez les trois secrets demandés : `CLERK_SECRET_KEY` (`sk_test_…`),
+   `VITE_CLERK_PUBLISHABLE_KEY` (`pk_test_…`) et `ITSM_BOOTSTRAP_ADMIN_EMAILS`.
+   Ils restent enregistrés pour vos prochains Codespaces (GitHub → Settings →
+   Codespaces → Secrets).
+3. Cliquez sur **Create codespace** et patientez quelques minutes. Le site
+   s’ouvre dans un nouvel onglet ; sinon, onglet **Ports**, ligne 5173, icône
+   en forme de globe.
+
+Si le site ne s’ouvre pas, lancez `bash .devcontainer/start.sh` dans le
+terminal du Codespace. Le journal de l’API est dans `.logs/api.log`.
+
 ## Prérequis
 
 - Node.js 22.6 ou plus (Replit utilise Node 24), pnpm 10.

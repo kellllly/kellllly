@@ -58,3 +58,6 @@ Thumbs.db
 # Local env
 .env
 .env.local
+
+# Journaux du Codespace
+/.logs/
