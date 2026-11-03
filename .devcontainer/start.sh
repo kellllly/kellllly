@@ -20,6 +20,20 @@ if [ -z "${CLERK_SECRET_KEY:-}" ] || [ -z "$VITE_CLERK_PUBLISHABLE_KEY" ]; then
 fi
 
 mkdir -p .logs
+
+# Crée ou met à jour les tables à chaque lancement (sans effet si elles existent déjà).
+echo "Vérification du schéma de la base…"
+schema_ok=false
+for i in $(seq 1 30); do
+  if pnpm --filter @workspace/db run push > .logs/schema.log 2>&1; then schema_ok=true; break; fi
+  sleep 2
+done
+if [ "$schema_ok" = true ]; then
+  echo "Schéma de la base à jour."
+else
+  echo "⚠  Impossible de créer les tables : voir .logs/schema.log" >&2
+fi
+
 if curl -sf http://localhost:5000/api/healthz >/dev/null 2>&1; then
   echo "API déjà lancée."
 else
