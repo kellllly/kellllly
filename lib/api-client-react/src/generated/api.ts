@@ -38,6 +38,8 @@ import type {
   ItsmRoleAttestationInput,
   ItsmSaveInput,
   ItsmSnapshot,
+  ItsmTicketWebReference,
+  ItsmTicketWebReferenceInput,
   ItsmUserDirectoryPage,
   ItsmWorkspaceConflict
 } from './api.schemas';
@@ -1077,5 +1079,94 @@ export const useAttestItsmRole = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getAttestItsmRoleMutationOptions(options), queryClient);
+    }
+
+export const getAddItsmTicketWebReferenceUrl = (ticketId: string,) => {
+
+
+
+
+  return `/api/itsm/tickets/${ticketId}/web-reference`
+}
+
+/**
+ * @summary Fetch a public web page through Firecrawl and attach a sourced excerpt to a ticket
+ */
+export const addItsmTicketWebReference = async (ticketId: string,
+    itsmTicketWebReferenceInput: ItsmTicketWebReferenceInput, options?: Parameters<typeof customFetch>[1]): Promise<ItsmTicketWebReference> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmTicketWebReference>(getAddItsmTicketWebReferenceUrl(ticketId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmTicketWebReferenceInput)
+  }
+);}
+
+
+
+
+
+export const getAddItsmTicketWebReferenceMutationKey = () => ['addItsmTicketWebReference'] as const;
+
+export const getAddItsmTicketWebReferenceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addItsmTicketWebReference>>, TError,AddItsmTicketWebReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addItsmTicketWebReference>>, TError,AddItsmTicketWebReferenceMutationVariables, TContext> => {
+
+const mutationKey = getAddItsmTicketWebReferenceMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addItsmTicketWebReference>>, AddItsmTicketWebReferenceMutationVariables> = (props) => {
+          const {ticketId,data} = props ?? {};
+
+          return  addItsmTicketWebReference(ticketId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddItsmTicketWebReferenceMutationResult = NonNullable<Awaited<ReturnType<typeof addItsmTicketWebReference>>>
+    export type AddItsmTicketWebReferenceMutationBody = BodyType<ItsmTicketWebReferenceInput>
+    export type AddItsmTicketWebReferenceMutationError = ErrorType<void>
+    export type AddItsmTicketWebReferenceMutationVariables = {ticketId: string;data: BodyType<ItsmTicketWebReferenceInput>}
+
+    /**
+ * @summary Fetch a public web page through Firecrawl and attach a sourced excerpt to a ticket
+ */
+export const useAddItsmTicketWebReference = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addItsmTicketWebReference>>, TError,AddItsmTicketWebReferenceMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addItsmTicketWebReference>>,
+        TError,
+        AddItsmTicketWebReferenceMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddItsmTicketWebReferenceMutationOptions(options), queryClient);
     }
 

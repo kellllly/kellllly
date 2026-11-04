@@ -190,6 +190,29 @@ export interface ItsmRoleAttestation {
   attestedAt: string;
 }
 
+export interface ItsmTicketWebReferenceInput {
+  /** @maxLength 2048 */
+  url: string;
+  /** @maxLength 500 */
+  note?: string;
+}
+
+export type ItsmTicketWebReferenceUpdate = {
+  author: string;
+  body: string;
+  at: string;
+  time: string;
+};
+
+export interface ItsmTicketWebReference {
+  ticketId: string;
+  url: string;
+  /** @nullable */
+  title: string | null;
+  update: ItsmTicketWebReferenceUpdate;
+  version: number;
+}
+
 export type ItsmRoleAttestationInputRole = typeof ItsmRoleAttestationInputRole[keyof typeof ItsmRoleAttestationInputRole];
 
 

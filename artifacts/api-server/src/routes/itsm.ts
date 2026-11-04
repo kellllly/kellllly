@@ -49,6 +49,8 @@ import {
   type ItsmRole,
 } from "../lib/itsm-rbac";
 import { createItsmAuditExportHandler } from "./itsm-audit-export";
+import { createItsmWebReferenceRouter } from "./itsm-web-reference";
+import { createFirecrawlScraper, firecrawlConfig } from "../lib/firecrawl";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
 
@@ -72,7 +74,7 @@ export async function checkItsmRoleArchiveAvailability(): Promise<void> {
 export async function withAdminChangeLock<T>(
   operation: (
     store: Record<string, unknown>,
-    saveStore: (nextStore: Record<string, unknown>) => Promise<void>,
+    saveStore: (nextStore: Record<string, unknown>) => Promise<number>,
   ) => Promise<T>,
   workspaceId = WORKSPACE_ID,
 ): Promise<T> {
@@ -90,6 +92,7 @@ export async function withAdminChangeLock<T>(
         updatedAt: new Date(),
       }).where(eq(itsmWorkspaceTable.id, workspaceId)).returning();
       if (!updated) throw new Error("Impossible d’enregistrer le journal d’habilitation.");
+      return updated.version;
     };
     return operation(row.store, saveStore);
   });
@@ -812,5 +815,17 @@ export function createItsmRoleAttestationRouter(
 router.use(createItsmRoleArchiveCheckRouter());
 router.use(createItsmRoleAssignmentRouter());
 router.use(createItsmRoleAttestationRouter());
+
+const firecrawl = firecrawlConfig();
+router.use(createItsmWebReferenceRouter({
+  resolveActor: actorFor,
+  scrapePage: firecrawl ? createFirecrawlScraper(firecrawl) : null,
+  loadStore: async () => {
+    const [row] = await db.select().from(itsmWorkspaceTable)
+      .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
+    return row?.store ?? {};
+  },
+  withLock: (operation) => withAdminChangeLock(operation),
+}, requireAuth));
 
 export default router;

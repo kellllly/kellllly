@@ -54,6 +54,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - CORS est fermé par défaut ; ajouter une origine via `CORS_ALLOWED_ORIGINS` seulement si un client sur un autre domaine en a besoin.
 - Après un refus de sauvegarde autre qu’un conflit, l’onglet recharge l’état serveur et reprend l’enregistrement ; si le rechargement échoue, il reste suspendu et propose « Resynchroniser ».
 - En local, définir `API_PROXY_TARGET` pour que Vite relaie `/api`.
+- Références web : `FIRECRAWL_API_KEY` reste côté serveur. Chaque URL soumise part chez Firecrawl ; seules les pages publiques `https` sont acceptées (voir `docs/references-web-firecrawl.md`).
 
 ## Pointers
 

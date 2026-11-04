@@ -289,6 +289,45 @@ paths:
           description: Target account has no valid ITSM role to attest
         "503":
           description: Role archive or journal is unavailable
+  /itsm/tickets/{ticketId}/web-reference:
+    post:
+      operationId: addItsmTicketWebReference
+      tags: [itsm]
+      summary: Fetch a public web page through Firecrawl and attach a sourced excerpt to a ticket
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema: { type: string, maxLength: 64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmTicketWebReferenceInput"
+      responses:
+        "200":
+          description: Excerpt added to the ticket history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmTicketWebReference"
+        "400":
+          description: Invalid or non-public https URL
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot manage this ticket
+        "404":
+          description: Ticket not found in the caller's scope
+        "409":
+          description: Ticket closed or reference limit reached
+        "502":
+          description: The page could not be retrieved
+        "503":
+          description: Web references are not configured or the scraping quota is reached
+        "504":
+          description: The scraping service did not answer in time
 components:
   securitySchemes:
     DevelopmentArchiveToken:
@@ -451,6 +490,31 @@ components:
           items: { type: string }
         attestedAt: { type: string, format: date-time }
       required: [userId, role, serviceIds, attestedAt]
+    ItsmTicketWebReferenceInput:
+      type: object
+      additionalProperties: false
+      properties:
+        url: { type: string, maxLength: 2048 }
+        note: { type: string, maxLength: 500 }
+      required: [url]
+    ItsmTicketWebReference:
+      type: object
+      additionalProperties: false
+      properties:
+        ticketId: { type: string }
+        url: { type: string }
+        title: { type: [string, "null"] }
+        update:
+          type: object
+          additionalProperties: false
+          properties:
+            author: { type: string }
+            body: { type: string }
+            at: { type: string, format: date-time }
+            time: { type: string }
+          required: [author, body, at, time]
+        version: { type: integer }
+      required: [ticketId, url, title, update, version]
     ItsmRoleAttestationInput:
       type: object
       additionalProperties: false

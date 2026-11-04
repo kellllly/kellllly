@@ -111,6 +111,14 @@ Comportements attendus sans configuration complète :
   (environ 1 Mo). L’ancienne limite par défaut (100 Ko) bloquait les
   sauvegardes après environ 450 événements.
 
+## Références web (Firecrawl)
+
+`POST /api/itsm/tickets/{ticketId}/web-reference` récupère une page publique
+via Firecrawl et ajoute un extrait sourcé à l’historique du ticket. Sans
+`FIRECRAWL_API_KEY` (ni `FIRECRAWL_API_URL` pour une instance auto-hébergée),
+la route répond `503` et rien d’autre ne change. Détails, règles d’accès et
+limites : `docs/references-web-firecrawl.md`.
+
 ## Intégration continue
 
 `.github/workflows/ci.yml` exécute, à chaque envoi, l’installation figée, le

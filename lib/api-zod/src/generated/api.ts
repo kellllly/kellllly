@@ -259,3 +259,39 @@ export const AttestItsmRoleResponse = zod.object({
 })
 
 
+/**
+ * @summary Fetch a public web page through Firecrawl and attach a sourced excerpt to a ticket
+ */
+export const addItsmTicketWebReferencePathTicketIdMax = 64;
+
+
+
+export const AddItsmTicketWebReferenceParams = zod.object({
+  "ticketId": zod.coerce.string().max(addItsmTicketWebReferencePathTicketIdMax)
+})
+
+export const addItsmTicketWebReferenceBodyUrlMax = 2048;
+
+export const addItsmTicketWebReferenceBodyNoteMax = 500;
+
+
+
+export const AddItsmTicketWebReferenceBody = zod.object({
+  "url": zod.string().max(addItsmTicketWebReferenceBodyUrlMax),
+  "note": zod.string().max(addItsmTicketWebReferenceBodyNoteMax).optional()
+})
+
+export const AddItsmTicketWebReferenceResponse = zod.object({
+  "ticketId": zod.string(),
+  "url": zod.string(),
+  "title": zod.string().nullable(),
+  "update": zod.object({
+  "author": zod.string(),
+  "body": zod.string(),
+  "at": zod.coerce.date(),
+  "time": zod.string()
+}),
+  "version": zod.number().int()
+})
+
+
