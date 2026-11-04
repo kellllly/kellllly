@@ -27,6 +27,8 @@ type Ctx = {
   writesSuspended: boolean;
   /** Reload the canonical shared workspace and resume saving. */
   resync: () => void;
+  /** Pull a server-side change (e.g. a web reference) now instead of at the next poll. */
+  refresh: () => Promise<void>;
 };
 type SyncRecovery = {
   changed: string[];
@@ -603,6 +605,20 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   const dismissIssue = useCallback(() => {
     if (!pendingConflict.current) setIssue(null);
   }, []);
+  const refresh = useCallback(async () => {
+    // A save in flight or a blocked tab reconciles through its own path.
+    if (pendingWrites.current || writeBlocked.current) return;
+    try {
+      const latest = await getItsmWorkspace();
+      if (latest.version > version.current) {
+        version.current = latest.version;
+        const hydrated = applySnapshot(storeRef.current, latest.store);
+        storeRef.current = hydrated;
+        lastSynced.current = sharedData(hydrated);
+        setLocalStore(hydrated);
+      }
+    } catch { /* The periodic poll reports connection problems. */ }
+  }, []);
   const resync = useCallback(() => {
     if (pendingConflict.current) return; // The recovery panel owns that decision.
     setIssue(null);
@@ -614,7 +630,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
 
   return <StoreContext.Provider value={{
     store, setStore, log, storageIssue, dismissIssue, recovery, resumeConflict, acceptRemoteSnapshot,
-    writesSuspended, resync,
+    writesSuspended, resync, refresh,
   }}>{children}</StoreContext.Provider>;
 }
 

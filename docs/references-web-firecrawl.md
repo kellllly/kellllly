@@ -100,6 +100,14 @@ L’appel utilise l’API REST `POST {FIRECRAWL_API_URL}/v2/scrape` avec
   source.
 - **Pas d’alimentation de la KEDB.** La KEDB reste alimentée uniquement par les
   tickets clos après confirmation du demandeur.
-- **Interface.** Cette version livre la route API et le hook généré
-  `useAddItsmTicketWebReference` ; le formulaire dans l’écran Tickets reste à
-  faire.
+
+## Interface
+
+Dans l’écran Tickets, les comptes N3 et N4 voient le bouton « Ajouter une
+référence web » sur un ticket ouvert. La fenêtre demande l’adresse (contrôle
+https côté navigateur, règles complètes côté API) et une note facultative, puis
+recharge l’espace partagé dès l’ajout. Dans l’historique, les entrées qui
+commencent par « Référence web ajoutée » s’affichent comme une carte : titre,
+lien vers la source, note, extrait marqué « contenu externe, non vérifié ». Le
+découpage est dans `artifacts/anif-secure-desk/src/lib/web-reference.ts` et
+doit suivre le format produit par l’API (`webReferenceUpdateBody`).

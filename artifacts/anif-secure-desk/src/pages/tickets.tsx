@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearch } from 'wouter';
-import { ArrowUpRight, BookOpen, CheckCheck, CircleCheck, Filter, Gavel, Hand, MessageSquare, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Timer } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, BookOpen, CheckCheck, CircleCheck, ExternalLink, Filter, Gavel, Globe, Hand, Link2, Loader2, MessageSquare, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Timer } from 'lucide-react';
+import { addItsmTicketWebReference } from '@workspace/api-client-react';
 import { SLA_POLICIES, formatWAT, priorityFor } from '@/lib/itsm';
 import { useNow, useStore } from '@/lib/store';
 import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, closeResolvedTicket, isOpen, nextTicketId, nowIso, priorityTone, resolveTicket, statusTone, ticketSla, uid, withTicketEvent } from '@/lib/domain';
 import type { Level, Ticket } from '@/lib/types';
-import { Badge, Button, EmptyState, Field, Modal, SearchBox, Warning, textareaCls } from '@/components/kit';
+import { Badge, Button, EmptyState, Field, Modal, SearchBox, Warning, inputCls, textareaCls } from '@/components/kit';
+import { WEB_REFERENCE_NOTE_MAX, canAddWebReference, parseWebReferenceUpdate, shortUrl, webReferenceErrorMessage, webReferenceUrlProblem, type WebReference } from '@/lib/web-reference';
 import { SlaBar, TicketForm, emptyDraft, fmtMinutes, type TicketDraft } from '@/components/ticket-parts';
 
-type Dialog = null | 'create' | 'edit' | 'resolve' | 'confirm' | 'cab';
+type Dialog = null | 'create' | 'edit' | 'resolve' | 'confirm' | 'cab' | 'webref';
 
 export default function TicketsPage() {
   const { store, setStore, log } = useStore();
@@ -99,6 +101,7 @@ export default function TicketsPage() {
     </div>
     {dialog === 'create' && <Modal wide title="Créer un ticket" description="Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence." onClose={() => setDialog(null)}><TicketForm initial={prefill} services={store.services} assets={store.assets} submitLabel="Créer le ticket" onSubmit={create} onCancel={() => setDialog(null)} /></Modal>}
     {dialog === 'edit' && ticket && <Modal wide title={`Modifier ${ticket.id}`} description="L’heure d’ouverture est conservée : les échéances SLA sont recalculées sans remettre le temps écoulé à zéro." onClose={() => setDialog(null)}><TicketForm lockKind={ticket.status !== 'Nouveau' || !!ticket.cab} initial={emptyDraft({ kind: ticket.kind, title: ticket.title, description: ticket.description, category: ticket.category, impact: ticket.impact, urgency: ticket.urgency, supportLevel: ticket.supportLevel, assignee: ticket.assignee, serviceId: ticket.serviceId ?? '', assetId: ticket.assetId ?? '' })} services={store.services} assets={store.assets} submitLabel="Enregistrer" onSubmit={edit} onCancel={() => setDialog(null)} /></Modal>}
+    {dialog === 'webref' && ticket && <WebReferenceDialog ticket={ticket} onClose={() => setDialog(null)} />}
     {dialog === 'resolve' && ticket && <ResolveDialog ticket={ticket} onClose={() => setDialog(null)} onDone={(rootCause, resolution) => { setStore(s => resolveTicket(s, ticket.id, rootCause, resolution)); log(`Ticket ${ticket.id} résolu (en attente de confirmation)`, `Ticket ${ticket.id}`); setDialog(null); }} />}
     {dialog === 'confirm' && ticket && <ConfirmDialog ticket={ticket} onClose={() => setDialog(null)} onDone={() => {
       setStore(s => closeResolvedTicket(s, ticket.id));
@@ -152,6 +155,7 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
         ? <Button testId="button-confirm-close" onClick={() => onDialog('confirm')}><CheckCheck size={14} />Confirmation du demandeur</Button>
         : <Button testId="button-complete-resolution" onClick={() => onDialog('resolve')}><CircleCheck size={14} />Documenter la résolution</Button>)}
       {ticket.status === 'Résolu' && <Button testId="button-reopen" variant="outline" onClick={() => event(ticket.id, 'Résolution refusée, ticket rouvert. Le minuteur de résolution reprend depuis l’ouverture.', { status: 'En cours', resolvedAt: null }, `Ticket ${ticket.id} rouvert`)}><RotateCcw size={14} />Rouvrir</Button>}
+      {canAddWebReference(store.profile.clearance.slice(0, 2), ticket) && <Button testId="button-web-reference" variant="outline" onClick={() => onDialog('webref')}><Link2 size={14} />Ajouter une référence web</Button>}
       {open && <Button testId="button-edit-ticket" variant="quiet" onClick={() => onDialog('edit')}><Pencil size={13} />Modifier</Button>}
     </div>
     {isChange && open && !cabOk && ticket.status !== 'Nouveau' && <p className="mt-2 text-[10px] text-muted-foreground">Démarrage et résolution bloqués tant qu’aucune approbation CAB n’est enregistrée.</p>}
@@ -175,9 +179,62 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
 
     <div className="mt-6"><div className="flex items-center justify-between"><div className="eyebrow">HISTORIQUE D’ACTIVITÉ</div><Badge>{ticket.updates.length} entrée(s)</Badge></div>
       {open && <form onSubmit={e => { e.preventDefault(); if (!comment.trim()) return; event(ticket.id, comment.trim(), {}, `Commentaire ajouté au ticket ${ticket.id}`); setComment(''); }} className="mt-3 flex gap-2"><input data-testid="input-ticket-comment" value={comment} onChange={e => setComment(e.target.value)} placeholder="Ajouter une note de suivi technique…" className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[12px]" /><Button type="submit" disabled={!comment.trim()} testId="button-ticket-comment"><Send size={13} /></Button></form>}
-      {ticket.updates.length ? <ol className="mt-4 space-y-3">{[...ticket.updates].reverse().map((u, i) => <li key={i} className="flex gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" /><div><div className="text-[11px] font-semibold">{u.author}<span className="mono ml-2 text-[10px] font-normal text-muted-foreground">{u.at ? formatWAT(u.at, 'datetime') : u.time}</span></div><p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{u.body}</p></div></li>)}</ol> : <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center text-[11px] text-muted-foreground">Aucune activité enregistrée.</div>}
+      {ticket.updates.length ? <ol className="mt-4 space-y-3">{[...ticket.updates].reverse().map((u, i) => <li key={i} className="flex gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-semibold">{u.author}<span className="mono ml-2 text-[10px] font-normal text-muted-foreground">{u.at ? formatWAT(u.at, 'datetime') : u.time}</span></div>{(() => { const ref = parseWebReferenceUpdate(u.body); return ref ? <WebReferenceCard reference={ref} at={u.at ? formatWAT(u.at, 'datetime') : u.time} /> : <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{u.body}</p>; })()}</div></li>)}</ol> : <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center text-[11px] text-muted-foreground">Aucune activité enregistrée.</div>}
     </div>
   </section>;
+}
+
+function WebReferenceCard({ reference, at }: { reference: WebReference; at: string }) {
+  return <article data-testid="card-web-reference" className="mt-2 overflow-hidden rounded-[10px] border border-[#c9ddd4] bg-[#f4f9f6] dark:border-[#2f5246] dark:bg-[#1c2f2a]">
+    <div className="flex items-start gap-3 px-4 pt-3.5"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#e1efe7] text-[#28674f] dark:bg-[#214238] dark:text-[#b7dfc7]"><Globe size={16} aria-hidden="true" /></div>
+      <div className="min-w-0"><div className="eyebrow text-[#28674f] dark:text-[#b7dfc7]">RÉFÉRENCE WEB</div><div className="mt-0.5 break-words text-[13px] font-semibold leading-snug">{reference.title}</div>
+        <a href={reference.url} target="_blank" rel="noopener noreferrer" className="mono mt-0.5 inline-flex items-center gap-1 break-all text-[10px] text-primary hover:underline">{shortUrl(reference.url)}<ExternalLink size={10} aria-hidden="true" /></a></div></div>
+    {reference.note && <p className="mx-4 mt-3 rounded-lg border border-border bg-card px-3 py-2 text-[11px] leading-relaxed"><span className="font-semibold">Note :</span> {reference.note}</p>}
+    {reference.excerpt && <div className="px-4 pt-3"><span className="inline-flex items-center gap-1.5 rounded-full bg-[#f4ead5] px-2.5 py-1 text-[10px] font-semibold text-[#805a20] dark:bg-[#483b25] dark:text-[#e5c78e]"><AlertTriangle size={11} aria-hidden="true" />Extrait automatique · contenu externe, non vérifié</span>
+      <p className="mt-2 max-h-56 overflow-y-auto whitespace-pre-line break-words text-[11px] leading-relaxed text-foreground/80">{reference.excerpt}</p></div>}
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#c9ddd4] px-4 py-2.5 text-[10px] text-muted-foreground dark:border-[#2f5246]"><span>Récupérée le {at}</span><a href={reference.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Lire la source</a></div>
+  </article>;
+}
+
+function WebReferenceDialog({ ticket, onClose }: { ticket: Ticket; onClose: () => void }) {
+  const { refresh, writesSuspended } = useStore();
+  const [url, setUrl] = useState('');
+  const [note, setNote] = useState('');
+  const [touched, setTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const problem = webReferenceUrlProblem(url);
+  const submit = async () => {
+    setTouched(true);
+    if (problem || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addItsmTicketWebReference(ticket.id, { url: url.trim(), ...(note.trim() ? { note: note.trim() } : {}) });
+      await refresh();
+      onClose();
+    } catch (failure) {
+      setError(webReferenceErrorMessage(failure));
+      setBusy(false);
+    }
+  };
+  const shownError = error ?? (touched ? problem : null);
+  return <Modal title={`Ajouter une référence web à ${ticket.id}`} description="La page est récupérée automatiquement, puis un extrait sourcé est ajouté à l’historique du ticket." onClose={() => { if (!busy) onClose(); }}>
+    <form onSubmit={e => { e.preventDefault(); void submit(); }} className="space-y-4">
+      <div role="note" className="flex items-start gap-3 rounded-xl border border-[#d8b875]/60 bg-[#f4ecd9] px-4 py-3 text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]"><AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" /><p className="text-[11px] leading-relaxed"><strong className="font-semibold">Pages publiques uniquement.</strong> L’adresse est envoyée à un service externe (Firecrawl). N’y mettez jamais d’identifiant de dossier, d’enquête ou de personne.</p></div>
+      <Field label="Adresse de la page" hint="https uniquement · 2 048 caractères maximum">
+        <input data-testid="input-web-reference-url" type="url" inputMode="url" autoComplete="off" required value={url} disabled={busy} aria-invalid={Boolean(shownError)} aria-describedby={shownError ? 'web-reference-error' : undefined} onChange={e => { setUrl(e.target.value); setError(null); }} onBlur={() => setTouched(true)} placeholder="https://support.editeur.example/kb/42" className={`${inputCls} mono ${shownError ? 'border-destructive' : ''}`} />
+      </Field>
+      {shownError && <p id="web-reference-error" role="alert" data-testid="text-web-reference-error" className="-mt-2 text-[11px] text-destructive">{shownError}</p>}
+      <Field label={`Note (facultatif) · ${note.length} / ${WEB_REFERENCE_NOTE_MAX}`}>
+        <textarea data-testid="input-web-reference-note" rows={3} maxLength={WEB_REFERENCE_NOTE_MAX} value={note} disabled={busy} onChange={e => setNote(e.target.value)} placeholder="Pourquoi cette page est utile au traitement" className={textareaCls} />
+      </Field>
+      <div className="rounded-lg bg-muted/70 p-3"><div className="eyebrow">CE QUI SERA ENREGISTRÉ</div><ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-relaxed text-muted-foreground"><li>Le titre et l’adresse de la page, votre note et un extrait du texte (5 000 caractères au plus).</li><li>Une ligne au journal d’activité pour ce ticket.</li><li>L’extrait est marqué « contenu externe, non vérifié ». Il n’alimente pas la KEDB.</li></ul></div>
+      {writesSuspended && <p className="text-[11px] text-muted-foreground">La synchronisation est suspendue : resynchronisez l’espace avant d’ajouter une référence.</p>}
+      {busy && <p role="status" className="flex items-center gap-2 text-[11px] text-primary"><Loader2 size={14} className="animate-spin" aria-hidden="true" />Récupération de la page… cela peut prendre jusqu’à 45 secondes.</p>}
+      <div className="flex flex-wrap justify-end gap-2 pt-1"><Button variant="outline" onClick={onClose} disabled={busy}>Annuler</Button><Button type="submit" testId="button-submit-web-reference" disabled={busy || writesSuspended || Boolean(touched && problem)}><Link2 size={14} />{busy ? 'Récupération…' : 'Ajouter au ticket'}</Button></div>
+    </form>
+  </Modal>;
 }
 
 function ResolveDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: () => void; onDone: (rootCause: string, resolution: string) => void }) {
