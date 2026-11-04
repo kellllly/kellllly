@@ -158,7 +158,7 @@ Nodes (28): DevelopmentRoleArchiveEnvelope, DevelopmentRoleArchiveEnvelopeEvent,
 
 ### Community 2 - "Docs: Ops & Governance"
 Cohesion: 0.05
-Nodes (56): ANIF Gabon — Poste de pilotage (index.html), /src/main.tsx module entry, robots noindex,nofollow meta (non-homologated demo), Favicon (orange #FF3C00 rounded square), ANIF logo (green shield with checkmark), robots.txt (Allow all), Alerts itsm_role_archive_unavailable / itsm_role_archive_recovered, Development role-archive receiver (/api/itsm/development-role-archive) (+48 more)
+Nodes (56): ANIF Gabon — Poste de pilotage (index.html), /src/main.tsx module entry, robots noindex,nofollow meta (non-homologated demo), Favicon (ANIF green shield, same as logo), ANIF logo (green shield with checkmark), robots.txt (Disallow all), Alerts itsm_role_archive_unavailable / itsm_role_archive_recovered, Development role-archive receiver (/api/itsm/development-role-archive) (+48 more)
 
 ### Community 3 - "React Query Mutations"
 Cohesion: 0.05
@@ -397,9 +397,9 @@ Cohesion: 0.67
 Nodes (3): scripts, push, push-force
 
 ## Ambiguous Edges - Review These
-- `robots noindex,nofollow meta (non-homologated demo)` → `robots.txt (Allow all)`  [AMBIGUOUS]
+- `robots noindex,nofollow meta (non-homologated demo)` → `robots.txt (Disallow all)`  [AMBIGUOUS]
   artifacts/anif-secure-desk/index.html · relation: conceptually_related_to
-- `Favicon (orange #FF3C00 rounded square)` → `ANIF logo (green shield with checkmark)`  [AMBIGUOUS]
+- `Favicon (ANIF green shield, same as logo)` → `ANIF logo (green shield with checkmark)`  [AMBIGUOUS]
   artifacts/anif-secure-desk/public/logo.svg · relation: conceptually_related_to
 
 ## Knowledge Gaps
@@ -422,9 +422,4 @@ _Questions this graph is uniquely positioned to answer:_
   _Cohesion score 0.06390977443609022 - nodes in this community are weakly interconnected._
 
 ### Low-confidence Hints
-_AMBIGUOUS edges — the extractor was unsure. Verify before acting on these._
-
-- **What is the exact relationship between `robots noindex,nofollow meta (non-homologated demo)` and `robots.txt (Allow all)`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **What is the exact relationship between `Favicon (orange #FF3C00 rounded square)` and `ANIF logo (green shield with checkmark)`?**
-  _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
+_None remaining: the robots.txt/noindex conflict and the favicon/logo mismatch were fixed in the source._
