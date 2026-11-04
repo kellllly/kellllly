@@ -5,14 +5,46 @@
 # - Target is the Express API on port 5000; the Vite frontend proxies /api to it.
 # - The spec is read from the repo (the API does not serve it). Its server URL
 #   is "/api", resolved against app.host.
-# - Unauthenticated baseline: Clerk-protected routes answer 401. An
-#   authentication block (Clerk session token) is still to be added.
+# - Authentication: dedicated Clerk *development* user (role N3, not N1, so
+#   the scan cannot change roles or lock itself out). The command opens a
+#   Clerk session for HAWKSCAN_CLERK_USER_ID and mints a 1-hour session token
+#   using CLERK_SECRET_KEY from the environment (never written here).
+#   Routes reserved to N1 (/api/itsm/users, role changes) answer 403.
 app:
   applicationId: ${APP_ID:087ba86d-158d-4bb1-8169-1d2232dddd9c}
   env: ${APP_ENV:Development}
   host: ${APP_HOST:http://localhost:5000}
   openApiConf:
     filePath: lib/api-spec/openapi.yaml
+  authentication:
+    externalCommand:
+      command: "sh"
+      parameters:
+        - "-c"
+        - |
+          SID=$(curl -s -X POST https://api.clerk.com/v1/sessions \
+            -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"user_id\":\"$HAWKSCAN_CLERK_USER_ID\"}" \
+            | sed -n 's/.*"id":"\(sess_[^"]*\)".*/\1/p')
+          JWT=$(curl -s -X POST "https://api.clerk.com/v1/sessions/$SID/tokens" \
+            -H "Authorization: Bearer $CLERK_SECRET_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"expires_in_seconds":3600}' \
+            | sed -n 's/.*"jwt":"\([^"]*\)".*/\1/p')
+          echo "{\"token\": \"$JWT\", \"headers\": {\"Authorization\": \"Bearer $JWT\"}}"
+      timeoutSeconds: 60
+    tokenExtraction:
+      type: TOKEN_PATH
+      value: "token"
+    tokenAuthorization:
+      type: HEADER
+      value: Authorization
+      tokenType: Bearer
+      isJWT: true
+    testPath:
+      path: /api/itsm
+      success: ".*200.*"
 
 hawk:
   spider:
