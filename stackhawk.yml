@@ -1,0 +1,29 @@
+# HawkScan configuration for the ANIF API (artifacts/api-server).
+# Run the API locally first (see DEVELOPPEMENT.md), then: hawk scan
+#
+# Assumptions recorded by the agent:
+# - Target is the Express API on port 5000; the Vite frontend proxies /api to it.
+# - The spec is read from the repo (the API does not serve it). Its server URL
+#   is "/api", resolved against app.host.
+# - Unauthenticated baseline: Clerk-protected routes answer 401. An
+#   authentication block (Clerk session token) is still to be added.
+app:
+  applicationId: ${APP_ID:087ba86d-158d-4bb1-8169-1d2232dddd9c}
+  env: ${APP_ENV:Development}
+  host: ${APP_HOST:http://localhost:5000}
+  openApiConf:
+    filePath: lib/api-spec/openapi.yaml
+
+hawk:
+  spider:
+    base: false
+
+tags:
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: _STACKHAWK_GIT_COMMIT_SHA
+    value: ${COMMIT_SHA:none}
+  - name: _STACKHAWK_GIT_BRANCH
+    value: ${BRANCH_NAME:none}
+  - name: git_origin
+    value: kellllly/kellllly
