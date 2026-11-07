@@ -3,7 +3,8 @@ import { logger } from "./lib/logger";
 import { createItsmRoleReconciliationMonitor } from "./lib/itsm-workspace";
 import { createItsmRoleArchiveHealthMonitor } from "./lib/itsm-role-archive-monitor";
 import { notifyItsmRoleArchiveAlert } from "./lib/itsm-role-archive-slack-alerts";
-import { checkItsmRoleArchiveAvailability, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
+import { checkItsmRoleArchiveAvailability, recordSlaBreachesNow, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
+import { createSlaBreachMonitor } from "./lib/itsm-sla";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
 
@@ -40,6 +41,7 @@ async function start(): Promise<void> {
       logger,
       notify: notifyItsmRoleArchiveAlert,
     }).start();
+    createSlaBreachMonitor({ recordNow: recordSlaBreachesNow, logger }).start();
     createItsmRoleReconciliationMonitor({
       scan: scanItsmRoleReconciliation,
       logger,

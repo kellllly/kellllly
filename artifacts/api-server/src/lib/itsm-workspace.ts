@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
 import { isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
+import { findNewSlaBreaches, slaBreachAuditEvent, type SlaBreach } from "./itsm-sla.ts";
 
 export type WorkspaceActor = ItsmActor;
 type JsonRecord = Record<string, unknown>;
@@ -75,6 +76,14 @@ export function sealItsmWorkspaceAudit(store: JsonRecord): JsonRecord | null {
 const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Africa/Libreville", hour: "2-digit", minute: "2-digit",
 }).format(now);
+
+/** Journal each SLA breach not recorded yet (see lib/itsm-sla.ts). */
+export function recordItsmSlaBreaches(store: JsonRecord, now = new Date()): { store: JsonRecord; breaches: SlaBreach[] } {
+  const breaches = findNewSlaBreaches(store.tickets, store.audit, now);
+  if (breaches.length === 0) return { store, breaches };
+  const events = breaches.map((breach) => slaBreachAuditEvent(breach, randomUUID(), newStamp(now), shortTime(now)));
+  return { store: { ...store, audit: retainItsmAuditEvents([...events, ...records(store.audit)]) }, breaches };
+}
 
 export type ItsmRoleChangeAuditDetails = {
   actorId: string;
@@ -575,6 +584,9 @@ export function applyWorkspaceUpdate(
     const existing = currentAuditById.get(String(event.id));
     if (ITSM_ROLE_AUDIT_TYPES.includes(event.type as typeof ITSM_ROLE_AUDIT_TYPES[number]) && !existing) {
       throw new ItsmAuthorizationError("Les événements d’habilitation sont créés uniquement par le serveur.");
+    }
+    if (!existing && typeof event.type === "string" && event.type.startsWith("itsm.")) {
+      throw new ItsmAuthorizationError("Les événements système du journal sont créés uniquement par le serveur.");
     }
     if (existing && ITSM_ROLE_AUDIT_TYPES.includes(existing.type as typeof ITSM_ROLE_AUDIT_TYPES[number])
       && !jsonEqual(existing, event)) {

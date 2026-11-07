@@ -40,7 +40,9 @@ import {
   type ItsmRoleSnapshot,
   type ItsmRoleChangeArchiveEvent,
   sealItsmWorkspaceAudit,
+  recordItsmSlaBreaches,
 } from "../lib/itsm-workspace";
+import type { SlaBreach } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
 import { createActorCache } from "../lib/itsm-actor-cache";
 import { createPeopleDirectory, MAX_PEOPLE_PER_REQUEST, parsePeopleIds } from "../lib/itsm-people";
@@ -116,6 +118,15 @@ export async function sealStoredAuditJournal(): Promise<boolean> {
     if (!sealed) return false;
     await saveStore(sealed);
     return true;
+  });
+}
+
+/** Journal the SLA breaches due now; writes only when there is a new one. */
+export async function recordSlaBreachesNow(): Promise<SlaBreach[]> {
+  return withAdminChangeLock(async (store, saveStore) => {
+    const { store: next, breaches } = recordItsmSlaBreaches(store);
+    if (breaches.length) await saveStore(next);
+    return breaches;
   });
 }
 

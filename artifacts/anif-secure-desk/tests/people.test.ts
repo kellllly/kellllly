@@ -28,3 +28,8 @@ test('requests are split in batches the API accepts', () => {
   const ids = Array.from({ length: 205 }, (_, i) => `user_${String(i).padStart(6, '0')}`);
   assert.deepEqual(batches(ids).map((batch) => batch.length), [100, 100, 5]);
 });
+
+test('server accounts in the journal get a readable label', () => {
+  assert.equal(labelPeople('system:sla-monitor', new Map()), 'Surveillance SLA (serveur)');
+  assert.equal(labelPeople('system:itsm-bootstrap', new Map()), 'Initialisation (serveur)');
+});

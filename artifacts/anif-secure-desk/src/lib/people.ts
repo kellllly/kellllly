@@ -27,8 +27,15 @@ export function batches<T>(items: T[], size = PEOPLE_BATCH_SIZE): T[][] {
   return out;
 }
 
+/** Accounts used by the server itself in the journal. */
+const SYSTEM_ACTORS: Readonly<Record<string, string>> = {
+  'system:sla-monitor': 'Surveillance SLA (serveur)',
+  'system:itsm-bootstrap': 'Initialisation (serveur)',
+};
+
 /** Replaces each known user ID inside the text; unknown IDs stay as they are. */
 export function labelPeople(text: string | null | undefined, names: ReadonlyMap<string, string>): string {
   if (!text) return text ?? '';
+  if (SYSTEM_ACTORS[text]) return SYSTEM_ACTORS[text];
   return text.replace(USER_ID, (id) => names.get(id) ?? id);
 }

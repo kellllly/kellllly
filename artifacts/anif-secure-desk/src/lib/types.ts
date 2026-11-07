@@ -40,6 +40,8 @@ export type AuditEvent = {
   ticketId?: string; sourceMessageId?: string; conversationId?: string;
   /** Server-owned hash-chain seal; never set by the browser. */
   seq?: number; prevHash?: string; hash?: string;
+  /** SLA breach recorded by the server. */
+  deadline?: 'acknowledge' | 'resolve'; dueAt?: string; priority?: string; supportLevel?: number; assignee?: string;
 };
 export type KedbArticle = {
   id: string; title: string; symptom: string; rootCause: string; resolution: string;
