@@ -131,6 +131,7 @@ export function findItsmRoleReconciliationIssues(
     const clerkServiceIds = normalizeIds(account.serviceIds);
     const latest = latestByUser.get(account.id)?.event;
     if (!latest) {
+      // Missing evidence does not identify the source of the Clerk role; do not infer bootstrap or manual change.
       findings.push({
         userId: account.id,
         reason: "missing_audit",
