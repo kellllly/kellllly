@@ -95,6 +95,23 @@ paths:
           description: Authentication required
         "403":
           description: The assigned role cannot import examples
+  /itsm/version:
+    get:
+      operationId: getItsmWorkspaceVersion
+      tags: [itsm]
+      summary: Read only the version of the shared ITSM workspace
+      description: Lightweight polling endpoint. Clients fetch the full workspace only when the version changes.
+      responses:
+        "200":
+          description: Current workspace version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmWorkspaceVersion"
+        "401":
+          description: Authentication required
+        "403":
+          description: A role assignment is required or the role lacks permission
   /itsm/audit/export:
     get:
       operationId: exportItsmAudit
@@ -392,6 +409,13 @@ components:
           type: integer
           minimum: 0
       required: [store, version]
+    ItsmWorkspaceVersion:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 0
+      required: [version]
     ItsmWorkspaceConflict:
       type: object
       properties:

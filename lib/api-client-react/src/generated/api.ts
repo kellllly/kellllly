@@ -39,7 +39,8 @@ import type {
   ItsmSaveInput,
   ItsmSnapshot,
   ItsmUserDirectoryPage,
-  ItsmWorkspaceConflict
+  ItsmWorkspaceConflict,
+  ItsmWorkspaceVersion
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -447,6 +448,108 @@ export const useImportItsmExamples = <TError = ErrorType<void>,
       > => {
       return useMutation(getImportItsmExamplesMutationOptions(options), queryClient);
     }
+
+export const getGetItsmWorkspaceVersionUrl = () => {
+
+
+
+
+  return `/api/itsm/version`
+}
+
+/**
+ * Lightweight polling endpoint. Clients fetch the full workspace only when the version changes.
+ * @summary Read only the version of the shared ITSM workspace
+ */
+export const getItsmWorkspaceVersion = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmWorkspaceVersion> => {
+
+  return customFetch<ItsmWorkspaceVersion>(getGetItsmWorkspaceVersionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmWorkspaceVersionQueryKey = () => {
+    return [
+    `/api/itsm/version`
+    ] as const;
+    }
+
+
+export const getGetItsmWorkspaceVersionQueryOptions = <TData = Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmWorkspaceVersionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>> = ({ signal }) => getItsmWorkspaceVersion({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmWorkspaceVersionQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>>
+export type GetItsmWorkspaceVersionQueryError = ErrorType<void>
+
+
+export function useGetItsmWorkspaceVersion<TData = Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmWorkspaceVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmWorkspaceVersion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmWorkspaceVersion<TData = Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmWorkspaceVersion>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmWorkspaceVersion>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmWorkspaceVersion<TData = Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read only the version of the shared ITSM workspace
+ */
+
+export function useGetItsmWorkspaceVersion<TData = Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmWorkspaceVersion>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmWorkspaceVersionQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getExportItsmAuditUrl = (params?: ExportItsmAuditParams,) => {
   const normalizedParams = new URLSearchParams();

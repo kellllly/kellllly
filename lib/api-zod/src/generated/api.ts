@@ -70,6 +70,19 @@ export const ImportItsmExamplesResponse = zod.object({
 
 
 /**
+ * Lightweight polling endpoint. Clients fetch the full workspace only when the version changes.
+ * @summary Read only the version of the shared ITSM workspace
+ */
+export const getItsmWorkspaceVersionResponseVersionMin = 0;
+
+
+
+export const GetItsmWorkspaceVersionResponse = zod.object({
+  "version": zod.number().int().min(getItsmWorkspaceVersionResponseVersionMin)
+})
+
+
+/**
  * @summary Export filtered audit events as CSV
  */
 export const ExportItsmAuditQueryParams = zod.object({

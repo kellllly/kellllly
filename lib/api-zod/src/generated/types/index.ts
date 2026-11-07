@@ -34,3 +34,4 @@ export * from './itsmUserDirectoryAccount';
 export * from './itsmUserDirectoryAccountRole';
 export * from './itsmUserDirectoryPage';
 export * from './itsmWorkspaceConflict';
+export * from './itsmWorkspaceVersion';

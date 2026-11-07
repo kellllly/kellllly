@@ -111,6 +111,11 @@ export interface ItsmSnapshot {
   version: number;
 }
 
+export interface ItsmWorkspaceVersion {
+  /** @minimum 0 */
+  version: number;
+}
+
 export interface ItsmWorkspaceConflict {
   error: string;
   current: ItsmSnapshot;

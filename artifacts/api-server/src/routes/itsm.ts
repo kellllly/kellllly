@@ -8,6 +8,7 @@ import {
   AttestItsmRoleBody,
   AttestItsmRoleResponse,
   GetItsmWorkspaceResponse,
+  GetItsmWorkspaceVersionResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
   ImportItsmExamplesBody,
@@ -330,6 +331,18 @@ router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
     version: row?.version ?? 0,
   });
   res.json(response);
+});
+
+// Polling endpoint: reads only the version column, so idle tabs do not pull
+// the whole workspace (up to ~1 MB) every few seconds.
+router.get("/itsm/version", requireAuth, async (req, res): Promise<void> => {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  requirePermission(actor, "viewWorkspace");
+  const [row] = await db.select({ version: itsmWorkspaceTable.version }).from(itsmWorkspaceTable)
+    .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
+  res.setHeader("Cache-Control", "no-store");
+  res.json(GetItsmWorkspaceVersionResponse.parse({ version: row?.version ?? 0 }));
 });
 
 router.get("/itsm/users", requireAuth, async (req, res): Promise<void> => {

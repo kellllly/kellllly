@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { useClerk, useUser } from '@clerk/react';
-import { getItsmWorkspace, importItsmExamples, saveItsmWorkspace } from '@workspace/api-client-react';
+import { getItsmWorkspace, getItsmWorkspaceVersion, importItsmExamples, saveItsmWorkspace } from '@workspace/api-client-react';
+import { CONNECTION_LOST_MESSAGE, createWorkspacePoller, startVisiblePolling } from '@/lib/workspace-poll';
 import { migrate } from './seed';
 import { readDemoStore, type StorageIssue } from './storage';
 import { RecoveryDraftGuard, recoveryKey, watchRecoveryDraft } from './recovery-draft';
@@ -569,22 +570,26 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
 
   useEffect(() => {
     if (status !== 'ready') return;
-    const timer = window.setInterval(async () => {
-      if (pendingWrites.current || writeBlocked.current) return;
-      try {
-        const latest = await getItsmWorkspace();
-        if (latest.version > version.current) {
-          version.current = latest.version;
-          const hydrated = applySnapshot(storeRef.current, latest.store);
-          storeRef.current = hydrated;
-          lastSynced.current = sharedData(hydrated);
-          setLocalStore(hydrated);
-        }
-      } catch {
-        setIssue({ kind: 'load', message: 'La connexion à l’espace partagé est interrompue. Les données seront rechargées au retour de la connexion.' });
-      }
-    }, 5000);
-    return () => window.clearInterval(timer);
+    const poller = createWorkspacePoller({
+      currentVersion: () => version.current,
+      busy: () => pendingWrites.current > 0 || writeBlocked.current,
+      getVersion: getItsmWorkspaceVersion,
+      getWorkspace: getItsmWorkspace,
+      apply: (latest) => {
+        version.current = latest.version;
+        const hydrated = applySnapshot(storeRef.current, latest.store);
+        storeRef.current = hydrated;
+        lastSynced.current = sharedData(hydrated);
+        setLocalStore(hydrated);
+      },
+      onError: () => {
+        setIssue((current) => current && current.kind === 'save' ? current : { kind: 'load', message: CONNECTION_LOST_MESSAGE });
+      },
+      onRecovered: () => {
+        setIssue((current) => current?.message === CONNECTION_LOST_MESSAGE ? null : current);
+      },
+    });
+    return startVisiblePolling(poller, document, window);
   }, [status]);
 
   const log = useCallback((action: string, scope: string) => {
