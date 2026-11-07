@@ -53,6 +53,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - Chaque sauvegarde envoie tout l’espace partagé : la limite JSON de l’API est de 5 Mo (`ITSM_JSON_BODY_LIMIT`). Ne pas revenir à la limite Express par défaut (100 Ko), qui bloque les sauvegardes après environ 450 événements de journal.
 - CORS est fermé par défaut ; ajouter une origine via `CORS_ALLOWED_ORIGINS` seulement si un client sur un autre domaine en a besoin.
 - Après un refus de sauvegarde autre qu’un conflit, l’onglet recharge l’état serveur et reprend l’enregistrement ; si le rechargement échoue, il reste suspendu et propose « Resynchroniser ».
+- La synchronisation interroge `GET /api/itsm/version` toutes les 5 s (onglet visible uniquement) et ne télécharge l’espace complet que si la version a changé. Ne pas revenir à un sondage de `GET /api/itsm`, qui transférait tout l’espace à chaque tick.
 - En local, définir `API_PROXY_TARGET` pour que Vite relaie `/api`.
 
 ## Pointers
