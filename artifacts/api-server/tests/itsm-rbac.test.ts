@@ -249,6 +249,48 @@ test("audit export sends filtered CSV to authorized roles and no journal data to
   assert.equal(loadCount, 2, "the journal must not be loaded for a role without export permission");
 });
 
+test("audit export adds account names, searches them and survives a directory outage", async (t) => {
+  const events = [
+    { id: "event-role", action: "Rôle attribué", actor: "user_alphaAAAA", targetUserId: "user_bravoBBBB", scope: "Administration", at: "2026-10-30T10:00:00.000Z" },
+    { id: "event-formula", action: "Connexion", actor: "user_formulaFF", scope: "Pilote", at: "2026-10-30T10:30:00.000Z" },
+    { id: "event-legacy", action: "Connexion", actor: "Olivier Nguema", scope: "Pilote", at: "2026-10-30T11:00:00.000Z" },
+  ];
+  let directoryDown = false;
+  let requestedIds: string[] = [];
+  const app = express();
+  app.get("/audit/export", createItsmAuditExportHandler({
+    resolveActor: async () => actor("N1"),
+    loadAuditEvents: async () => events,
+    resolveNames: async (ids) => {
+      requestedIds = ids;
+      if (directoryDown) throw new Error("Clerk unavailable");
+      return new Map([["user_alphaAAAA", "Awa Mba"], ["user_bravoBBBB", "Paul Nziengui"], ["user_formulaFF", "=HYPERLINK(\"x\")"]]);
+    },
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  t.after(() => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+  await new Promise<void>((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}/audit/export`;
+
+  const csv = await (await fetch(base)).text();
+  const [header, roleRow] = csv.replace(/^\uFEFF/u, "").split("\r\n");
+  assert.match(header, /"Acteur";"Nom de l’acteur";"Compte cible";"Nom du compte cible"/);
+  assert.match(roleRow, /"user_alphaAAAA";"Awa Mba";"user_bravoBBBB";"Paul Nziengui"/);
+  assert.deepEqual(requestedIds.sort(), ["user_alphaAAAA", "user_bravoBBBB", "user_formulaFF"], "only Clerk IDs are looked up");
+  assert.match(csv, /"'=HYPERLINK\(""x""\)"/, "a name cannot inject a spreadsheet formula");
+
+  const byName = await (await fetch(`${base}?q=nziengui`)).text();
+  assert.match(byName, /event-role/);
+  assert.doesNotMatch(byName, /event-legacy/);
+
+  directoryDown = true;
+  const degraded = await fetch(base);
+  assert.equal(degraded.status, 200);
+  assert.match(await degraded.text(), /"user_alphaAAAA";"";"user_bravoBBBB";""/);
+});
+
 test("only N1 can assign ITSM roles", () => {
   assert.equal(canPerform(actor("N1"), "assignRole"), true);
   for (const role of ["N2", "N3", "N4", "N5"] as const) {

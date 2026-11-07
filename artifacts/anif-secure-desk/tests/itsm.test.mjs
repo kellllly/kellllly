@@ -109,7 +109,7 @@ test('server audit download neutralizes formulas and escapes CSV cell content', 
   assert.match(response.headers['Content-Type'], /text\/csv; charset=utf-8/);
   assert.match(response.headers['Content-Disposition'], /attachment; filename="journal-anif-/);
   assert.ok(csv.startsWith('﻿'));
-  assert.ok(csv.includes('"-2";"\'=SUM(A1)";"\'+CMD";"\'-CMD";"\'  =1+1";"\'﻿=1+1";"\'\t=1+1";"service;""one""";"Messagerie; ""centrale""\njour";"2026-10-31T09:00:00.000Z"'));
+  assert.ok(csv.includes('"-2";"\'=SUM(A1)";"\'+CMD";"";"\'-CMD";"";"\'  =1+1";"\'﻿=1+1";"\'\t=1+1";"service;""one""";"Messagerie; ""centrale""\njour";"2026-10-31T09:00:00.000Z"'));
   assert.ok(!csv.includes('"=SUM(A1)"'));
   assert.ok(!csv.includes('"+CMD"'));
   assert.ok(!csv.includes('"-CMD"'));
@@ -420,4 +420,16 @@ test('journal without date bounds keeps historical events without timestamps', (
   assert.deepEqual(filterAuditEvents([legacy], {
     scope: 'Tous', from: '', to: '', query: '',
   }), [legacy]);
+});
+
+test('audit search also matches the names shown in place of account IDs', () => {
+  const audit = [
+    { id: 'a1', action: 'Rôle attribué', actor: 'user_alphaAAAA', targetUserId: 'user_bravoBBBB', scope: 'Administration', time: '10:00' },
+    { id: 'a2', action: 'Connexion', actor: 'Olivier Nguema', scope: 'Pilote', time: '11:00' },
+  ];
+  const names = new Map([['user_alphaAAAA', 'Awa Mba'], ['user_bravoBBBB', 'Paul Nziengui']]);
+  const label = (text) => (text ? names.get(text) ?? text : '');
+  const filters = { scope: 'Tous', query: 'nziengui', from: '', to: '' };
+  assert.deepEqual(filterAuditEvents(audit, filters, label).map((event) => event.id), ['a1']);
+  assert.deepEqual(filterAuditEvents(audit, filters).map((event) => event.id), [], 'without names only raw IDs are searched');
 });

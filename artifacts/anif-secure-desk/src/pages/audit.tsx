@@ -19,8 +19,8 @@ export default function AuditPage() { const { person } = usePeople();
   const scopes = useMemo(() => Array.from(new Set(store.audit.map(e => e.scope))).sort((a, b) => a.localeCompare(b, 'fr')), [store.audit]);
   const dated = !!(from || to);
   const { events, filterError } = useMemo(
-    () => getAuditFilterResult(store.audit, { scope, query, from, to }),
-    [store.audit, scope, query, from, to],
+    () => getAuditFilterResult(store.audit, { scope, query, from, to }, person),
+    [store.audit, scope, query, from, to, person],
   );
   const legacyCount = store.audit.filter(e => !e.at).length;
 

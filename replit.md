@@ -54,7 +54,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 - CORS est fermé par défaut ; ajouter une origine via `CORS_ALLOWED_ORIGINS` seulement si un client sur un autre domaine en a besoin.
 - Après un refus de sauvegarde autre qu’un conflit, l’onglet recharge l’état serveur et reprend l’enregistrement ; si le rechargement échoue, il reste suspendu et propose « Resynchroniser ».
 - La synchronisation interroge `GET /api/itsm/version` toutes les 5 s (onglet visible uniquement) et ne télécharge l’espace complet que si la version a changé. Ne pas revenir à un sondage de `GET /api/itsm`, qui transférait tout l’espace à chaque tick.
-- Auteurs, demandeurs et acteurs du journal restent stockés sous leur identifiant Clerk (`user_…`). L’interface les remplace à l’affichage via `GET /api/itsm/people?ids=…` (nom seulement, jamais d’e-mail ni de rôle, 100 identifiants max, cache serveur de 5 min). Ne pas stocker les noms à la place des identifiants : « mes messages » et les contrôles de l’API reposent sur l’identifiant.
+- Auteurs, demandeurs et acteurs du journal restent stockés sous leur identifiant Clerk (`user_…`). L’interface les remplace à l’affichage via `GET /api/itsm/people?ids=…` (nom seulement, jamais d’e-mail ni de rôle, 100 identifiants max, cache serveur de 5 min). Ne pas stocker les noms à la place des identifiants : « mes messages » et les contrôles de l’API reposent sur l’identifiant. L’export CSV du journal ajoute les colonnes « Nom de l’acteur » et « Nom du compte cible » (vides si l’annuaire Clerk est indisponible : l’export reste possible), et la recherche du journal porte aussi sur ces noms, à l’écran comme dans l’export.
 - En local, définir `API_PROXY_TARGET` pour que Vite relaie `/api`.
 
 ## Pointers

@@ -39,7 +39,7 @@ import {
   type ItsmRoleChangeArchiveEvent,
 } from "../lib/itsm-workspace";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
-import { createPeopleDirectory, parsePeopleIds } from "../lib/itsm-people";
+import { createPeopleDirectory, MAX_PEOPLE_PER_REQUEST, parsePeopleIds } from "../lib/itsm-people";
 import {
   canChangeItsmRole,
   isBootstrapAdmin,
@@ -511,6 +511,13 @@ router.get("/itsm/audit/export", requireAuth, createItsmAuditExportHandler({
     const [row] = await db.select().from(itsmWorkspaceTable)
       .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
     return Array.isArray(row?.store?.audit) ? row.store.audit : [];
+  },
+  resolveNames: async (ids) => {
+    const people = [];
+    for (let i = 0; i < ids.length; i += MAX_PEOPLE_PER_REQUEST) {
+      people.push(...await resolvePeople(ids.slice(i, i + MAX_PEOPLE_PER_REQUEST)));
+    }
+    return new Map(people.map((person) => [person.userId, person.name]));
   },
 }));
 
