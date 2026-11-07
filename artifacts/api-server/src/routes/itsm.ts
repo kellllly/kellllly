@@ -109,6 +109,7 @@ export async function withAdminChangeLock<T>(
 }
 
 export async function scanItsmRoleReconciliation() {
+  // This read-only comparison reports current state only; it cannot reconstruct how an unjournaled role was granted.
   const accounts: ItsmRoleSnapshot[] = [];
   let offset = 0;
   const limit = 100;
