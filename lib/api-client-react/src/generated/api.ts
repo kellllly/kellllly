@@ -28,9 +28,11 @@ import type {
   DevelopmentRoleArchiveEnvelope,
   DevelopmentRoleArchiveReceipt,
   ExportItsmAuditParams,
+  GetItsmPeopleParams,
   GetItsmUserDirectoryParams,
   HealthStatus,
   ItsmImportInput,
+  ItsmPeople,
   ItsmRoleArchiveCheckResponse,
   ItsmRoleAssignment,
   ItsmRoleAssignmentInput,
@@ -539,6 +541,115 @@ export function useGetItsmWorkspaceVersion<TData = Awaited<ReturnType<typeof get
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetItsmWorkspaceVersionQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmPeopleUrl = (params: GetItsmPeopleParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/itsm/people?${stringifiedParams}` : `/api/itsm/people`
+}
+
+/**
+ * Returns a display name for each requested Clerk user ID. No e-mail, role or service scope is returned.
+ * @summary Resolve account IDs to display names
+ */
+export const getItsmPeople = async (params: GetItsmPeopleParams, options?: Parameters<typeof customFetch>[1]): Promise<ItsmPeople> => {
+
+  return customFetch<ItsmPeople>(getGetItsmPeopleUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmPeopleQueryKey = (params?: GetItsmPeopleParams,) => {
+    return [
+    `/api/itsm/people`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetItsmPeopleQueryOptions = <TData = Awaited<ReturnType<typeof getItsmPeople>>, TError = ErrorType<void>>(params: GetItsmPeopleParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmPeopleQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmPeople>>> = ({ signal }) => getItsmPeople(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmPeopleQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmPeople>>>
+export type GetItsmPeopleQueryError = ErrorType<void>
+
+
+export function useGetItsmPeople<TData = Awaited<ReturnType<typeof getItsmPeople>>, TError = ErrorType<void>>(
+ params: GetItsmPeopleParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmPeople>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmPeople>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmPeople<TData = Awaited<ReturnType<typeof getItsmPeople>>, TError = ErrorType<void>>(
+ params: GetItsmPeopleParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmPeople>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmPeople>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmPeople<TData = Awaited<ReturnType<typeof getItsmPeople>>, TError = ErrorType<void>>(
+ params: GetItsmPeopleParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Resolve account IDs to display names
+ */
+
+export function useGetItsmPeople<TData = Awaited<ReturnType<typeof getItsmPeople>>, TError = ErrorType<void>>(
+ params: GetItsmPeopleParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmPeople>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmPeopleQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

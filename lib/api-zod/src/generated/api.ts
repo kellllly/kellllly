@@ -83,6 +83,26 @@ export const GetItsmWorkspaceVersionResponse = zod.object({
 
 
 /**
+ * Returns a display name for each requested Clerk user ID. No e-mail, role or service scope is returned.
+ * @summary Resolve account IDs to display names
+ */
+export const getItsmPeopleQueryIdsMax = 7000;
+
+
+
+export const GetItsmPeopleQueryParams = zod.object({
+  "ids": zod.coerce.string().max(getItsmPeopleQueryIdsMax).describe('Comma-separated Clerk user IDs (at most 100)')
+})
+
+export const GetItsmPeopleResponse = zod.object({
+  "people": zod.array(zod.object({
+  "userId": zod.string(),
+  "name": zod.string()
+}))
+})
+
+
+/**
  * @summary Export filtered audit events as CSV
  */
 export const ExportItsmAuditQueryParams = zod.object({

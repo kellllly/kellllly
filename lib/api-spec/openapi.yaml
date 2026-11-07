@@ -112,6 +112,33 @@ paths:
           description: Authentication required
         "403":
           description: A role assignment is required or the role lacks permission
+  /itsm/people:
+    get:
+      operationId: getItsmPeople
+      tags: [itsm]
+      summary: Resolve account IDs to display names
+      description: Returns a display name for each requested Clerk user ID. No e-mail, role or service scope is returned.
+      parameters:
+        - in: query
+          name: ids
+          required: true
+          description: Comma-separated Clerk user IDs (at most 100)
+          schema: { type: string, maxLength: 7000 }
+      responses:
+        "200":
+          description: Display names, in request order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmPeople"
+        "400":
+          description: Missing, malformed or too many IDs
+        "401":
+          description: Authentication required
+        "403":
+          description: A role assignment is required or the role lacks permission
+        "503":
+          description: Account directory is temporarily unavailable
   /itsm/audit/export:
     get:
       operationId: exportItsmAudit
@@ -409,6 +436,20 @@ components:
           type: integer
           minimum: 0
       required: [store, version]
+    ItsmPerson:
+      type: object
+      properties:
+        userId: { type: string }
+        name: { type: string }
+      required: [userId, name]
+    ItsmPeople:
+      type: object
+      properties:
+        people:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItsmPerson"
+      required: [people]
     ItsmWorkspaceVersion:
       type: object
       properties:

@@ -9,6 +9,7 @@ import {
   AttestItsmRoleResponse,
   GetItsmWorkspaceResponse,
   GetItsmWorkspaceVersionResponse,
+  GetItsmPeopleResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
   ImportItsmExamplesBody,
@@ -38,6 +39,7 @@ import {
   type ItsmRoleChangeArchiveEvent,
 } from "../lib/itsm-workspace";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
+import { createPeopleDirectory, parsePeopleIds } from "../lib/itsm-people";
 import {
   canChangeItsmRole,
   isBootstrapAdmin,
@@ -343,6 +345,27 @@ router.get("/itsm/version", requireAuth, async (req, res): Promise<void> => {
     .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
   res.setHeader("Cache-Control", "no-store");
   res.json(GetItsmWorkspaceVersionResponse.parse({ version: row?.version ?? 0 }));
+});
+
+const resolvePeople = createPeopleDirectory(async (ids) =>
+  (await clerkClient.users.getUserList({ userId: ids, limit: ids.length })).data);
+
+router.get("/itsm/people", requireAuth, async (req, res): Promise<void> => {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  requirePermission(actor, "viewWorkspace");
+  const ids = parsePeopleIds(req.query.ids);
+  if (!ids) {
+    res.status(400).json({ error: "Liste d’identifiants invalide (100 comptes au maximum)." });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.json(GetItsmPeopleResponse.parse({ people: await resolvePeople(ids) }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not resolve ITSM people names");
+    res.status(503).json({ error: "Impossible de charger les noms des comptes." });
+  }
 });
 
 router.get("/itsm/users", requireAuth, async (req, res): Promise<void> => {

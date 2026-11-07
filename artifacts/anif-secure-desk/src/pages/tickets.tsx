@@ -7,10 +7,11 @@ import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, closeResolvedTicket, isOpen, 
 import type { Level, Ticket } from '@/lib/types';
 import { Badge, Button, EmptyState, Field, Modal, SearchBox, Warning, textareaCls } from '@/components/kit';
 import { SlaBar, TicketForm, emptyDraft, fmtMinutes, type TicketDraft } from '@/components/ticket-parts';
+import { usePeople } from '@/hooks/use-people';
 
 type Dialog = null | 'create' | 'edit' | 'resolve' | 'confirm' | 'cab';
 
-export default function TicketsPage() {
+export default function TicketsPage() { const { person } = usePeople();
   const { store, setStore, log } = useStore();
   const now = useNow(1000);
   const search = useSearch();
@@ -49,7 +50,7 @@ export default function TicketsPage() {
     (kindF === 'Tous' || t.kind === kindF) &&
     (statusF === 'Tous' || (statusF === 'Ouverts' ? isOpen(t) : t.status === statusF)) &&
     (prioF === 'Toutes' || t.priority === prioF) &&
-    `${t.id} ${t.title} ${t.category} ${t.requester} ${t.assignee} ${t.kind}`.toLowerCase().includes(query.toLowerCase())
+    `${t.id} ${t.title} ${t.category} ${person(t.requester)} ${t.assignee} ${t.kind}`.toLowerCase().includes(query.toLowerCase())
   ).sort((a, b) => Number(!isOpen(a)) - Number(!isOpen(b)) || a.priority.localeCompare(b.priority) || b.openedAt.localeCompare(a.openedAt)), [store.tickets, kindF, statusF, prioF, query]);
   const ticket: Ticket | null = filtered.find(t => t.id === active) ?? filtered[0] ?? null;
   const hiddenActive = active && !filtered.some(t => t.id === active) && store.tickets.some(t => t.id === active);
@@ -89,7 +90,7 @@ export default function TicketsPage() {
         <div className="max-h-[560px] overflow-y-auto">{filtered.map(t => { const sla = ticketSla(t, now); const hot = isOpen(t) && t.status !== 'Résolu' && [!t.acknowledgedAt && sla.ack.state, !t.resolvedAt && sla.res.state].find(x => x === 'breach' || x === 'warning'); return <button key={t.id} data-testid={`row-ticket-${t.id}`} onClick={() => setActive(t.id)} className={`w-full border-t border-border/70 px-4 py-3.5 text-left hover:bg-muted/50 ${ticket?.id === t.id ? 'bg-[#edf3ed] dark:bg-[#263b36]' : ''}`}>
           <div className="flex items-center justify-between gap-2"><span className="mono text-[10px] text-muted-foreground">{t.id} · {t.kind} · L{t.supportLevel}</span><div className="flex items-center gap-1.5">{hot && <span title={hot === 'breach' ? 'Délai dépassé' : 'Seuil d’alerte'} className={`h-2 w-2 rounded-full ${hot === 'breach' ? 'bg-[#c0574a]' : 'bg-[#c88e43]'}`} />}<Badge tone={priorityTone(t.priority)}>{t.priority}</Badge></div></div>
           <div className="mt-1.5 break-words text-[12px] font-semibold leading-snug">{t.title}</div>
-          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span className="truncate">{t.category} · {t.requester}</span><Badge tone={statusTone(t.status)}>{t.status}</Badge></div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span className="truncate">{t.category} · {person(t.requester)}</span><Badge tone={statusTone(t.status)}>{t.status}</Badge></div>
         </button>; })}
           {!filtered.length && <div className="p-6"><EmptyState title="Aucun ticket pour cette sélection" text="Aucun ticket ne correspond aux filtres. Aucun détail n’est affiché." /></div>}
         </div>
@@ -119,7 +120,7 @@ function FilterSel({ label, value, onChange, opts }: { label: string; value: str
   return <label className="min-w-0 text-[9px] font-semibold uppercase tracking-[.1em] text-muted-foreground">{label}<select data-testid={`filter-${label.toLowerCase()}`} aria-label={`Filtrer par ${label.toLowerCase()}`} value={value} onChange={e => onChange(e.target.value)} className="mt-1 h-9 w-full min-w-0 max-w-full rounded-lg border border-border bg-card px-2 text-[11px] font-normal normal-case tracking-normal text-foreground">{opts.map(o => <option key={o}>{o}</option>)}</select></label>;
 }
 
-function TicketDetail({ ticket, now, onDialog, event, notify, comment, setComment }: { ticket: Ticket; now: number; onDialog: (d: Dialog) => void; event: (id: string, body: string, patch?: Partial<Ticket>, audit?: string) => void; notify: (id: string, title: string, body: string) => void; comment: string; setComment: (v: string) => void }) {
+function TicketDetail({ ticket, now, onDialog, event, notify, comment, setComment }: { ticket: Ticket; now: number; onDialog: (d: Dialog) => void; event: (id: string, body: string, patch?: Partial<Ticket>, audit?: string) => void; notify: (id: string, title: string, body: string) => void; comment: string; setComment: (v: string) => void }) { const { person } = usePeople();
   const { store } = useStore();
   const sla = ticketSla(ticket, now);
   const policy = SLA_POLICIES[ticket.priority];
@@ -167,7 +168,7 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
     <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">{[['Impact / urgence', `${LEVEL_LABEL[ticket.impact]} / ${LEVEL_LABEL[ticket.urgency]}`], ['Catégorie', ticket.category], ['Demandeur', ticket.requester], ['Assignation', ticket.assignee]].map(([l, v]) => <div key={l} className="min-w-0 rounded-lg border border-border/70 p-3"><div className="eyebrow">{l}</div><div className="mt-1 truncate text-[11px] font-semibold">{v}</div></div>)}</div>
     {(service || asset || conv || ticket.sourceMessageId || ticket.legacyPriority) && <div className="mt-3 flex flex-wrap gap-2 text-[10px]">{service && <Link href="/services" className="rounded-full border border-border px-2.5 py-1 font-semibold hover:bg-muted">Service : {service.name}</Link>}{asset && <Link href="/assets" className="rounded-full border border-border px-2.5 py-1 font-semibold hover:bg-muted">Équipement : {asset.id}</Link>}{conv && <Link href={`/messages?c=${encodeURIComponent(conv.id)}`} className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-semibold hover:bg-muted"><MessageSquare size={11} />Discussion liée : {conv.title}</Link>}{ticket.sourceMessageId && (conv ? <Link href={`/messages?c=${encodeURIComponent(conv.id)}&m=${encodeURIComponent(ticket.sourceMessageId)}`} data-testid={`link-source-message-${ticket.id}`} aria-label={`Ouvrir le message source ${ticket.sourceMessageId} dans ${conv.title}`} className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 font-semibold text-primary hover:bg-primary/10"><MessageSquare size={11} />Message source : {ticket.sourceMessageId}</Link> : <span data-testid={`text-source-message-${ticket.id}`} className="rounded-full border border-border px-2.5 py-1 font-semibold text-muted-foreground">Message source : {ticket.sourceMessageId}</span>)}{ticket.legacyPriority && <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">Priorité historique : {ticket.legacyPriority}</span>}</div>}
 
-    {ticket.cab && <div className={`mt-4 rounded-lg border p-3 text-[11px] ${ticket.cab.decision === 'Approuvé' ? 'border-[#9fc7b3] bg-[#e1efe7]/60 dark:bg-[#214238]/50' : 'border-[#d39b90] bg-[#f5e2df]/60 dark:bg-[#4c302d]/50'}`}><div className="font-semibold">CAB : {ticket.cab.decision} <span className="font-normal text-muted-foreground">· {ticket.cab.by} · {formatWAT(ticket.cab.at, 'datetime')}</span></div>{ticket.cab.reason && <p className="mt-1 text-muted-foreground">{ticket.cab.reason}</p>}</div>}
+    {ticket.cab && <div className={`mt-4 rounded-lg border p-3 text-[11px] ${ticket.cab.decision === 'Approuvé' ? 'border-[#9fc7b3] bg-[#e1efe7]/60 dark:bg-[#214238]/50' : 'border-[#d39b90] bg-[#f5e2df]/60 dark:bg-[#4c302d]/50'}`}><div className="font-semibold">CAB : {ticket.cab.decision} <span className="font-normal text-muted-foreground">· {person(ticket.cab.by)} · {formatWAT(ticket.cab.at, 'datetime')}</span></div>{ticket.cab.reason && <p className="mt-1 text-muted-foreground">{ticket.cab.reason}</p>}</div>}
 
     <div className="mt-5 min-w-0"><div className="eyebrow mb-2">DESCRIPTION</div><p className="break-words whitespace-pre-wrap rounded-lg border border-border/70 bg-[#f8f7f2] p-4 text-[12px] leading-relaxed text-foreground/85 dark:bg-[#1b2a2e]">{ticket.description}</p></div>
     {(ticket.rootCause || ticket.resolution) && <div className="mt-4 grid gap-3 md:grid-cols-2"><div className="rounded-lg border border-border/70 p-3"><div className="eyebrow">CAUSE RACINE</div><p className="mt-1 text-[11px] leading-relaxed">{ticket.rootCause}</p></div><div className="rounded-lg border border-border/70 p-3"><div className="eyebrow">RÉSOLUTION</div><p className="mt-1 text-[11px] leading-relaxed">{ticket.resolution}</p></div></div>}
@@ -175,7 +176,7 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
 
     <div className="mt-6"><div className="flex items-center justify-between"><div className="eyebrow">HISTORIQUE D’ACTIVITÉ</div><Badge>{ticket.updates.length} entrée(s)</Badge></div>
       {open && <form onSubmit={e => { e.preventDefault(); if (!comment.trim()) return; event(ticket.id, comment.trim(), {}, `Commentaire ajouté au ticket ${ticket.id}`); setComment(''); }} className="mt-3 flex gap-2"><input data-testid="input-ticket-comment" value={comment} onChange={e => setComment(e.target.value)} placeholder="Ajouter une note de suivi technique…" className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 text-[12px]" /><Button type="submit" disabled={!comment.trim()} testId="button-ticket-comment"><Send size={13} /></Button></form>}
-      {ticket.updates.length ? <ol className="mt-4 space-y-3">{[...ticket.updates].reverse().map((u, i) => <li key={i} className="flex gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" /><div><div className="text-[11px] font-semibold">{u.author}<span className="mono ml-2 text-[10px] font-normal text-muted-foreground">{u.at ? formatWAT(u.at, 'datetime') : u.time}</span></div><p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{u.body}</p></div></li>)}</ol> : <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center text-[11px] text-muted-foreground">Aucune activité enregistrée.</div>}
+      {ticket.updates.length ? <ol className="mt-4 space-y-3">{[...ticket.updates].reverse().map((u, i) => <li key={i} className="flex gap-3"><div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" /><div><div className="text-[11px] font-semibold">{person(u.author)}<span className="mono ml-2 text-[10px] font-normal text-muted-foreground">{u.at ? formatWAT(u.at, 'datetime') : u.time}</span></div><p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{u.body}</p></div></li>)}</ol> : <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center text-[11px] text-muted-foreground">Aucune activité enregistrée.</div>}
     </div>
   </section>;
 }
@@ -192,11 +193,11 @@ function ResolveDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: (
   </Modal>;
 }
 
-function ConfirmDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: () => void; onDone: () => void }) {
+function ConfirmDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: () => void; onDone: () => void }) { const { person } = usePeople();
   const [checked, setChecked] = useState(false);
   return <Modal title={`Clôturer ${ticket.id}`} description="Confirmation du demandeur simulée : aucun message n’est réellement envoyé ou reçu." onClose={onClose}>
-    <div className="space-y-3 text-[11px]"><div className="rounded-lg bg-muted/70 p-3"><div className="eyebrow">DEMANDEUR</div><div className="mt-1 font-semibold">{ticket.requester}</div></div><div className="rounded-lg border border-border p-3"><div className="eyebrow">RÉSOLUTION</div><p className="mt-1 leading-relaxed text-muted-foreground">{ticket.resolution}</p></div>
-      <label className="flex items-start gap-2.5 rounded-lg border border-border p-3"><input data-testid="checkbox-confirm-requester" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} className="mt-0.5 accent-[hsl(var(--primary))]" /><span>Je simule l’accord explicite de {ticket.requester} sur la résolution. Un seul article sera ajouté à la base d’erreurs connues, lié à ce ticket.</span></label>
+    <div className="space-y-3 text-[11px]"><div className="rounded-lg bg-muted/70 p-3"><div className="eyebrow">DEMANDEUR</div><div className="mt-1 font-semibold">{person(ticket.requester)}</div></div><div className="rounded-lg border border-border p-3"><div className="eyebrow">RÉSOLUTION</div><p className="mt-1 leading-relaxed text-muted-foreground">{ticket.resolution}</p></div>
+      <label className="flex items-start gap-2.5 rounded-lg border border-border p-3"><input data-testid="checkbox-confirm-requester" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} className="mt-0.5 accent-[hsl(var(--primary))]" /><span>Je simule l’accord explicite de {person(ticket.requester)} sur la résolution. Un seul article sera ajouté à la base d’erreurs connues, lié à ce ticket.</span></label>
       <div className="flex justify-end gap-2 pt-1"><Button variant="outline" onClick={onClose}>Annuler</Button><Button disabled={!checked} onClick={onDone} testId="button-submit-close"><CheckCheck size={14} />Clore et publier dans la KEDB</Button></div></div>
   </Modal>;
 }

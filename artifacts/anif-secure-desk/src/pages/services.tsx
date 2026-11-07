@@ -5,6 +5,7 @@ import { formatWAT } from '@/lib/itsm';
 import { useStore } from '@/lib/store';
 import type { KedbArticle } from '@/lib/types';
 import { Badge, Button, EmptyState, MiniStat, Modal, SearchBox, SectionTitle, Warning, pad2 } from '@/components/kit';
+import { usePeople } from '@/hooks/use-people';
 
 const guides = [
   { title: 'Accéder à la messagerie collaborative', category: 'Collaboration', time: '3 min', body: 'Ouvrez votre espace de travail depuis le menu latéral, puis sélectionnez la conversation souhaitée. Vérifiez le nom de l’espace avant d’envoyer un message. Cette procédure de démonstration ne remplace pas les consignes internes.' },
@@ -12,7 +13,7 @@ const guides = [
   { title: 'Préparer son poste de travail', category: 'Équipement', time: '5 min', body: 'Vérifiez l’alimentation, la connexion réseau et l’état des périphériques. En cas de problème persistant, ouvrez une demande depuis le Parc matériel : le numéro d’inventaire est prérempli.' },
 ];
 
-export default function ServicesPage() {
+export default function ServicesPage() { const { person } = usePeople();
   const { store, log } = useStore();
   const readOnlyAuditor = store.profile.clearance.startsWith('N5 ·');
   const search = useSearch(); const [, setLocation] = useLocation();
@@ -44,6 +45,6 @@ export default function ServicesPage() {
 
     {guide && <Modal title={guide} onClose={() => setGuide(null)}><p className="text-[12px] leading-7 text-muted-foreground">{guides.find(a => a.title === guide)?.body}</p><div className="mt-5 rounded-lg bg-muted/70 p-3 text-[10px] leading-relaxed text-muted-foreground">Fiche fictive de prototype. Les procédures officielles restent celles communiquées par l’agence.</div><div className="mt-4 flex justify-end"><Button onClick={() => setGuide(null)}>Fermer</Button></div></Modal>}
     {svc && <Modal title={svc.name} description={`${svc.category} · ${svc.owner}`} onClose={() => setService(null)}><p className="text-[12px] leading-relaxed text-muted-foreground">{svc.description}</p><div className="mt-4 grid grid-cols-2 gap-2">{[['État', svc.status], ['Engagement affiché', svc.sla], ['Tickets ouverts', String(openCount(svc.id))], ['Référence', svc.id]].map(([k, v]) => <div key={k} className="rounded-lg bg-muted/60 p-3"><div className="eyebrow">{k}</div><div className="mt-1 text-[11px] font-semibold">{v}</div></div>)}</div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setService(null)}>Fermer</Button><Link href={`/tickets?new=1&service=${svc.id}`} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground"><Plus size={14} />Demander ce service</Link></div></Modal>}
-    {article && <Modal wide title={article.title} description={`${article.id} · publié le ${formatWAT(article.createdAt, 'datetime')} par ${article.author}`} onClose={() => setArticle(null)}><div className="space-y-3 text-[12px]">{[['Symptôme', article.symptom], ['Cause racine', article.rootCause], ['Résolution', article.resolution]].map(([k, v]) => <div key={k} className="rounded-lg border border-border p-3"><div className="eyebrow">{k}</div><p className="mt-1 whitespace-pre-wrap leading-relaxed">{v}</p></div>)}</div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setArticle(null)}>Fermer</Button>{!readOnlyAuditor && <Link data-testid="link-kedb-source" href={`/tickets?ticket=${encodeURIComponent(article.ticketId)}`} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground">Ticket source {article.ticketId}<ArrowRight size={13} /></Link>}</div></Modal>}
+    {article && <Modal wide title={article.title} description={`${article.id} · publié le ${formatWAT(article.createdAt, 'datetime')} par ${person(article.author)}`} onClose={() => setArticle(null)}><div className="space-y-3 text-[12px]">{[['Symptôme', article.symptom], ['Cause racine', article.rootCause], ['Résolution', article.resolution]].map(([k, v]) => <div key={k} className="rounded-lg border border-border p-3"><div className="eyebrow">{k}</div><p className="mt-1 whitespace-pre-wrap leading-relaxed">{v}</p></div>)}</div><div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setArticle(null)}>Fermer</Button>{!readOnlyAuditor && <Link data-testid="link-kedb-source" href={`/tickets?ticket=${encodeURIComponent(article.ticketId)}`} className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground">Ticket source {article.ticketId}<ArrowRight size={13} /></Link>}</div></Modal>}
   </div>;
 }
