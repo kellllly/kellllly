@@ -10,7 +10,7 @@ import {
 } from './recovery-draft';
 import {
   changedPaths, confirmSharedRecovery, conflictDetails, mergeSharedChanges, RecoveryFlightGuard,
-  recoveryEditDetails, serverRefusalReason, type ConflictChoices,
+  rebaseAfterSave, recoveryEditDetails, serverRefusalReason, type ConflictChoices,
 } from './sync-recovery';
 import { saveRefusalOutcome, SUSPENDED_EDIT_MESSAGE } from './save-refusal';
 import type { Store } from './types';
@@ -408,17 +408,27 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     const before = JSON.stringify(sharedData(previous));
     const after = JSON.stringify(sharedData(next));
     if (status === 'ready' && before !== after) {
-      const captured = sharedData(next);
       const generation = writeGeneration.current;
       pendingWrites.current += 1;
       writeQueue.current = writeQueue.current.then(async () => {
-        if (writeBlocked.current || generation !== writeGeneration.current) return;
+        if (writeBlocked.current || generation !== writeGeneration.current) {
+          pendingWrites.current -= 1;
+          return;
+        }
         try {
-          const saved = await saveItsmWorkspace({ store: captured, version: version.current });
+          // Send the latest local state, not the one captured when the edit was
+          // queued: an earlier save may have replaced client message IDs with the
+          // server's, and replaying the stale IDs would be refused as a rewrite.
+          const sent = sharedData(storeRef.current);
+          if (JSON.stringify(sent) === JSON.stringify(lastSynced.current)) return;
+          const saved = await saveItsmWorkspace({ store: sent, version: version.current });
           version.current = saved.version;
-          const canonical = applySnapshot(storeRef.current, saved.store);
+          const savedShared = sharedData(applySnapshot(storeRef.current, saved.store));
+          // Keep edits made while this save was in flight; the next queued write sends them.
+          const rebased = rebaseAfterSave(sent, sharedData(storeRef.current), savedShared);
+          const canonical = applySnapshot(storeRef.current, rebased as unknown as Record<string, unknown>);
           storeRef.current = canonical;
-          lastSynced.current = sharedData(canonical);
+          lastSynced.current = savedShared;
           setLocalStore(canonical);
         } catch (error) {
           blockWrites(true);

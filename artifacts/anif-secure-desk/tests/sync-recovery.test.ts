@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   changedPaths, choicesForRecoveryVersion, confirmSharedRecovery, conflictDetails, mergeSharedChanges,
-  RecoveryFlightGuard,
+  RecoveryFlightGuard, rebaseAfterSave,
 } from '../src/lib/sync-recovery.ts';
 
 test('recovery combines independent ticket edits while preserving both writers', () => {
@@ -225,4 +225,26 @@ test('network failure preserves local and independent edits without retrying', a
   assert.deepEqual(attemptedValue?.audit, [{ id: 'remote-audit' }, { id: 'local-audit' }]);
   assert.deepEqual(local, draftBefore, 'the saved local draft must remain unchanged');
   assert.equal(puts, 1, 'a network failure must not trigger an automatic retry');
+});
+
+test('a save adopts server message IDs and keeps the read count changed while it was in flight', () => {
+  const sent = { conversations: [{ id: 'C-1', readCount: 1, messages: [{ id: 'm-old', body: 'Ancien' }, { id: 'client-1', body: 'Nouveau' }] }] };
+  const local = { conversations: [{ id: 'C-1', readCount: 2, messages: [{ id: 'm-old', body: 'Ancien' }, { id: 'client-1', body: 'Nouveau' }] }] };
+  const saved = { conversations: [{ id: 'C-1', readCount: 1, messages: [{ id: 'm-old', body: 'Ancien' }, { id: 'server-1', body: 'Nouveau', author: 'user_a' }] }] };
+  assert.deepEqual(rebaseAfterSave(sent, local, saved), {
+    conversations: [{ id: 'C-1', readCount: 2, messages: [{ id: 'm-old', body: 'Ancien' }, { id: 'server-1', body: 'Nouveau', author: 'user_a' }] }],
+  });
+});
+
+test('a save keeps a message written while it was in flight, after the server copy', () => {
+  const sent = { conversations: [{ id: 'C-1', messages: [{ id: 'client-1', body: 'Un' }] }] };
+  const local = { conversations: [{ id: 'C-1', messages: [{ id: 'client-1', body: 'Un' }, { id: 'client-2', body: 'Deux' }] }] };
+  const saved = { conversations: [{ id: 'C-1', messages: [{ id: 'server-1', body: 'Un' }] }] };
+  assert.deepEqual(rebaseAfterSave(sent, local, saved).conversations[0].messages.map((m) => m.id), ['server-1', 'client-2']);
+});
+
+test('a save with no edit in flight returns the server copy unchanged', () => {
+  const sent = { tickets: [{ id: 'INC-1', title: 'A' }] };
+  const saved = { tickets: [{ id: 'INC-1', title: 'A', updatedBy: 'user_a' }] };
+  assert.equal(rebaseAfterSave(sent, structuredClone(sent), saved), saved);
 });

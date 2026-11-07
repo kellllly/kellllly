@@ -190,6 +190,18 @@ export function mergeSharedChanges<T>(base: T, local: T, remote: T, choices: Con
   return mergeNode(base, local, remote, '', choices) as { value?: T; conflicts: string[] };
 }
 
+/**
+ * After a save succeeds, keep the edits made locally while it was in flight.
+ * `sent` is what the save carried, `local` the current local data and `saved`
+ * the server's canonical copy, which may rename new message IDs and stamp authors.
+ * A collision with the server's normalization keeps the server's copy.
+ */
+export function rebaseAfterSave<T>(sent: T, local: T, saved: T): T {
+  if (equal(sent, local)) return saved;
+  const merged = mergeSharedChanges(sent, local, saved);
+  return merged.conflicts.length || merged.value === undefined ? saved : merged.value;
+}
+
 export function conflictDetails(local: unknown, remote: unknown, paths: string[]) {
   const display = (value: unknown) => value === undefined ? 'Valeur supprimée (élément absent)' : JSON.stringify(value, null, 2);
   return paths.map((path) => ({
