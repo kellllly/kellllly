@@ -123,3 +123,31 @@ test("a missing Clerk secret is detected so auth routes answer 503 instead of cr
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: AUTH_NOT_CONFIGURED_MESSAGE });
 });
+
+test("API routes, including unknown ones, carry a complete CSP and a JSON 404", async (t) => {
+  const { apiContentSecurityPolicy, apiNotFound, API_CONTENT_SECURITY_POLICY } = await import("../src/lib/http-hardening.ts");
+  const app = express();
+  app.use("/api", apiContentSecurityPolicy);
+  app.get("/api/known", (_req, res) => { res.json({ ok: true }); });
+  app.get("/api/__clerk/v1/client", (_req, res) => { res.send("relayed"); });
+  app.use("/api", apiNotFound);
+  const { server, url } = await listen(app);
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+  for (const path of ["/api/known", "/api/itsm/development-role-archive"]) {
+    const response = await fetch(`${url}${path}`, { method: path.includes("archive") ? "POST" : "GET" });
+    const csp = response.headers.get("content-security-policy") ?? "";
+    assert.equal(csp, API_CONTENT_SECURITY_POLICY);
+    for (const directive of ["default-src 'none'", "frame-ancestors 'none'", "form-action 'none'", "base-uri 'none'"]) {
+      assert.ok(csp.includes(directive), `${path}: ${directive}`);
+    }
+    assert.ok(!csp.includes("*"), "no wildcard source");
+  }
+  const missing = await fetch(`${url}/api/does-not-exist`);
+  assert.equal(missing.status, 404);
+  assert.match(missing.headers.get("content-type") ?? "", /application\/json/);
+  assert.deepEqual(await missing.json(), { error: "Ressource introuvable." });
+
+  const relayed = await fetch(`${url}/api/__clerk/v1/client`);
+  assert.equal(relayed.headers.get("content-security-policy"), null, "the Clerk relay keeps Clerk's own policy");
+});

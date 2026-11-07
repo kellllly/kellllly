@@ -55,6 +55,25 @@ export const securityHeaders: RequestHandler = (_req, res, next) => {
   next();
 };
 
+/**
+ * The API only returns JSON and attachments, never pages to render: forbid
+ * everything, including the directives that do not fall back to default-src
+ * (frame-ancestors, form-action, base-uri).
+ */
+export const API_CONTENT_SECURITY_POLICY = "default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'";
+
+export const apiContentSecurityPolicy: RequestHandler = (req, res, next) => {
+  // The Clerk proxy (/api/__clerk) relays Clerk's own pages, such as OAuth
+  // callbacks, which carry their own policy.
+  if (!req.path.startsWith("/__clerk")) res.setHeader("Content-Security-Policy", API_CONTENT_SECURITY_POLICY);
+  next();
+};
+
+/** JSON 404 for unknown API routes, instead of Express's HTML page and its weaker CSP. */
+export const apiNotFound: RequestHandler = (_req, res) => {
+  res.status(404).json({ error: "Ressource introuvable." });
+};
+
 export function isAuthConfigured(env: Environment = process.env): boolean {
   return Boolean(env.CLERK_SECRET_KEY?.trim());
 }

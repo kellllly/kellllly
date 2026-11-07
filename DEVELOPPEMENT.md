@@ -116,3 +116,30 @@ Comportements attendus sans configuration complète :
 `.github/workflows/ci.yml` exécute, à chaque envoi, l’installation figée, le
 typecheck complet (y compris la vérification du code généré), le schéma Drizzle
 sur un PostgreSQL 16, les tests frontend et API, puis les builds.
+
+## Scan de sécurité HawkScan (StackHawk)
+
+`stackhawk.yml` scanne l’API locale (`http://localhost:5000/api`) à partir de
+`lib/api-spec/openapi.yaml`, en tant que compte Clerk de scan dédié.
+
+1. Installez le CLI `hawk` (v6 ou plus) et définissez `HAWK_API_KEY`.
+2. Créez dans votre instance Clerk **de développement** un compte réservé au scan,
+   avec le rôle N3 (`publicMetadata.itsmRole = "N3"`), jamais un N1.
+3. Lancez l’API (voir plus haut), puis :
+
+```bash
+export HAWK_SCAN_USER_ID=user_...   # identifiant du compte de scan
+```
+
+```bash
+export HAWK_AUTH_TOKEN=$(sh scripts/hawkscan-clerk-token.sh)
+```
+
+```bash
+API_KEY=$HAWK_API_KEY hawk scan stackhawk.yml
+```
+
+Le script refuse une clé autre que `sk_test_…` : l’API backend de Clerk ne crée
+des sessions de test que sur une instance de développement. Le jeton dure 1 h.
+Le scan écrit dans l’espace ITSM de la base locale : ne le lancez jamais contre
+une base qui contient des données à conserver.

@@ -16,6 +16,8 @@ import {
   corsOptions,
   isAuthConfigured,
   jsonErrorHandler,
+  apiContentSecurityPolicy,
+  apiNotFound,
   securityHeaders,
 } from "./lib/http-hardening";
 import healthRouter from "./routes/health";
@@ -30,6 +32,7 @@ import { createDevelopmentRoleArchiveRouter } from "./routes/development-role-ar
 const app: Express = express();
 app.disable("x-powered-by");
 app.use(securityHeaders);
+app.use("/api", apiContentSecurityPolicy);
 
 app.use(
   pinoHttp({
@@ -85,6 +88,7 @@ if (isAuthConfigured()) {
   app.use("/api", authNotConfigured);
 }
 
+app.use("/api", apiNotFound);
 app.use(jsonErrorHandler(logger));
 
 export default app;

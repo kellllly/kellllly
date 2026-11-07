@@ -39,6 +39,7 @@ import {
   type ItsmRoleChangeArchiveEvent,
 } from "../lib/itsm-workspace";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
+import { createActorCache } from "../lib/itsm-actor-cache";
 import { createPeopleDirectory, MAX_PEOPLE_PER_REQUEST, parsePeopleIds } from "../lib/itsm-people";
 import {
   canChangeItsmRole,
@@ -187,7 +188,7 @@ export function createItsmRoleArchiveCheckRouter(
 ): IRouter {
   const archiveCheckRouter: IRouter = Router();
   archiveCheckRouter.post("/itsm/role-archive/check", authMiddleware, createRoleArchiveCheckHandler({
-    resolveActor: actorFor,
+    resolveActor: freshActorFor,
     checkArchiveConnection: checkItsmRoleArchiveAvailability,
     ...overrides,
   }));
@@ -280,20 +281,46 @@ export function createItsmBootstrapAdmin(dependencies: BootstrapDependencies) {
 
 const bootstrapItsmAdmin = createItsmBootstrapAdmin({
   getUser: (userId) => clerkClient.users.getUser(userId),
-  updateUserMetadata: (userId, metadata) => clerkClient.users.updateUserMetadata(userId, metadata),
+  updateUserMetadata: updateUserMetadataAndForget,
   archiveRoleChange: publishItsmRoleChangeToArchive,
   reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_change"),
   withLock: withAdminChangeLock,
 });
 
-async function actorFor(req: Request, res: Response): Promise<WorkspaceActor | null> {
+type ClerkUser = Awaited<ReturnType<typeof clerkClient.users.getUser>>;
+const actorUsers = createActorCache<ClerkUser>();
+
+/** Clerk metadata write that also drops the cached role of that account. */
+async function updateUserMetadataAndForget(userId: string, metadata: Parameters<typeof clerkClient.users.updateUserMetadata>[1]) {
+  actorUsers.invalidate(userId);
+  try {
+    return await clerkClient.users.updateUserMetadata(userId, metadata);
+  } finally {
+    actorUsers.invalidate(userId);
+  }
+}
+
+/**
+ * Role administration must never act on a cached N1 role: an N1 is re-read
+ * from Clerk. Any other cached role is refused by the handler anyway, so it
+ * needs no Clerk call (a just-promoted N1 may wait up to the cache TTL).
+ */
+async function freshActorFor(req: Request, res: Response): Promise<WorkspaceActor | null> {
+  const cached = await actorFor(req, res);
+  if (!cached || res.headersSent || cached.role !== "N1") return cached;
+  return actorFor(req, res, { fresh: true });
+}
+
+async function actorFor(req: Request, res: Response, options: { fresh?: boolean } = {}): Promise<WorkspaceActor | null> {
   const userId = getAuth(req).userId;
   if (!userId) {
     res.status(401).json({ error: "Authentification requise." });
     return null;
   }
   try {
-    let user = await clerkClient.users.getUser(userId);
+    let user = options.fresh
+      ? await clerkClient.users.getUser(userId)
+      : await actorUsers.get(userId, () => clerkClient.users.getUser(userId));
     if (user.publicMetadata.itsmRole == null && isBootstrapAdmin(
       user.primaryEmailAddress?.emailAddress,
       user.primaryEmailAddress?.verification?.status,
@@ -313,6 +340,7 @@ async function actorFor(req: Request, res: Response): Promise<WorkspaceActor | n
     return { id: userId, role, serviceIds };
   } catch (error) {
     req.log.error({ err: error, userId }, "Could not load Clerk ITSM role");
+    res.setHeader("Retry-After", "5");
     res.status(503).json({ error: "Impossible de vérifier le rôle du compte auprès de Clerk." });
     return null;
   }
@@ -733,10 +761,10 @@ export function createItsmRoleAssignmentRouter(
 ): IRouter {
   const roleRouter: IRouter = Router();
   roleRouter.put("/itsm/users/:userId/role", authMiddleware, createRoleAssignmentHandler({
-    resolveActor: actorFor,
+    resolveActor: freshActorFor,
     getUser: (userId) => clerkClient.users.getUser(userId),
     activeN1Ids,
-    updateUserMetadata: (userId, metadata) => clerkClient.users.updateUserMetadata(userId, metadata),
+    updateUserMetadata: updateUserMetadataAndForget,
     archiveRoleChange: publishItsmRoleChangeToArchive,
     reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_change"),
     withLock: withAdminChangeLock,
@@ -842,7 +870,7 @@ export function createItsmRoleAttestationRouter(
 ): IRouter {
   const attestationRouter: IRouter = Router();
   attestationRouter.post("/itsm/users/:userId/role/attest", authMiddleware, createRoleAttestationHandler({
-    resolveActor: actorFor,
+    resolveActor: freshActorFor,
     getUser: (userId) => clerkClient.users.getUser(userId),
     archiveRoleChange: publishItsmRoleChangeToArchive,
     reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_attestation"),
