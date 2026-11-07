@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
 import { isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
-import { findNewSlaBreaches, slaBreachAuditEvent, type SlaBreach } from "./itsm-sla.ts";
+import {
+  findNewSlaBreaches, findSlaEscalations, ITSM_SLA_ESCALATION_AUDIT_TYPE, SLA_MONITOR_ACTOR,
+  slaBreachAuditEvent, type SlaBreach, type SlaEscalation,
+} from "./itsm-sla.ts";
 
 export type WorkspaceActor = ItsmActor;
 type JsonRecord = Record<string, unknown>;
@@ -77,12 +80,57 @@ const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Africa/Libreville", hour: "2-digit", minute: "2-digit",
 }).format(now);
 
-/** Journal each SLA breach not recorded yet (see lib/itsm-sla.ts). */
-export function recordItsmSlaBreaches(store: JsonRecord, now = new Date()): { store: JsonRecord; breaches: SlaBreach[] } {
+/**
+ * Journal each SLA breach not recorded yet and apply the escalation circuit
+ * (see lib/itsm-sla.ts): notifications, P2 reassignment, P4 reminder.
+ */
+export function recordItsmSlaBreaches(store: JsonRecord, now = new Date()): {
+  store: JsonRecord; breaches: SlaBreach[]; escalations: SlaEscalation[];
+} {
   const breaches = findNewSlaBreaches(store.tickets, store.audit, now);
-  if (breaches.length === 0) return { store, breaches };
-  const events = breaches.map((breach) => slaBreachAuditEvent(breach, randomUUID(), newStamp(now), shortTime(now)));
-  return { store: { ...store, audit: retainItsmAuditEvents([...events, ...records(store.audit)]) }, breaches };
+  const escalations = findSlaEscalations(store.tickets, store.audit, now);
+  if (breaches.length === 0 && escalations.length === 0) return { store, breaches, escalations };
+  const at = newStamp(now);
+  const time = shortTime(now);
+  const events: JsonRecord[] = breaches.map((breach) => slaBreachAuditEvent(breach, randomUUID(), at, time));
+  const notifications: JsonRecord[] = [];
+  const tickets = records(store.tickets).map((ticket) => ({ ...ticket }));
+  for (const escalation of escalations) {
+    events.push({
+      id: randomUUID(),
+      type: ITSM_SLA_ESCALATION_AUDIT_TYPE,
+      action: escalation.title,
+      actor: SLA_MONITOR_ACTOR,
+      scope: `Ticket ${escalation.ticketId}`,
+      ticketId: escalation.ticketId,
+      rule: escalation.rule,
+      escalationKey: escalation.key,
+      priority: escalation.priority,
+      recipients: escalation.recipients,
+      at,
+      time,
+    });
+    notifications.push({ id: randomUUID(), ticketId: escalation.ticketId, title: escalation.title, body: `${escalation.body} Destinataires : ${escalation.recipients}.`, at });
+    const ticket = tickets.find((item) => item.id === escalation.ticketId);
+    if (!ticket) continue;
+    const history = escalation.reassign
+      ? `Escalade automatique : réaffecté de ${String(ticket.assignee ?? "—")} à ${escalation.reassign.assignee} (L${escalation.reassign.supportLevel}).`
+      : escalation.ticketUpdate;
+    if (escalation.reassign) Object.assign(ticket, escalation.reassign);
+    if (history) {
+      ticket.updates = [...records(ticket.updates), { author: SLA_MONITOR_ACTOR, body: history, at, time }];
+    }
+  }
+  return {
+    store: {
+      ...store,
+      tickets,
+      notifications: [...notifications, ...records(store.notifications)],
+      audit: retainItsmAuditEvents([...events, ...records(store.audit)]),
+    },
+    breaches,
+    escalations,
+  };
 }
 
 export type ItsmRoleChangeAuditDetails = {
@@ -549,6 +597,20 @@ function importMerge(current: JsonRecord, source: JsonRecord, actor: WorkspaceAc
   return merged;
 }
 
+export const INVESTIGATION_CONVERSATION_KIND = "Enquête";
+const MAX_INVESTIGATION_MEMBERS = 50;
+
+/**
+ * Investigation rooms (cahier des charges, matrice d’habilitation) : created by
+ * N1 only, open to N2 analysts named as members, never to N3, N4 or N5.
+ */
+export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, conversation: JsonRecord): boolean {
+  if (actor.role === "N4" || actor.role === "N5") return false;
+  if (conversation.kind !== INVESTIGATION_CONVERSATION_KIND) return true;
+  if (actor.role === "N1") return true;
+  return actor.role === "N2" && Array.isArray(conversation.memberIds) && conversation.memberIds.includes(actor.id);
+}
+
 /**
  * Applies a client snapshot as a constrained command. The authenticated actor,
  * workflow timestamps, ticket IDs, and KEDB entries are always server-owned.
@@ -573,6 +635,21 @@ export function applyWorkspaceUpdate(
     const hiddenTickets = oldTickets.filter((ticket) =>
       !actor.serviceIds.includes(String(ticket.serviceId ?? "")) && !submittedTicketIds.has(String(ticket.id)));
     normalized.tickets = [...records(normalized.tickets), ...hiddenTickets];
+  }
+  if (actor.role !== "N4") {
+    // Rooms this account cannot see are not sent to it: keep them in place.
+    const submittedConversations = records(normalized.conversations);
+    if (submittedConversations.some((conversation) => {
+      const stored = oldConversations.find((item) => item.id === conversation.id);
+      return stored ? !canSeeConversation(actor, stored) : false;
+    })) {
+      throw new ItsmAuthorizationError("Ce salon d’enquête n’est pas accessible à ce compte.");
+    }
+    const merged = [...submittedConversations];
+    oldConversations.forEach((conversation, index) => {
+      if (!canSeeConversation(actor, conversation)) merged.splice(Math.min(index, merged.length), 0, conversation);
+    });
+    normalized.conversations = merged;
   }
   const currentConversationContent = records(current.conversations).map(({ readCount: _readCount, ...conversation }) => conversation);
   const submittedConversationContent = records(normalized.conversations).map(({ readCount: _readCount, ...conversation }) => conversation);
@@ -824,11 +901,20 @@ export function applyWorkspaceUpdate(
       if (typeof proposed.title !== "string" || !proposed.title.trim() || !Array.isArray(proposed.participants)) {
         throw new Error("Conversation invalide.");
       }
+      const investigation = proposed.kind === INVESTIGATION_CONVERSATION_KIND;
+      if (investigation && actor.role !== "N1") {
+        throw new ItsmAuthorizationError("Seul un compte N1 peut ouvrir un salon d’enquête.");
+      }
       conversations.push({
         id,
         title: proposed.title,
         kind: typeof proposed.kind === "string" ? proposed.kind : "Équipe",
-        classification: typeof proposed.classification === "string" ? proposed.classification : "Interne",
+        classification: investigation ? "Restreint" : typeof proposed.classification === "string" ? proposed.classification : "Interne",
+        ...(investigation ? {
+          memberIds: [...new Set([actor.id, ...(Array.isArray(proposed.memberIds) ? proposed.memberIds : [])
+            .filter((member): member is string => typeof member === "string" && /^user_[A-Za-z0-9]{1,64}$/.test(member))])]
+            .slice(0, MAX_INVESTIGATION_MEMBERS),
+        } : {}),
         participants: proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
         readCount: Math.max(0, Math.min(records(proposed.messages).length, Number(proposed.readCount) || 0)),
         messages: records(proposed.messages).map((message) => ({
@@ -1002,7 +1088,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
   return {
     ...visibleStore,
     tickets: hiddenCollections ? [] : scopedTickets,
-    conversations: actor.role === "N4" || hiddenCollections ? [] : records(store.conversations).map((conversation) => ({
+    conversations: actor.role === "N4" || hiddenCollections ? [] : records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
     })),

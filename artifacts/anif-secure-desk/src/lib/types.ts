@@ -17,6 +17,8 @@ export type Conversation = {
   id: string; title: string; kind: string; classification: string; participants: string[];
   /** Nombre de messages déjà lus (les non lus sont dérivés : messages.length - readCount). */
   readCount: number; messages: Message[];
+  /** Salon d’enquête : comptes invités (N1 créateur + N2), seuls autorisés avec les N1. */
+  memberIds?: string[];
 };
 export type TicketUpdate = { author: string; body: string; time: string; at?: string };
 export type CabDecision = { decision: 'Approuvé' | 'Rejeté'; by: string; at: string; reason: string };
@@ -42,6 +44,8 @@ export type AuditEvent = {
   seq?: number; prevHash?: string; hash?: string;
   /** SLA breach recorded by the server. */
   deadline?: 'acknowledge' | 'resolve'; dueAt?: string; priority?: string; supportLevel?: number; assignee?: string;
+  /** SLA escalation recorded by the server. */
+  rule?: string; recipients?: string;
 };
 export type KedbArticle = {
   id: string; title: string; symptom: string; rootCause: string; resolution: string;

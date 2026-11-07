@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSlaBreachMonitor, findNewSlaBreaches, ITSM_SLA_BREACH_AUDIT_TYPE } from "../src/lib/itsm-sla.ts";
+import { createSlaBreachMonitor, findNewSlaBreaches, findSlaEscalations, ITSM_SLA_BREACH_AUDIT_TYPE, SENIOR_L2_ASSIGNEE } from "../src/lib/itsm-sla.ts";
 import { applyWorkspaceUpdate, recordItsmSlaBreaches } from "../src/lib/itsm-workspace.ts";
 import { verifyAuditChain } from "../src/lib/itsm-audit-chain.ts";
 
@@ -60,7 +60,7 @@ test("the monitor logs each new breach and survives a failed check", async () =>
   const monitor = createSlaBreachMonitor({
     recordNow: async () => {
       if (fail) throw new Error("db down");
-      return findNewSlaBreaches([ticket()], [], at(16));
+      return { breaches: findNewSlaBreaches([ticket()], [], at(16)) };
     },
     logger: { warn: (fields) => warnings.push(fields), error: (fields) => errors.push(fields) },
   });
@@ -69,4 +69,50 @@ test("the monitor logs each new breach and survives a failed check", async () =>
   fail = true;
   assert.deepEqual(await monitor.checkNow(), []);
   assert.equal(errors.length, 1);
+});
+
+const rules = (tickets: unknown[], minutes: number, audit: unknown[] = []) =>
+  findSlaEscalations(tickets, audit, at(minutes)).map((e) => `${e.ticketId}:${e.rule}`);
+
+test("escalation circuit follows the SLA table of the cahier des charges", () => {
+  // P1: crisis cell at once, Responsable SI at 80 % of 15 min (12 min).
+  assert.deepEqual(rules([ticket()], 1), ["INC-1:p1-crisis"]);
+  assert.deepEqual(rules([ticket()], 12), ["INC-1:p1-crisis", "INC-1:approach"]);
+  // P2: 80 % of 30 min = 24 min, senior L2 after 45 min.
+  const p2 = ticket({ id: "INC-2", priority: "P2" });
+  assert.deepEqual(rules([p2], 23), []);
+  assert.deepEqual(rules([p2], 24), ["INC-2:approach"]);
+  assert.deepEqual(rules([p2], 45), ["INC-2:approach", "INC-2:p2-senior"]);
+  // P3: L1 coordinator after 4 h.
+  const p3 = ticket({ id: "INC-3", priority: "P3" });
+  assert.deepEqual(rules([p3], 239), ["INC-3:approach"]);
+  assert.deepEqual(rules([p3], 240), ["INC-3:approach", "INC-3:p3-coordinator"]);
+  // Acknowledged, resolved or closed tickets do not escalate (except the P1 crisis cell while open).
+  assert.deepEqual(rules([ticket({ id: "INC-4", priority: "P2", acknowledgedAt: at(5).toISOString() })], 60), []);
+  assert.deepEqual(rules([ticket({ status: "Résolu" }), ticket({ id: "X", status: "Clos" })], 60), []);
+});
+
+test("a P4 waiting three days for the requester is reminded once per waiting period", () => {
+  const waiting = ticket({ id: "REQ-1", priority: "P4", status: "En attente", acknowledgedAt: at(10).toISOString(),
+    updates: [{ author: "user_a", body: "Précisions demandées", at: at(60).toISOString() }] });
+  const threeDays = 3 * 24 * 60;
+  assert.deepEqual(rules([waiting], 60 + threeDays - 1), []);
+  assert.deepEqual(rules([waiting], 60 + threeDays), ["REQ-1:p4-reminder"]);
+});
+
+test("escalations are applied once: notification, journal, P2 reassignment and P4 reminder in the ticket history", () => {
+  const p2 = ticket({ id: "INC-2", priority: "P2", supportLevel: 1, assignee: "Équipe support" });
+  const first = recordItsmSlaBreaches({ tickets: [p2], audit: [], notifications: [] }, at(46));
+  assert.deepEqual(first.escalations.map((e) => e.rule), ["approach", "p2-senior"]);
+  assert.deepEqual(first.breaches.map((b) => b.deadline), ["acknowledge"]);
+  const saved = (first.store.tickets as Array<Record<string, any>>)[0]!;
+  assert.equal(saved.assignee, SENIOR_L2_ASSIGNEE);
+  assert.equal(saved.supportLevel, 2);
+  assert.match(saved.updates.at(-1).body, /réaffecté de Équipe support à Ingénieur senior L2/);
+  assert.equal(saved.updates.at(-1).author, "system:sla-monitor");
+  assert.equal((first.store.notifications as unknown[]).length, 2);
+  assert.equal(verifyAuditChain(first.store.audit).status, "intact");
+  const again = recordItsmSlaBreaches(first.store, at(50));
+  assert.equal(again.escalations.length, 0);
+  assert.equal(again.store, first.store);
 });

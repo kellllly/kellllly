@@ -91,11 +91,118 @@ export function slaBreachAuditEvent(breach: SlaBreach, id: string, at: string, t
   };
 }
 
+export const ITSM_SLA_ESCALATION_AUDIT_TYPE = "itsm.sla.escalated";
+export const SENIOR_L2_ASSIGNEE = "Ingénieur senior L2";
+const DAY_MS = 86_400_000;
+
+export type SlaEscalationRule = "approach" | "p1-crisis" | "p2-senior" | "p3-coordinator" | "p4-reminder";
+
+export type SlaEscalation = {
+  ticketId: string;
+  rule: SlaEscalationRule;
+  priority: string;
+  /** Who the cahier des charges says is alerted. */
+  recipients: string;
+  title: string;
+  body: string;
+  /** P2 rule: automatic reassignment to a senior L2 engineer. */
+  reassign?: { assignee: string; supportLevel: number };
+  /** P4 rule: a message added to the ticket history for the requester. */
+  ticketUpdate?: string;
+  /** Distinguishes repeated P4 reminders (one per waiting period). */
+  key: string;
+};
+
+const lastUpdateAt = (ticket: JsonRecord): number => {
+  const updates = Array.isArray(ticket.updates) ? ticket.updates.filter(isRecord) : [];
+  const stamps = updates.map((update) => typeof update.at === "string" ? Date.parse(update.at) : Number.NaN)
+    .filter(Number.isFinite);
+  return stamps.length ? Math.max(...stamps) : Date.parse(String(ticket.openedAt));
+};
+
+/**
+ * Escalation circuit of the SLA table (cahier des charges, gestion des incidents):
+ * - any priority, 80 % of the acknowledgement time without acknowledgement: Responsable SI;
+ * - P1 open: DSI, RSSI and Direction générale, crisis cell;
+ * - P2, 45 min without acknowledgement: reassigned to a senior L2 engineer;
+ * - P3, 4 h without acknowledgement: L1 queue coordinator;
+ * - P4 waiting 3 days for the requester: automatic reminder (once per waiting period).
+ * Each rule fires once per ticket; continuous time, no business hours.
+ */
+export function findSlaEscalations(tickets: unknown, audit: unknown, now: Date): SlaEscalation[] {
+  const done = new Set((Array.isArray(audit) ? audit : []).filter(isRecord)
+    .filter((event) => event.type === ITSM_SLA_ESCALATION_AUDIT_TYPE)
+    .map((event) => String(event.escalationKey)));
+  const out: SlaEscalation[] = [];
+  const nowMs = now.getTime();
+  for (const ticket of (Array.isArray(tickets) ? tickets : []).filter(isRecord)) {
+    if (CLOSED_STATUSES.has(String(ticket.status)) || ticket.status === "Résolu" || typeof ticket.id !== "string") continue;
+    const priority = String(ticket.priority);
+    const policy = SLA_POLICY_MINUTES[priority];
+    const opened = Date.parse(String(ticket.openedAt));
+    if (!policy || !Number.isFinite(opened)) continue;
+    const acknowledged = typeof ticket.acknowledgedAt === "string" && Boolean(ticket.acknowledgedAt);
+    const elapsed = nowMs - opened;
+    const id = ticket.id;
+    const push = (escalation: Omit<SlaEscalation, "ticketId" | "priority" | "key"> & { key?: string }) => {
+      const key = escalation.key ?? `${id}:${escalation.rule}`;
+      if (!done.has(key)) out.push({ ticketId: id, priority, ...escalation, key });
+    };
+    if (priority === "P1") {
+      push({
+        rule: "p1-crisis",
+        recipients: "DSI, RSSI et Direction générale",
+        title: `Incident critique ${id} · cellule de crise`,
+        body: `P1 · ${String(ticket.title ?? "")}. DSI, RSSI et Direction générale alertés ; mobilisation de la cellule de crise.`,
+      });
+    }
+    if (!acknowledged && elapsed >= policy.acknowledge * 60_000 * 0.8) {
+      push({
+        rule: "approach",
+        recipients: "Responsable du Service Informatique",
+        title: `Escalade · prise en charge bientôt due · ${id}`,
+        body: `${priority} · 80 % du délai de prise en charge (${policy.acknowledge} min) écoulé sans prise en charge. Responsable du SI alerté.`,
+      });
+    }
+    if (priority === "P2" && !acknowledged && elapsed >= 45 * 60_000) {
+      push({
+        rule: "p2-senior",
+        recipients: "Superviseur support L2",
+        title: `Réaffectation automatique · ${id}`,
+        body: `P2 sans prise en charge après 45 min : ticket réaffecté à un ingénieur senior (L2).`,
+        reassign: { assignee: SENIOR_L2_ASSIGNEE, supportLevel: Math.max(2, Number(ticket.supportLevel) || 1) },
+      });
+    }
+    if (priority === "P3" && !acknowledged && elapsed >= 4 * 60 * 60_000) {
+      push({
+        rule: "p3-coordinator",
+        recipients: "Coordinateur de la file L1",
+        title: `Escalade L1 · ${id}`,
+        body: `P3 sans intervention après 4 h : coordinateur de la file L1 alerté. Réévaluer la priorité si l’impact s’élargit.`,
+      });
+    }
+    if (priority === "P4" && ticket.status === "En attente") {
+      const since = lastUpdateAt(ticket);
+      if (Number.isFinite(since) && nowMs - since >= 3 * DAY_MS) {
+        push({
+          rule: "p4-reminder",
+          key: `${id}:p4-reminder:${new Date(since).toISOString()}`,
+          recipients: String(ticket.requester ?? "Demandeur"),
+          title: `Relance automatique · ${id}`,
+          body: `P4 en attente depuis 3 jours sans réponse du demandeur : relance envoyée.`,
+          ticketUpdate: "Relance automatique : merci d’apporter les précisions demandées pour poursuivre le traitement.",
+        });
+      }
+    }
+  }
+  return out;
+}
+
 type MonitorLogger = { warn: (fields: JsonRecord, message: string) => void; error: (fields: JsonRecord, message: string) => void };
 
 /** Checks open tickets every minute and records each new breach once. */
 export function createSlaBreachMonitor(options: {
-  recordNow: () => Promise<SlaBreach[]>;
+  recordNow: () => Promise<{ breaches: SlaBreach[]; escalations?: SlaEscalation[] }>;
   logger: MonitorLogger;
   intervalMs?: number;
 }) {
@@ -105,9 +212,15 @@ export function createSlaBreachMonitor(options: {
     if (running) return [];
     running = true;
     try {
-      const breaches = await options.recordNow();
+      const { breaches, escalations = [] } = await options.recordNow();
       for (const breach of breaches) {
         options.logger.warn({ alert: "itsm_sla_breached", ...breach }, "ITSM_SLA_BREACHED");
+      }
+      for (const escalation of escalations) {
+        options.logger.warn({
+          alert: "itsm_sla_escalated", ticketId: escalation.ticketId, rule: escalation.rule,
+          priority: escalation.priority, recipients: escalation.recipients,
+        }, "ITSM_SLA_ESCALATED");
       }
       return breaches;
     } catch (err) {
