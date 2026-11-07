@@ -128,7 +128,7 @@ export const getItsmAuditIntegrityResponsePrunedMin = 0;
 
 
 export const GetItsmAuditIntegrityResponse = zod.object({
-  "status": zod.enum(['intact', 'broken', 'empty']),
+  "status": zod.enum(['intact', 'broken', 'empty', 'unsealed']),
   "events": zod.number().int().min(getItsmAuditIntegrityResponseEventsMin),
   "verified": zod.number().int().min(getItsmAuditIntegrityResponseVerifiedMin),
   "pruned": zod.number().int().min(getItsmAuditIntegrityResponsePrunedMin),

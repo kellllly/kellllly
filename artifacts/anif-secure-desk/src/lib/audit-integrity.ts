@@ -14,6 +14,14 @@ export function describeAuditIntegrity(report: ItsmAuditIntegrity): AuditIntegri
   if (report.status === 'empty') {
     return { tone: 'neutral', title: 'Journal vide', detail: 'Aucun événement à vérifier.', seal: null };
   }
+  if (report.status === 'unsealed') {
+    return {
+      tone: 'neutral',
+      title: 'Journal pas encore scellé',
+      detail: 'Ce journal a été écrit avant l’activation du scellement. Il sera scellé au prochain démarrage du serveur ou à la prochaine modification de l’espace ; relancez ensuite la vérification.',
+      seal: null,
+    };
+  }
   if (report.status === 'broken') {
     const where = report.firstBreak?.seq ? ` à l’événement n° ${report.firstBreak.seq}` : '';
     return {

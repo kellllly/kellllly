@@ -8,7 +8,7 @@ import {
   sealAuditEvents,
   verifyAuditChain,
 } from "../src/lib/itsm-audit-chain.ts";
-import { applyWorkspaceUpdate } from "../src/lib/itsm-workspace.ts";
+import { applyWorkspaceUpdate, sealItsmWorkspaceAudit } from "../src/lib/itsm-workspace.ts";
 import { createItsmAuditIntegrityHandler } from "../src/routes/itsm-audit-export.ts";
 
 const event = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -69,6 +69,15 @@ test("pruned stubs keep the chain verifiable, but only for the oldest ordinary e
 
   const hiddenRecent = [pruneAuditEvent(sealed[0]!), sealed[1]!, sealed[2]!, sealed[3]!];
   assert.equal(verifyAuditChain(hiddenRecent).firstBreak?.reason, "Événement purgé hors de l’ordre d’archivage");
+});
+
+test("a journal written before sealing is pending, not broken, and is sealed on demand", () => {
+  const legacy = { audit: [event("b"), event("a")] };
+  assert.equal(verifyAuditChain(legacy.audit).status, "unsealed");
+  const sealed = sealItsmWorkspaceAudit(legacy);
+  assert.ok(sealed);
+  assert.equal(verifyAuditChain(sealed.audit).status, "intact");
+  assert.equal(sealItsmWorkspaceAudit(sealed), null, "an already sealed journal is left untouched");
 });
 
 test("an unsealed event and an empty journal are reported", () => {

@@ -39,6 +39,7 @@ import {
   type VersionedWorkspaceSave,
   type ItsmRoleSnapshot,
   type ItsmRoleChangeArchiveEvent,
+  sealItsmWorkspaceAudit,
 } from "../lib/itsm-workspace";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
 import { createActorCache } from "../lib/itsm-actor-cache";
@@ -105,6 +106,16 @@ export async function withAdminChangeLock<T>(
       if (!updated) throw new Error("Impossible d’enregistrer le journal d’habilitation.");
     };
     return operation(row.store, saveStore);
+  });
+}
+
+/** Seal a journal written before the hash chain existed, without waiting for a save. */
+export async function sealStoredAuditJournal(): Promise<boolean> {
+  return withAdminChangeLock(async (store, saveStore) => {
+    const sealed = sealItsmWorkspaceAudit(store);
+    if (!sealed) return false;
+    await saveStore(sealed);
+    return true;
   });
 }
 

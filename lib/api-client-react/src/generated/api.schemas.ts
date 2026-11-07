@@ -127,6 +127,7 @@ export const ItsmAuditIntegrityStatus = {
   intact: 'intact',
   broken: 'broken',
   empty: 'empty',
+  unsealed: 'unsealed',
 } as const;
 
 /**

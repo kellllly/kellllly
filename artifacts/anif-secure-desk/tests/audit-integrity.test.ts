@@ -26,3 +26,10 @@ test('a broken chain names the event and gives no seal', () => {
 test('an empty journal is neutral', () => {
   assert.equal(describeAuditIntegrity({ ...base, events: 0, verified: 0, status: 'empty' }).tone, 'neutral');
 });
+
+test('a journal written before sealing existed is not reported as broken', () => {
+  const view = describeAuditIntegrity({ ...base, verified: 0, status: 'unsealed' });
+  assert.equal(view.tone, 'neutral');
+  assert.equal(view.title, 'Journal pas encore scellé');
+  assert.equal(view.seal, null);
+});

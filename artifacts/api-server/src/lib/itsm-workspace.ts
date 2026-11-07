@@ -63,6 +63,15 @@ function retainItsmAuditEvents(events: unknown): JsonRecord[] {
     return retainedNonRoleEvents <= MAX_NON_ROLE_AUDIT_EVENTS ? event : pruneAuditEvent(event);
   });
 }
+/**
+ * Seal a stored journal that has events without a seal (journal written before
+ * the hash chain existed). Returns null when there is nothing to seal.
+ */
+export function sealItsmWorkspaceAudit(store: JsonRecord): JsonRecord | null {
+  const audit = records(store.audit);
+  if (!audit.some((event) => !isPrunedAuditEvent(event) && typeof event.hash !== "string")) return null;
+  return { ...store, audit: retainItsmAuditEvents(audit) };
+}
 const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Africa/Libreville", hour: "2-digit", minute: "2-digit",
 }).format(now);

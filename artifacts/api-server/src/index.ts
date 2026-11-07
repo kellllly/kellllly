@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { createItsmRoleReconciliationMonitor } from "./lib/itsm-workspace";
 import { createItsmRoleArchiveHealthMonitor } from "./lib/itsm-role-archive-monitor";
 import { notifyItsmRoleArchiveAlert } from "./lib/itsm-role-archive-slack-alerts";
-import { checkItsmRoleArchiveAvailability, scanItsmRoleReconciliation } from "./routes/itsm";
+import { checkItsmRoleArchiveAvailability, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
 
@@ -23,6 +23,12 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function start(): Promise<void> {
   if (developmentRoleArchiveEnabled()) await initializeDevelopmentRoleArchive();
+  try {
+    if (await sealStoredAuditJournal()) logger.info({ component: "itsm_audit_chain" }, "Existing activity journal sealed");
+  } catch (err) {
+    // Not fatal: the journal is also sealed at the next workspace save.
+    logger.error({ err, component: "itsm_audit_chain" }, "Could not seal the existing activity journal");
+  }
   app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");

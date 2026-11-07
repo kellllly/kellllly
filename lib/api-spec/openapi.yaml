@@ -477,7 +477,7 @@ components:
       properties:
         status:
           type: string
-          enum: [intact, broken, empty]
+          enum: [intact, broken, empty, unsealed]
         events:
           type: integer
           minimum: 0

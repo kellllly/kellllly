@@ -77,7 +77,7 @@ export function pruneAuditEvent(event: JsonRecord): JsonRecord {
 }
 
 export type AuditChainReport = {
-  status: "intact" | "broken" | "empty";
+  status: "intact" | "broken" | "empty" | "unsealed";
   events: number;
   verified: number;
   pruned: number;
@@ -103,6 +103,9 @@ export function verifyAuditChain(events: unknown): AuditChainReport {
       reason,
     });
 
+  // A journal written before the chain existed has no seal at all: it is sealed at
+  // the next server start or save. A missing seal among sealed events is a break.
+  if (!list.some(isSealed)) return report("unsealed", 0, 0, null);
   const unsealed = list.find((event) => !isSealed(event));
   if (unsealed) return breakAt(unsealed, "Événement sans sceau", 0, 0);
   const ordered = [...list].sort((left, right) => (left.seq as number) - (right.seq as number));
