@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useUser, ClerkProvider, Show, SignIn, SignUp } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
@@ -9,14 +9,20 @@ import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } fr
 import { clearSyncRecoveryDraft, StoreProvider } from '@/lib/store';
 import { missingLocalClerkKey } from '@/lib/clerk-config';
 import { Shell } from '@/components/shell';
-import Dashboard from '@/pages/dashboard';
-import MessagesPage from '@/pages/messages';
-import TicketsPage from '@/pages/tickets';
-import ServicesPage from '@/pages/services';
-import AssetsPage from '@/pages/assets';
-import AuditPage from '@/pages/audit';
-import GovernancePage from '@/pages/governance';
-import SettingsPage from '@/pages/settings';
+// Each page is its own chunk: the first load only fetches the shell and the
+// page being opened; the others download when the user navigates to them.
+const Dashboard = lazy(() => import('@/pages/dashboard'));
+const MessagesPage = lazy(() => import('@/pages/messages'));
+const TicketsPage = lazy(() => import('@/pages/tickets'));
+const ServicesPage = lazy(() => import('@/pages/services'));
+const AssetsPage = lazy(() => import('@/pages/assets'));
+const AuditPage = lazy(() => import('@/pages/audit'));
+const GovernancePage = lazy(() => import('@/pages/governance'));
+const SettingsPage = lazy(() => import('@/pages/settings'));
+
+function PageLoading() {
+  return <div role="status" aria-live="polite" className="grid min-h-64 place-items-center text-sm text-muted-foreground">Chargement de la page…</div>;
+}
 
 const clerkKeyMissing = missingLocalClerkKey(
   window.location.hostname,
@@ -114,6 +120,7 @@ function AuthenticatedDesk() {
   if (!isLoaded || !user) return <main className="grid min-h-[100dvh] place-items-center text-sm text-muted-foreground">Chargement du compte…</main>;
   return <QueryClientProvider client={queryClient}><StoreProvider key={user.id} userId={user.id}>
     <Shell>
+      <Suspense fallback={<PageLoading />}>
       <Switch>
         <Route path="/" component={Dashboard} />
         <Route path="/user-portal" component={Dashboard} />
@@ -126,6 +133,7 @@ function AuthenticatedDesk() {
         <Route path="/settings" component={SettingsPage} />
         <Route component={NotFoundPage} />
       </Switch>
+      </Suspense>
     </Shell>
   </StoreProvider></QueryClientProvider>;
 }

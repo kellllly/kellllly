@@ -2,11 +2,13 @@ import { useMemo } from 'react';
 import { Link } from 'wouter';
 import { Activity, ArrowRight, ClipboardList, Clock3, MessageSquare, Plus, Server, ShieldCheck } from 'lucide-react';
 import { useNow, useStore } from '@/lib/store';
+import { useDisplayName } from '@/hooks/use-display-name';
 import { isOpen, messageTime, priorityTone, statusTone, ticketSla, unreadOf } from '@/lib/domain';
 import { Avatar, Badge, Metric, SectionTitle, Warning, pad2 } from '@/components/kit';
 
 export default function Dashboard() {
   const { store, log } = useStore();
+  const { firstName } = useDisplayName();
   const now = useNow(30_000);
   const isAuditor = store.profile.clearance.startsWith('N5 ·');
   const stats = useMemo(() => {
@@ -27,7 +29,7 @@ export default function Dashboard() {
     return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked };
   }, [store, now]);
   return <div className="page-enter"><Warning />
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><div className="eyebrow">{new Date(now).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Libreville' }).toLocaleUpperCase('fr-FR')} <span className="mx-1">·</span> POINT DE SITUATION</div><h2 className="serif mt-1 text-[30px] leading-tight">Bonjour, {store.profile.name.split(' ')[0]}.</h2><p className="mt-1 text-[13px] text-muted-foreground">Voici les repères opérationnels de votre espace de travail.</p></div><div className="flex gap-2">{!isAuditor && <Link href="/tickets?new=1" data-testid="link-new-request" className="focus-ring inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-[12px] font-semibold hover:bg-muted"><Plus size={15} />Nouvelle demande</Link>}<Link href="/audit" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground"><Activity size={15} />Journal d’activité</Link></div></div>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><div className="eyebrow">{new Date(now).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Libreville' }).toLocaleUpperCase('fr-FR')} <span className="mx-1">·</span> POINT DE SITUATION</div><h2 className="serif mt-1 text-[30px] leading-tight">Bonjour, {firstName}.</h2><p className="mt-1 text-[13px] text-muted-foreground">Voici les repères opérationnels de votre espace de travail.</p></div><div className="flex gap-2">{!isAuditor && <Link href="/tickets?new=1" data-testid="link-new-request" className="focus-ring inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-[12px] font-semibold hover:bg-muted"><Plus size={15} />Nouvelle demande</Link>}<Link href="/audit" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground"><Activity size={15} />Journal d’activité</Link></div></div>
     {isAuditor ? <div className="mt-5 max-w-3xl space-y-4">
       <div className="grid gap-3 sm:grid-cols-2"><Metric label="Articles KEDB consultables" value={pad2(store.kedb.length)} delta="Consultation en lecture seule" icon={ShieldCheck} tone="blue" /><Metric label="Événements du journal" value={pad2(store.audit.length)} delta="Export disponible selon les filtres" icon={Activity} tone="neutral" /></div>
       <section className="panel p-5"><SectionTitle kicker="ACCÈS N5 · LECTURE" title="Consultation limitée" /><p className="text-[12px] leading-relaxed text-muted-foreground">Les détails des tickets et les conversations ne font pas partie de votre périmètre. Vous pouvez consulter la base d’erreurs connues et exporter le journal d’activité.</p><div className="mt-4 flex flex-wrap gap-3"><Link href="/services" className="text-[11px] font-semibold text-primary hover:underline">Consulter la base KEDB</Link><Link href="/audit" className="text-[11px] font-semibold text-primary hover:underline">Ouvrir le journal</Link></div></section>

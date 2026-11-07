@@ -4,6 +4,7 @@ import { Activity, AlertTriangle, Bell, BellOff, Check, ClipboardList, Cpu, Land
 import { useClerk } from '@clerk/react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNow, useStore } from '@/lib/store';
+import { useDisplayName } from '@/hooks/use-display-name';
 import { deriveNotifications, unreadOf } from '@/lib/domain';
 import { formatWAT } from '@/lib/itsm';
 import { SyncRecoveryActions } from './sync-recovery-actions';
@@ -33,6 +34,7 @@ const initials = (n: string) => n.split(' ').filter(Boolean).map(x => x[0]).join
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { store, storageIssue, dismissIssue, recovery, writesSuspended, resync } = useStore();
+  const { name: displayName } = useDisplayName();
   const { signOut } = useClerk();
   const [mobileNav, setMobileNav] = useState(false);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
@@ -56,7 +58,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className="mt-auto rounded-xl border border-[#3b5659] bg-[#1d383d] p-3.5">
         <div className="flex items-center gap-2 text-[11px] font-semibold text-[#d2e6db]"><LockKeyhole size={14} />Espace ITSM partagé</div>
         <p className="mt-2 text-[11px] leading-relaxed text-[#a9bdbe]">Données fictives du pilote, visibles aux comptes authentifiés. Prototype non homologué.</p>
-        <div className="mt-3 flex items-center gap-2 border-t border-[#3b5659] pt-3"><div className="grid h-8 w-8 place-items-center rounded-full bg-[#d8c6a1] text-[11px] font-bold text-[#24313b]">{initials(store.profile.name)}</div><div className="min-w-0"><div className="truncate text-xs font-semibold">{store.profile.name}</div><div className="text-[10px] text-[#adc1c1]">{store.profile.role} · {store.profile.clearance}</div></div></div>
+        <div className="mt-3 flex items-center gap-2 border-t border-[#3b5659] pt-3"><div className="grid h-8 w-8 place-items-center rounded-full bg-[#d8c6a1] text-[11px] font-bold text-[#24313b]">{initials(displayName)}</div><div className="min-w-0"><div className="truncate text-xs font-semibold">{displayName}</div><div className="text-[10px] text-[#adc1c1]">{store.profile.role} · {store.profile.clearance}</div></div></div>
       </div>
     </aside>
     {mobileNav && <button aria-label="Fermer la navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-30 bg-black/30 lg:hidden" />}
@@ -67,7 +69,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="min-w-0 flex-1"><div className="eyebrow hidden sm:block">ANIF / GABON <span className="mx-1">·</span> DÉMONSTRATEUR NON HOMOLOGUÉ</div><h1 className="mt-0.5 truncate text-[18px] font-semibold tracking-[-.02em]">{page.title}</h1></div>
           <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground md:flex"><span className="h-2 w-2 rounded-full bg-[#4f9d80]" /><span>Environnement simulé</span></div>
           <NotificationBell />
-          <Link href="/settings" className="grid h-9 w-9 place-items-center rounded-full bg-[#d7c7a6] text-[11px] font-bold text-[#24313b]" aria-label="Profil" data-testid="link-profile">{initials(store.profile.name)}</Link>
+          <Link href="/settings" className="grid h-9 w-9 place-items-center rounded-full bg-[#d7c7a6] text-[11px] font-bold text-[#24313b]" aria-label="Profil" data-testid="link-profile">{initials(displayName)}</Link>
           <button onClick={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })} aria-label="Se déconnecter" title="Se déconnecter" className="focus-ring grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground"><LogOut size={15} /></button>
         </div>
       </header>

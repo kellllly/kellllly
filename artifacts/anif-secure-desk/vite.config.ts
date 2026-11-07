@@ -66,6 +66,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Stable vendor chunks stay cached across application releases.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('@clerk')) return 'vendor-clerk';
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'vendor-react';
+          if (id.includes('@radix-ui') || id.includes('lucide-react')) return 'vendor-ui';
+          return 'vendor';
+        },
+      },
+    },
   },
   server: {
     port,

@@ -10,11 +10,13 @@ import {
   getGetItsmUserDirectoryQueryKey,
 } from '@workspace/api-client-react';
 import { useStore } from '@/lib/store';
+import { useDisplayName } from '@/hooks/use-display-name';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
 import { Button, Field, inputCls, SectionTitle, Warning } from '@/components/kit';
 
 export default function SettingsPage() {
   const { store, setStore, log } = useStore();
+  const { name: displayName } = useDisplayName();
   const { user: currentUser } = useUser();
   const [targetUserId, setTargetUserId] = useState('');
   const [directorySearch, setDirectorySearch] = useState('');
@@ -137,7 +139,7 @@ export default function SettingsPage() {
   return <div className="page-enter min-w-0"><Warning /><div className="mb-5"><div className="eyebrow">COMPTE & CONFIGURATION</div><h2 className="serif mt-1 text-[27px]">Préférences</h2><p className="mt-1 text-[12px] text-muted-foreground">Le compte authentifié accède à l’espace ITSM fictif partagé.</p></div>
     <div className="grid min-w-0 gap-5 xl:grid-cols-[1fr_.8fr]"><div className="min-w-0 space-y-5">
       <section className="panel p-5 md:p-6"><SectionTitle kicker="COMPTE AUTHENTIFIÉ" title="Identité de la session" />
-        <div className="rounded-lg bg-muted/60 p-4"><div className="eyebrow">IDENTIFIANT DE COMPTE</div><div className="mono mt-2 break-all text-[12px] font-semibold">{store.profile.name}</div><div className="mt-2 text-[11px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div>
+        <div className="rounded-lg bg-muted/60 p-4"><div className="eyebrow">COMPTE</div><div className="mt-2 text-[13px] font-semibold">{displayName}</div><div className="eyebrow mt-3">IDENTIFIANT DE COMPTE</div><div className="mono mt-2 break-all text-[12px] font-semibold">{store.profile.name}</div><div className="mt-2 text-[11px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div>
         <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">L’identité affichée provient de la session authentifiée. Les rôles de démonstration sélectionnables ont été retirés; les commandes et transitions de tickets sont contrôlées par l’API.</p>
       </section>
         {isRoleAdmin && directoryAccessDeniedFor === currentUser?.id && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">Votre accès N1 a changé. Le répertoire a été effacé de cette session; reconnectez-vous pour vérifier vos droits.</p>}
