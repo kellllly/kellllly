@@ -167,6 +167,24 @@ paths:
           description: Authentication required
         "403":
           description: The assigned role cannot export the audit log
+  /itsm/audit/integrity:
+    get:
+      operationId: getItsmAuditIntegrity
+      tags: [itsm]
+      summary: Verify the hash chain of the activity journal
+      responses:
+        "200":
+          description: Result of the journal hash-chain verification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmAuditIntegrity"
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+        "503":
+          description: The journal could not be read
   /itsm/users:
     get:
       operationId: getItsmUserDirectory
@@ -454,6 +472,38 @@ components:
           items:
             $ref: "#/components/schemas/ItsmPerson"
       required: [people]
+    ItsmAuditIntegrity:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [intact, broken, empty]
+        events:
+          type: integer
+          minimum: 0
+        verified:
+          type: integer
+          minimum: 0
+        pruned:
+          type: integer
+          minimum: 0
+        head:
+          type: [object, "null"]
+          properties:
+            seq: { type: integer, minimum: 1 }
+            hash: { type: string }
+          required: [seq, hash]
+        firstBreak:
+          type: [object, "null"]
+          properties:
+            seq: { type: [integer, "null"] }
+            eventId: { type: [string, "null"] }
+            reason: { type: string }
+          required: [seq, eventId, reason]
+        checkedAt:
+          type: string
+          format: date-time
+      required: [status, events, verified, pruned, head, firstBreak, checkedAt]
     ItsmWorkspaceVersion:
       type: object
       properties:

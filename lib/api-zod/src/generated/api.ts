@@ -116,6 +116,36 @@ export const ExportItsmAuditResponse = zod.unknown()
 
 
 /**
+ * @summary Verify the hash chain of the activity journal
+ */
+export const getItsmAuditIntegrityResponseEventsMin = 0;
+
+export const getItsmAuditIntegrityResponseVerifiedMin = 0;
+
+export const getItsmAuditIntegrityResponsePrunedMin = 0;
+
+
+
+
+export const GetItsmAuditIntegrityResponse = zod.object({
+  "status": zod.enum(['intact', 'broken', 'empty']),
+  "events": zod.number().int().min(getItsmAuditIntegrityResponseEventsMin),
+  "verified": zod.number().int().min(getItsmAuditIntegrityResponseVerifiedMin),
+  "pruned": zod.number().int().min(getItsmAuditIntegrityResponsePrunedMin),
+  "head": zod.object({
+  "seq": zod.number().int().min(1),
+  "hash": zod.string()
+}).nullable(),
+  "firstBreak": zod.object({
+  "seq": zod.number().int().nullable(),
+  "eventId": zod.string().nullable(),
+  "reason": zod.string()
+}).nullable(),
+  "checkedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List pilot accounts for N1 role management
  */
 export const getItsmUserDirectoryQueryQMax = 120;

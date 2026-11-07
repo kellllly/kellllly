@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
+import { isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
 
 export type WorkspaceActor = ItsmActor;
 type JsonRecord = Record<string, unknown>;
@@ -48,12 +49,18 @@ export const ITSM_ROLE_AUDIT_TYPES = [
 ] as const;
 export const ITSM_TICKET_CONVERSION_AUDIT_TYPE = "itsm.ticket.converted";
 const MAX_NON_ROLE_AUDIT_EVENTS = 5000;
+/**
+ * Seal new journal events into the hash chain, then keep at most 5,000 ordinary
+ * events with their content. Older ordinary events become pruned stubs that keep
+ * only their seal, so the chain stays verifiable. Authorization events are kept whole.
+ */
 function retainItsmAuditEvents(events: unknown): JsonRecord[] {
   let retainedNonRoleEvents = 0;
-  return records(events).filter((event) => {
-    if (ITSM_ROLE_AUDIT_TYPES.includes(event.type as typeof ITSM_ROLE_AUDIT_TYPES[number])) return true;
+  return sealAuditEvents(records(events)).map((event) => {
+    if (isPrunedAuditEvent(event)) return event;
+    if (ITSM_ROLE_AUDIT_TYPES.includes(event.type as typeof ITSM_ROLE_AUDIT_TYPES[number])) return event;
     retainedNonRoleEvents += 1;
-    return retainedNonRoleEvents <= MAX_NON_ROLE_AUDIT_EVENTS;
+    return retainedNonRoleEvents <= MAX_NON_ROLE_AUDIT_EVENTS ? event : pruneAuditEvent(event);
   });
 }
 const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
@@ -505,7 +512,7 @@ function importMerge(current: JsonRecord, source: JsonRecord, actor: WorkspaceAc
       if (collection === "audit" && ITSM_ROLE_AUDIT_TYPES.includes(item.type as typeof ITSM_ROLE_AUDIT_TYPES[number])) continue;
       const id = String(item.id ?? "");
       if (id && !ids.has(id)) {
-        currentItems.push(item);
+        currentItems.push(collection === "audit" ? stripAuditChainFields(item) : item);
         ids.add(id);
       }
     }
@@ -850,7 +857,7 @@ export function applyWorkspaceUpdate(
   const additions = records(normalized.audit)
     .filter((event) => !knownAuditIds.has(String(event.id)))
     .map((event) => ({
-      ...event, id: randomUUID(), actor: actor.id, at: newStamp(now), time: shortTime(now),
+      ...stripAuditChainFields(event), id: randomUUID(), actor: actor.id, at: newStamp(now), time: shortTime(now),
     }));
   const knownConversions = new Set(oldAudit
     .filter((event) => event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE)
@@ -979,7 +986,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
     })),
     services: actor.role === "N5" ? [] : scopedServices,
     assets: actor.role === "N4" ? scopedAssets : hiddenCollections ? [] : records(store.assets),
-    audit: actor.role === "N4" ? [] : records(store.audit),
+    audit: actor.role === "N4" ? [] : records(store.audit).filter((event) => !isPrunedAuditEvent(event)),
     kedb: actor.role === "N4"
       ? records(store.kedb).filter((article) => actor.serviceIds.includes(String(article.serviceId ?? "")))
       : records(store.kedb),

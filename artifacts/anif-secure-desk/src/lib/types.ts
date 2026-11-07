@@ -38,6 +38,8 @@ export type AuditEvent = {
   type?: string; targetUserId?: string; previousRole?: string | null; nextRole?: string | null;
   previousServiceIds?: string[]; serviceIds?: string[];
   ticketId?: string; sourceMessageId?: string; conversationId?: string;
+  /** Server-owned hash-chain seal; never set by the browser. */
+  seq?: number; prevHash?: string; hash?: string;
 };
 export type KedbArticle = {
   id: string; title: string; symptom: string; rootCause: string; resolution: string;

@@ -255,7 +255,7 @@ test("audit export sends filtered CSV to authorized roles and no journal data to
   assert.equal(historicalRows.length, 2, "the hour search should export only the historical event");
   assert.equal(
     historicalRows[1],
-    '"event-legacy";"Trace historique";"ancien-agent";"";"";"";"";"";"";"";"Pilote";"";"09:17"',
+    '"event-legacy";"Trace historique";"ancien-agent";"";"";"";"";"";"";"";"Pilote";"";"09:17";"";"";""',
   );
   assert.equal(loadCount, 3);
 

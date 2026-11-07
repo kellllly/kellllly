@@ -1,4 +1,5 @@
 import test from "node:test";
+import { verifyAuditChain } from "../src/lib/itsm-audit-chain.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -184,14 +185,20 @@ test("old authorization events remain consultable beyond the 5,000-event journal
   }, actor("support", "N3"), at);
   const savedAudit = saved.audit as Record<string, any>[];
 
-  assert.equal(savedAudit.length, 5_002);
+  // The oldest ordinary event keeps only its seal, so the hash chain stays verifiable.
+  assert.equal(savedAudit.length, 5_003);
+  assert.equal(savedAudit.filter((event) => event.pruned === true).length, 1);
+  assert.equal(verifyAuditChain(savedAudit).status, "intact");
   assert.ok(savedAudit.some((event) => event.id === historicRoleEvent.id));
   assert.ok(savedAudit.some((event) => event.type === ITSM_ROLE_CHANGE_AUDIT_TYPE
     && event.targetUserId === "account-recent"));
   assert.ok(savedAudit.some((event) => event.action === "Nouvel événement ordinaire"));
-  assert.ok(!savedAudit.some((event) => event.id === ordinaryEvents[ordinaryEvents.length - 1].id));
-  assert.ok((userStoreView(saved, actor("auditor", "N5")).audit as Record<string, any>[])
-    .some((event) => event.id === historicRoleEvent.id));
+  const prunedOldest = savedAudit.find((event) => event.id === ordinaryEvents[ordinaryEvents.length - 1].id);
+  assert.equal(prunedOldest?.pruned, true);
+  assert.equal(prunedOldest?.action, undefined, "a pruned event keeps no content");
+  const auditorView = userStoreView(saved, actor("auditor", "N5")).audit as Record<string, any>[];
+  assert.equal(auditorView.length, 5_002, "pruned stubs are not sent to the browser");
+  assert.ok(auditorView.some((event) => event.id === historicRoleEvent.id));
 });
 
 test("role changes are sent to the configured external archive with stable event identity", async () => withoutDevelopmentArchiveMode(async () => {

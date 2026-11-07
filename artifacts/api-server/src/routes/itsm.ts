@@ -59,7 +59,7 @@ import {
   requirePermission,
   type ItsmRole,
 } from "../lib/itsm-rbac";
-import { createItsmAuditExportHandler } from "./itsm-audit-export";
+import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler } from "./itsm-audit-export";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
 
@@ -734,13 +734,20 @@ export function createItsmWorkspaceSaveRouter(
   return saveRouter;
 }
 
+const loadStoredAuditEvents = async () => {
+  const [row] = await db.select().from(itsmWorkspaceTable)
+    .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
+  return Array.isArray(row?.store?.audit) ? row.store.audit : [];
+};
+
+router.get("/itsm/audit/integrity", requireAuth, createItsmAuditIntegrityHandler({
+  resolveActor: actorFor,
+  loadAuditEvents: loadStoredAuditEvents,
+}));
+
 router.get("/itsm/audit/export", requireAuth, createItsmAuditExportHandler({
   resolveActor: actorFor,
-  loadAuditEvents: async () => {
-    const [row] = await db.select().from(itsmWorkspaceTable)
-      .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
-    return Array.isArray(row?.store?.audit) ? row.store.audit : [];
-  },
+  loadAuditEvents: loadStoredAuditEvents,
   resolveNames: async (ids) => {
     const people = [];
     for (let i = 0; i < ids.length; i += MAX_PEOPLE_PER_REQUEST) {

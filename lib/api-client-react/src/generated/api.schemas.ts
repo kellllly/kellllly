@@ -120,6 +120,50 @@ export interface ItsmPeople {
   people: ItsmPerson[];
 }
 
+export type ItsmAuditIntegrityStatus = typeof ItsmAuditIntegrityStatus[keyof typeof ItsmAuditIntegrityStatus];
+
+
+export const ItsmAuditIntegrityStatus = {
+  intact: 'intact',
+  broken: 'broken',
+  empty: 'empty',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ItsmAuditIntegrityHead = {
+  /** @minimum 1 */
+  seq: number;
+  hash: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type ItsmAuditIntegrityFirstBreak = {
+  /** @nullable */
+  seq: number | null;
+  /** @nullable */
+  eventId: string | null;
+  reason: string;
+} | null;
+
+export interface ItsmAuditIntegrity {
+  status: ItsmAuditIntegrityStatus;
+  /** @minimum 0 */
+  events: number;
+  /** @minimum 0 */
+  verified: number;
+  /** @minimum 0 */
+  pruned: number;
+  /** @nullable */
+  head: ItsmAuditIntegrityHead;
+  /** @nullable */
+  firstBreak: ItsmAuditIntegrityFirstBreak;
+  checkedAt: string;
+}
+
 export interface ItsmWorkspaceVersion {
   /** @minimum 0 */
   version: number;

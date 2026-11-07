@@ -4,6 +4,7 @@ import {
   requirePermission,
 } from "../lib/itsm-rbac.ts";
 import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
+import { isPrunedAuditEvent, verifyAuditChain } from "../lib/itsm-audit-chain.ts";
 
 type AuditExportDependencies = {
   resolveActor: (req: Request, res: Response) => Promise<WorkspaceActor | null>;
@@ -97,7 +98,7 @@ export function createItsmAuditExportHandler({
       return;
     }
     const records = rawEvents.filter((value): value is Record<string, unknown> =>
-      Boolean(value && typeof value === "object" && !Array.isArray(value)));
+      Boolean(value && typeof value === "object" && !Array.isArray(value)) && !isPrunedAuditEvent(value));
     const names = await namesFor(records, resolveNames, (error) => req.log?.warn({ err: error }, "Audit export continues without account names"));
     const nameOf = (id: unknown) => (typeof id === "string" ? names.get(id) : undefined) ?? "";
     const events = records
@@ -116,19 +117,57 @@ export function createItsmAuditExportHandler({
         return true;
       });
     const rows = [
-      ["Identifiant", "Action", "Acteur", "Nom de l’acteur", "Compte cible", "Nom du compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO", "Heure enregistrée"],
+      ["Identifiant", "Action", "Acteur", "Nom de l’acteur", "Compte cible", "Nom du compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO", "Heure enregistrée", "Séquence", "Empreinte précédente", "Empreinte"],
       ...events.map((event) => [
         event.id, event.action, event.actor, nameOf(event.actor),
         event.targetUserId, nameOf(event.targetUserId),
         event.previousRole, event.nextRole,
         Array.isArray(event.previousServiceIds) ? event.previousServiceIds.join(", ") : "",
         Array.isArray(event.serviceIds) ? event.serviceIds.join(", ") : "",
-        event.scope, event.at, event.time,
+        event.scope, event.at, event.time, event.seq, event.prevHash, event.hash,
       ]),
     ];
     const csv = `\uFEFF${rows.map((rowValues) => rowValues.map(csvCell).join(";")).join("\r\n")}\r\n`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="journal-anif-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);
+  };
+}
+
+/**
+ * Verify the journal hash chain. Same audience as the export (N1, N3, N5).
+ * Returns only seals and counts, never event content.
+ */
+export function createItsmAuditIntegrityHandler({
+  resolveActor,
+  loadAuditEvents,
+  now = () => new Date(),
+}: Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents"> & { now?: () => Date }): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await resolveActor(req, res);
+    if (!actor || res.headersSent) return;
+    try {
+      requirePermission(actor, "exportAudit");
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for integrity check");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    const report = verifyAuditChain(events);
+    if (report.status === "broken") {
+      req.log?.error({ alert: "itsm_audit_chain_broken", firstBreak: report.firstBreak }, "ITSM audit hash chain is broken");
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ ...report, checkedAt: now().toISOString() });
   };
 }

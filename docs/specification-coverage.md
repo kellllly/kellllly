@@ -12,12 +12,12 @@ fournie, pas une attestation juridique, réglementaire ou technique.
 
 | Référence du PDF | Traduction dans le démonstrateur |
 | --- | --- |
-| Matrice des habilitations, p. 3–5 | Les comptes Clerk authentifiés accèdent à un espace fictif partagé. La matrice N1–N5 reste une référence illustrative; les droits individuels ne sont pas configurés. |
+| Matrice des habilitations, p. 3–5 | Les rôles N1–N5 et leurs périmètres de services sont attribués par un N1 dans Préférences, enregistrés dans Clerk et appliqués par l’API (lecture, écriture, export, CAB, résolution). |
 | Gestion des incidents, p. 8–10 | Qualification par type, impact et urgence; priorités P1–P4; support L1/L2/L3; prise en charge, escalade et résolution documentée contrôlées par l’API. |
 | Niveaux de service, p. 9–10 | Deux délais distincts de prise en charge et de résolution, calculés à partir de l’ouverture initiale. |
 | Passerelle messagerie–ticketing, p. 8 | Conversion d’un message de support après relecture et confirmation manuelle, lien entre le ticket et son fil. Aucun filtre d’anonymisation certifié. |
 | Clôture et capitalisation, p. 8 | Cause racine et solution avant résolution; validation explicite simulée du demandeur; fiche KEDB liée au ticket sans doublon. |
-| Journalisation, p. 3 | Historique fictif partagé, filtrable et exportable en CSV. Aucune valeur probante, immutabilité WORM ou signature cryptographique. |
+| Journalisation, p. 3 | Historique partagé en ajout seul côté serveur, filtrable et exportable en CSV. Chaque événement est scellé par une empreinte SHA-256 chaînée à la précédente (séquence, empreinte précédente, empreinte), vérifiable dans le journal et reprise dans l’export. Cela détecte une modification faite hors de l’application, mais ne vaut ni archive WORM ni horodatage qualifié : un accès en écriture à toute la base permet de recalculer la chaîne, d’où l’intérêt de noter le dernier sceau ailleurs. |
 | Continuité, architecture et recette, p. 10–18 | Référentiel de gouvernance séparant les objectifs futurs des comportements effectivement présents. |
 
 ## Cibles SLA reprises du cahier
@@ -56,7 +56,8 @@ pas le compteur à zéro.
   MLS, SQLCipher et protection matérielle des secrets.
 - Transport de fichiers, sanitarisation EXIF, analyse de pièces jointes et
   effacement cryptographique sur des terminaux distants.
-- Preuves d’audit WORM, SIEM, horodatage RFC 3161 et scellement par arbres de Merkle.
+- Preuves d’audit WORM, SIEM, horodatage RFC 3161 et ancrage externe du sceau. Le pilote fournit
+  seulement une chaîne d’empreintes SHA-256 vérifiable (voir Journalisation).
 - Réplication, supervision, basculement Nkok/Libreville et sauvegardes 3-2-1-1-0.
 - Garantie de disponibilité de 99,99 %, RTO < 15 min, RPO = 0 et performances
   annoncées dans le cahier. Ces valeurs restent des cibles à démontrer.

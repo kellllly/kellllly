@@ -31,6 +31,7 @@ import type {
   GetItsmPeopleParams,
   GetItsmUserDirectoryParams,
   HealthStatus,
+  ItsmAuditIntegrity,
   ItsmImportInput,
   ItsmPeople,
   ItsmRoleArchiveCheckFailureResponse,
@@ -759,6 +760,107 @@ export function useExportItsmAudit<TData = Awaited<ReturnType<typeof exportItsmA
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getExportItsmAuditQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmAuditIntegrityUrl = () => {
+
+
+
+
+  return `/api/itsm/audit/integrity`
+}
+
+/**
+ * @summary Verify the hash chain of the activity journal
+ */
+export const getItsmAuditIntegrity = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmAuditIntegrity> => {
+
+  return customFetch<ItsmAuditIntegrity>(getGetItsmAuditIntegrityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmAuditIntegrityQueryKey = () => {
+    return [
+    `/api/itsm/audit/integrity`
+    ] as const;
+    }
+
+
+export const getGetItsmAuditIntegrityQueryOptions = <TData = Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmAuditIntegrityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmAuditIntegrity>>> = ({ signal }) => getItsmAuditIntegrity({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmAuditIntegrityQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmAuditIntegrity>>>
+export type GetItsmAuditIntegrityQueryError = ErrorType<void>
+
+
+export function useGetItsmAuditIntegrity<TData = Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditIntegrity>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditIntegrity>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditIntegrity<TData = Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditIntegrity>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditIntegrity>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditIntegrity<TData = Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Verify the hash chain of the activity journal
+ */
+
+export function useGetItsmAuditIntegrity<TData = Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditIntegrity>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmAuditIntegrityQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
