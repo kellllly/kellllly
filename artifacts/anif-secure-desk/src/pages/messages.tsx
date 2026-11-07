@@ -8,8 +8,9 @@ import { createIncidentFromMessage, filterSupportMessages, isConvertibleSupportM
 import type { Conversation, Level, Message, SupportMessageFilter, Ticket } from '@/lib/types';
 import { Avatar, Badge, Button, Field, Modal, SearchBox, Warning, inputCls, textareaCls } from '@/components/kit';
 import { PriorityPreview, SlaBar } from '@/components/ticket-parts';
+import { usePeople } from '@/hooks/use-people';
 
-export default function MessagesPage() {
+export default function MessagesPage() { const { person } = usePeople();
   const { store, setStore, log } = useStore();
   const search = useSearch();
   const [, setLocation] = useLocation();
@@ -35,7 +36,7 @@ export default function MessagesPage() {
   }, [search, setLocation]);
 
   const q = query.trim().toLowerCase();
-  const filtered = store.conversations.filter(c => (filter === 'Toutes' || c.kind === filter) && (!q || `${c.title} ${c.participants.join(' ')}`.toLowerCase().includes(q) || c.messages.some(m => m.body.toLowerCase().includes(q))));
+  const filtered = store.conversations.filter(c => (filter === 'Toutes' || c.kind === filter) && (!q || `${c.title} ${c.participants.map(person).join(' ')}`.toLowerCase().includes(q) || c.messages.some(m => m.body.toLowerCase().includes(q))));
   const convo = filtered.find(c => c.id === active) ?? filtered[0];
   const sourceMessageUnavailable = !!focusMessageId && !!convo && convo.id === active && !convo.messages.some(message => message.id === focusMessageId);
   const msgLen = convo?.messages.length ?? 0;
@@ -100,7 +101,7 @@ export default function MessagesPage() {
       </aside>
 
       {convo ? <section className="flex h-[70dvh] min-h-[550px] max-h-[720px] min-w-0 flex-col">
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-4 sm:px-5">{convo.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={convo.participants[1] || convo.title} />}<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{convo.title}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{convo.participants.join(' · ')}</div></div><Badge tone={convo.classification === 'Restreint' ? 'amber' : 'green'}>{convo.classification}</Badge><button data-testid="button-toggle-read" onClick={() => toggleRead(convo)} className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted" title="Basculer lu / non lu">{unreadOf(convo) > 0 ? <><Eye size={13} />Marquer lu</> : <><EyeOff size={13} />Marquer non lu</>}</button></div>
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-4 sm:px-5">{convo.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={person(convo.participants[1] || convo.title)} />}<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{convo.title}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{convo.participants.map(person).join(' · ')}</div></div><Badge tone={convo.classification === 'Restreint' ? 'amber' : 'green'}>{convo.classification}</Badge><button data-testid="button-toggle-read" onClick={() => toggleRead(convo)} className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted" title="Basculer lu / non lu">{unreadOf(convo) > 0 ? <><Eye size={13} />Marquer lu</> : <><EyeOff size={13} />Marquer non lu</>}</button></div>
         {convo.kind === 'Support' && <div className="border-b border-border bg-[#e1eaf0]/60 px-5 py-2.5 text-[10px] leading-relaxed text-[#3b6177] dark:bg-[#263c4a]/50 dark:text-[#a8c8d8]">Canal support : seuls ses messages peuvent être convertis en incident, après relecture manuelle d’un résumé technique. Aucune anonymisation automatique n’est effectuée.</div>}
         {convo.kind === 'Support' && <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2.5" role="group" aria-label="Filtrer l’historique du canal support">
           <span className="mr-1 text-[10px] font-semibold text-muted-foreground">Afficher :</span>
@@ -122,7 +123,7 @@ export default function MessagesPage() {
           const mine = m.author === store.profile.name && !m.system; const t = ticketFor(m); const hit = q && m.body.toLowerCase().includes(q);
           const isSourceMessage = convo.id === active && m.id === focusMessageId;
           if (m.system) return <div key={m.id} data-message-id={m.id} data-testid={`message-${m.id}`} className={`flex min-w-0 justify-center rounded-lg ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><button onClick={() => m.ticketId && setFocusTicket(m.ticketId)} className="max-w-[88%] break-words rounded-full border border-border bg-card px-3.5 py-1.5 text-center text-[10px] text-muted-foreground hover:border-primary/40">{messageTime(m)} {m.body}</button></div>;
-          return <div key={m.id} data-message-id={m.id} className={`flex min-w-0 gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={m.author} /><div className={`min-w-0 max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{m.author}</span><span>{messageTime(m)}</span></div><div className={`break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{m.body}</div>
+          return <div key={m.id} data-message-id={m.id} className={`flex min-w-0 gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={person(m.author)} /><div className={`min-w-0 max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{person(m.author)}</span><span>{messageTime(m)}</span></div><div className={`break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{m.body}</div>
             {convo.kind === 'Support' && <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <Badge tone={m.isInstruction ? 'amber' : 'blue'}>{m.isInstruction ? 'Consigne' : 'Signalement'}</Badge>
               {t ? <button data-testid={`button-linked-${m.id}`} onClick={() => setFocusTicket(t.id)} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:underline"><Badge tone={statusTone(t.status)}>{t.id} · {t.status}</Badge></button> : isConvertibleSupportMessage(m) && <button data-testid={`button-convert-${m.id}`} onClick={() => setConverting({ message: m, conversation: convo })} className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"><TicketPlus size={12} />Convertir en incident</button>}
@@ -157,7 +158,7 @@ export default function MessagesPage() {
   </div>;
 }
 
-function SideTicket({ ticket }: { ticket: Ticket }) {
+function SideTicket({ ticket }: { ticket: Ticket }) { const { person } = usePeople();
   const { setStore, log } = useStore();
   const now = useNow(1000);
   const [text, setText] = useState('');
@@ -165,7 +166,7 @@ function SideTicket({ ticket }: { ticket: Ticket }) {
   return <div className="mt-4 space-y-3" data-testid={`side-ticket-${ticket.id}`}>
     <div className="rounded-lg border border-border p-3"><div className="flex items-center justify-between gap-2"><span className="mono text-[10px] text-muted-foreground">{ticket.id} · L{ticket.supportLevel}</span><div className="flex gap-1"><Badge tone={priorityTone(ticket.priority)}>{ticket.priority}</Badge><Badge tone={statusTone(ticket.status)}>{ticket.status}</Badge></div></div><div className="mt-1.5 text-[12px] font-semibold leading-snug">{ticket.title}</div><div className="mt-1 text-[10px] text-muted-foreground">Assigné à {ticket.assignee}</div></div>
     {isOpen(ticket) && ticket.status !== 'Résolu' && <><SlaBar label="Prise en charge" openedAt={ticket.openedAt} deadline={sla.deadlines.acknowledgeBy} completedAt={ticket.acknowledgedAt} now={now} /><SlaBar label="Résolution" openedAt={ticket.openedAt} deadline={sla.deadlines.resolveBy} completedAt={ticket.resolvedAt} now={now} /></>}
-    <div><div className="eyebrow mb-2">DERNIÈRES ACTIVITÉS</div><ol className="max-h-44 space-y-2 overflow-y-auto">{[...ticket.updates].reverse().slice(0, 5).map((u, i) => <li key={i} className="text-[10px] leading-relaxed"><span className="font-semibold">{u.author}</span> <span className="mono text-muted-foreground">{u.at ? formatWAT(u.at, 'time') : u.time}</span><div className="text-muted-foreground">{u.body}</div></li>)}</ol></div>
+    <div><div className="eyebrow mb-2">DERNIÈRES ACTIVITÉS</div><ol className="max-h-44 space-y-2 overflow-y-auto">{[...ticket.updates].reverse().slice(0, 5).map((u, i) => <li key={i} className="text-[10px] leading-relaxed"><span className="font-semibold">{person(u.author)}</span> <span className="mono text-muted-foreground">{u.at ? formatWAT(u.at, 'time') : u.time}</span><div className="text-muted-foreground">{u.body}</div></li>)}</ol></div>
     {isOpen(ticket) && <form onSubmit={e => { e.preventDefault(); if (!text.trim()) return; setStore(s => withTicketEvent(s, ticket.id, text.trim(), {}, s.profile.name, true)); log(`Commentaire ajouté au ticket ${ticket.id} depuis la messagerie`, `Ticket ${ticket.id}`); setText(''); }} className="space-y-2"><textarea data-testid="input-side-comment" rows={2} value={text} onChange={e => setText(e.target.value)} placeholder="Commenter le ticket (visible dans la discussion)" className="w-full rounded-lg border border-border bg-card p-2.5 text-[11px]" /><Button type="submit" disabled={!text.trim()} className="w-full" testId="button-side-comment"><Send size={13} />Ajouter le commentaire</Button></form>}
     <Link href={`/tickets?ticket=${encodeURIComponent(ticket.id)}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline">Ouvrir dans Tickets IT <ArrowRight size={12} /></Link>
   </div>;
@@ -177,7 +178,7 @@ function NewConversation({ onClose, onCreate }: { onClose: () => void; onCreate:
   return <Modal title="Nouvelle conversation" description="Conversation fictive de démonstration. Aucun contenu sensible." onClose={onClose}><form onSubmit={e => { e.preventDefault(); if (!title.trim()) return; const max = store.conversations.reduce((m, c) => Math.max(m, Number(c.id.replace(/\D/g, '')) || 0), 204); onCreate({ id: `C-${max + 1}`, title: title.trim(), kind, classification: 'Interne', participants: [store.profile.name, 'Équipe'], readCount: 0, messages: [] }); }} className="space-y-3"><Field label="Nom de la conversation"><input data-testid="input-conversation-title" required autoFocus value={title} onChange={e => setTitle(e.target.value)} className={inputCls} placeholder="Ex. Coordination opérationnelle" /></Field><Field label="Type"><select value={kind} onChange={e => setKind(e.target.value)} className={inputCls}>{['Groupe', 'Équipe', 'Comité'].map(k => <option key={k}>{k}</option>)}</select></Field><div data-dialog-sticky-actions className="sticky bottom-[-1.25rem] z-10 -mx-5 -mb-5 flex flex-wrap justify-end gap-2 border-t border-border bg-card px-5 pb-5 pt-3"><Button variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" testId="button-submit-conversation"><Plus size={14} />Créer</Button></div></form></Modal>;
 }
 
-function ConvertDialog({ message, onClose, onConvert }: { message: Message; onClose: () => void; onConvert: (title: string, summary: string, impact: Level, urgency: Level, serviceId: string) => void }) {
+function ConvertDialog({ message, onClose, onConvert }: { message: Message; onClose: () => void; onConvert: (title: string, summary: string, impact: Level, urgency: Level, serviceId: string) => void }) { const { person } = usePeople();
   const { store } = useStore();
   const [title, setTitle] = useState(message.body.split(/[.!?]/)[0].slice(0, 80));
   const [summary, setSummary] = useState(`Signalement du canal support (${messageTime(message)}).\nSymptôme technique : ${message.body}\nPérimètre observé : à préciser.`);
@@ -187,7 +188,7 @@ function ConvertDialog({ message, onClose, onConvert }: { message: Message; onCl
     <form onSubmit={e => { e.preventDefault(); if (confirmed && title.trim() && summary.trim()) onConvert(title.trim(), summary.trim(), impact, urgency, serviceId); }} className="space-y-3">
       <div data-testid="conversion-source-message" className="rounded-lg border border-primary/30 bg-muted/50 p-3">
         <div className="eyebrow">MESSAGE SOURCE · {message.id}</div>
-        <div className="mt-1 text-[10px] font-semibold text-muted-foreground">{message.author} · {messageTime(message)}</div>
+        <div className="mt-1 text-[10px] font-semibold text-muted-foreground">{person(message.author)} · {messageTime(message)}</div>
         <p className="mt-1 text-[12px] leading-relaxed">{message.body}</p>
       </div>
       <Field label="Sujet de l’incident"><input data-testid="input-convert-title" required value={title} onChange={e => setTitle(e.target.value)} className={inputCls} /></Field>

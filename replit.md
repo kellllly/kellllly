@@ -50,7 +50,14 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Chaque sauvegarde envoie tout l’espace partagé : la limite JSON de l’API est de 5 Mo (`ITSM_JSON_BODY_LIMIT`). Ne pas revenir à la limite Express par défaut (100 Ko), qui bloque les sauvegardes après environ 450 événements de journal.
+- CORS est fermé par défaut ; ajouter une origine via `CORS_ALLOWED_ORIGINS` seulement si un client sur un autre domaine en a besoin.
+- Après un refus de sauvegarde autre qu’un conflit, l’onglet recharge l’état serveur et reprend l’enregistrement ; si le rechargement échoue, il reste suspendu et propose « Resynchroniser ».
+- La synchronisation interroge `GET /api/itsm/version` toutes les 5 s (onglet visible uniquement) et ne télécharge l’espace complet que si la version a changé. Ne pas revenir à un sondage de `GET /api/itsm`, qui transférait tout l’espace à chaque tick.
+- Auteurs, demandeurs et acteurs du journal restent stockés sous leur identifiant Clerk (`user_…`). L’interface les remplace à l’affichage via `GET /api/itsm/people?ids=…` (nom seulement, jamais d’e-mail ni de rôle, 100 identifiants max, cache serveur de 5 min). Ne pas stocker les noms à la place des identifiants : « mes messages » et les contrôles de l’API reposent sur l’identifiant. L’export CSV du journal ajoute les colonnes « Nom de l’acteur » et « Nom du compte cible » (vides si l’annuaire Clerk est indisponible : l’export reste possible), et la recherche du journal porte aussi sur ces noms, à l’écran comme dans l’export.
+- Le rôle ITSM de chaque compte est gardé 10 s en mémoire (`itsm-actor-cache.ts`) : sans ce cache, chaque requête interrogeait Clerk, qui répond 429 dès quelques onglets ouverts, et l’API renvoyait 503. Les routes d’habilitation relisent un N1 en direct, et toute modification de rôle faite par l’API vide le cache du compte.
+- Toutes les réponses `/api` (sauf le relais `/api/__clerk`) portent une CSP stricte `default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'`, et une route inconnue répond 404 en JSON.
+- En local, définir `API_PROXY_TARGET` pour que Vite relaie `/api`.
 
 ## Pointers
 

@@ -7,17 +7,13 @@
  */
 
 export type GetItsmUserDirectoryParams = {
-/**
- * @maxLength 120
- */
-q?: string;
-/**
- * @minimum 1
- * @maximum 50
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
+  /** @maxLength 120 */
+  q?: string;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  limit?: number;
+  /** @minimum 0 */
+  offset?: number;
 };

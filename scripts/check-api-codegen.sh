@@ -8,7 +8,7 @@ lib/api-zod/src/generated
 
 if ! git diff --quiet HEAD -- $generated_paths; then
   echo "Generated API files are out of date. Review the diff and commit the regenerated files." >&2
-  git diff -- HEAD -- $generated_paths
+  git diff HEAD -- $generated_paths
   exit 1
 fi
 

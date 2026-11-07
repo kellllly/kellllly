@@ -160,9 +160,10 @@ export type AuditFilterResult = {
 export function getAuditFilterResult(
   events: readonly AuditEvent[],
   filters: AuditFilters,
+  label?: (text: string | undefined) => string,
 ): AuditFilterResult {
   try {
-    return { events: filterAuditEvents(events, filters), filterError: '' };
+    return { events: filterAuditEvents(events, filters, label), filterError: '' };
   } catch (error) {
     return {
       events: [],
@@ -277,8 +278,15 @@ function normalizeAuditSearchText(value: string): string {
   return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
-/** Apply the journal's scope, text and inclusive WAT calendar-day filters together. */
-export function filterAuditEvents(events: readonly AuditEvent[], filters: AuditFilters): AuditEvent[] {
+/**
+ * Apply the journal's scope, text and inclusive WAT calendar-day filters together.
+ * `label` turns stored account IDs into the names shown on screen, so they can be searched too.
+ */
+export function filterAuditEvents(
+  events: readonly AuditEvent[],
+  filters: AuditFilters,
+  label?: (text: string | undefined) => string,
+): AuditEvent[] {
   const { scope, query, from, to } = filters;
   if (from) validateAuditDate(from, 'début');
   if (to) validateAuditDate(to, 'fin');
@@ -291,8 +299,8 @@ export function filterAuditEvents(events: readonly AuditEvent[], filters: AuditF
   return events.filter(event => {
     if (scope !== 'Tous' && event.scope !== scope) return false;
     const searchable = [
-      event.action, event.actor, event.scope, event.time, event.targetUserId,
-      event.previousRole, event.nextRole, ...(event.previousServiceIds ?? []), ...(event.serviceIds ?? []),
+      event.action, event.actor, label?.(event.actor), event.scope, event.time,
+      event.targetUserId, label?.(event.targetUserId), event.previousRole, event.nextRole, ...(event.previousServiceIds ?? []), ...(event.serviceIds ?? []),
     ].filter(Boolean).join(' ');
     const normalizedSearchable = normalizeAuditSearchText(searchable);
     if (normalizedQuery && !normalizedSearchable.includes(normalizedQuery)) return false;

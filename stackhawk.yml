@@ -1,0 +1,37 @@
+# HawkScan (StackHawk) — scan DAST de l’API ANIF en local.
+# Prérequis : API lancée sur le port 5000 avec Clerk configuré (voir DEVELOPPEMENT.md).
+# Variables lues à l’exécution, jamais écrites ici :
+#   HAWK_AUTH_TOKEN    jeton de session Clerk du compte de scan (voir scripts/hawkscan-clerk-token.sh)
+# Hypothèses (scan sans interaction) : surface REST unique décrite par lib/api-spec/openapi.yaml,
+# chemin de base /api placé dans app.host, environnement Development.
+app:
+  applicationId: ${APP_ID:087ba86d-158d-4bb1-8169-1d2232dddd9c}
+  env: ${APP_ENV:Development}
+  host: ${APP_HOST:http://localhost:5000/api}
+  openApiConf:
+    filePath: lib/api-spec/openapi.yaml
+  authentication:
+    # Clerk émet des jetons de session courts. Avant le scan, générer un jeton d’une heure pour
+    # le compte de scan : `export HAWK_AUTH_TOKEN=$(sh scripts/hawkscan-clerk-token.sh)`.
+    external:
+      values:
+        - type: TOKEN
+          tokenType: Bearer
+          value:
+            name: Authorization
+            val: ${HAWK_AUTH_TOKEN}
+    testPath:
+      path: /api/itsm/version
+      success: ".*200.*"
+hawk:
+  spider:
+    base: false
+tags:
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: _STACKHAWK_GIT_COMMIT_SHA
+    value: ${COMMIT_SHA:none}
+  - name: _STACKHAWK_GIT_BRANCH
+    value: ${BRANCH_NAME:none}
+  - name: git_origin
+    value: kellllly/kellllly

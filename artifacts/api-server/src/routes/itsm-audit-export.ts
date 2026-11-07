@@ -8,7 +8,29 @@ import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
 type AuditExportDependencies = {
   resolveActor: (req: Request, res: Response) => Promise<WorkspaceActor | null>;
   loadAuditEvents: () => Promise<unknown[]>;
+  /** Display names for the Clerk IDs found in the journal; IDs it omits keep an empty name. */
+  resolveNames?: (ids: string[]) => Promise<ReadonlyMap<string, string>>;
 };
+
+const CLERK_USER_ID = /^user_[A-Za-z0-9]{1,64}$/u;
+
+async function namesFor(
+  events: readonly Record<string, unknown>[],
+  resolveNames: AuditExportDependencies["resolveNames"],
+  onError: (error: unknown) => void,
+): Promise<ReadonlyMap<string, string>> {
+  if (!resolveNames) return new Map();
+  const ids = [...new Set(events.flatMap((event) => [event.actor, event.targetUserId])
+    .filter((id): id is string => typeof id === "string" && CLERK_USER_ID.test(id)))];
+  if (ids.length === 0) return new Map();
+  try {
+    return await resolveNames(ids);
+  } catch (error) {
+    // The export stays available with IDs only if the directory is down.
+    onError(error);
+    return new Map();
+  }
+}
 
 function csvCell(value: unknown): string {
   let text = String(value ?? "");
@@ -40,6 +62,7 @@ function csvDateBoundary(date: string, end: boolean): number | null {
 export function createItsmAuditExportHandler({
   resolveActor,
   loadAuditEvents,
+  resolveNames,
 }: AuditExportDependencies): RequestHandler {
   return async (req, res): Promise<void> => {
     const actor = await resolveActor(req, res);
@@ -73,13 +96,16 @@ export function createItsmAuditExportHandler({
       res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
       return;
     }
-    const events = rawEvents.filter((value): value is Record<string, unknown> =>
-      Boolean(value && typeof value === "object" && !Array.isArray(value)))
+    const records = rawEvents.filter((value): value is Record<string, unknown> =>
+      Boolean(value && typeof value === "object" && !Array.isArray(value)));
+    const names = await namesFor(records, resolveNames, (error) => req.log?.warn({ err: error }, "Audit export continues without account names"));
+    const nameOf = (id: unknown) => (typeof id === "string" ? names.get(id) : undefined) ?? "";
+    const events = records
       .filter((event) => {
         if (scope !== "Tous" && event.scope !== scope) return false;
         const searchable = [
-          event.action, event.actor, event.scope, event.time, event.targetUserId,
-          event.previousRole, event.nextRole,
+          event.action, event.actor, nameOf(event.actor), event.scope, event.time,
+          event.targetUserId, nameOf(event.targetUserId), event.previousRole, event.nextRole,
           ...(Array.isArray(event.previousServiceIds) ? event.previousServiceIds : []),
           ...(Array.isArray(event.serviceIds) ? event.serviceIds : []),
         ].filter(Boolean).join(" ");
@@ -90,9 +116,10 @@ export function createItsmAuditExportHandler({
         return true;
       });
     const rows = [
-      ["Identifiant", "Action", "Acteur", "Compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO", "Heure enregistrée"],
+      ["Identifiant", "Action", "Acteur", "Nom de l’acteur", "Compte cible", "Nom du compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO", "Heure enregistrée"],
       ...events.map((event) => [
-        event.id, event.action, event.actor, event.targetUserId,
+        event.id, event.action, event.actor, nameOf(event.actor),
+        event.targetUserId, nameOf(event.targetUserId),
         event.previousRole, event.nextRole,
         Array.isArray(event.previousServiceIds) ? event.previousServiceIds.join(", ") : "",
         Array.isArray(event.serviceIds) ? event.serviceIds.join(", ") : "",

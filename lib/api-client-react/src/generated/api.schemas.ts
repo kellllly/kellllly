@@ -111,6 +111,20 @@ export interface ItsmSnapshot {
   version: number;
 }
 
+export interface ItsmPerson {
+  userId: string;
+  name: string;
+}
+
+export interface ItsmPeople {
+  people: ItsmPerson[];
+}
+
+export interface ItsmWorkspaceVersion {
+  /** @minimum 0 */
+  version: number;
+}
+
 export interface ItsmWorkspaceConflict {
   error: string;
   current: ItsmSnapshot;
@@ -266,26 +280,30 @@ export interface ItsmUserDirectoryPage {
   offset: number;
 }
 
+export type GetItsmPeopleParams = {
+  /**
+   * Comma-separated Clerk user IDs (at most 100)
+   * @maxLength 7000
+   */
+  ids: string;
+};
+
 export type ExportItsmAuditParams = {
-q?: string;
-scope?: string;
-from?: string;
-to?: string;
+  q?: string;
+  scope?: string;
+  from?: string;
+  to?: string;
 };
 
 export type GetItsmUserDirectoryParams = {
-/**
- * @maxLength 120
- */
-q?: string;
-/**
- * @minimum 1
- * @maximum 50
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
+  /** @maxLength 120 */
+  q?: string;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  limit?: number;
+  /** @minimum 0 */
+  offset?: number;
 };
 

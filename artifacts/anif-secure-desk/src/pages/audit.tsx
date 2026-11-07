@@ -1,14 +1,18 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
+import { useDisplayName } from '@/hooks/use-display-name';
 import { Activity, AlertTriangle, ArrowRight, Download, LoaderCircle } from 'lucide-react';
 import { AUDIT_EMPTY_STATE_MESSAGE, createAuditExportRunner, formatWAT, getAuditCalendarDayRange, getAuditExportFilename, getAuditFilterResult, getRecentAuditDateRange, hasAuditExportSelection, readAuditCsvResponse } from '@/lib/itsm';
 import { useStore } from '@/lib/store';
 import { Avatar, Button, SearchBox, Warning } from '@/components/kit';
+import { usePeople } from '@/hooks/use-people';
 
 const AUDIT_PAGE_SIZE = 50;
 
 export default function AuditPage() {
+  const { person } = usePeople();
   const { store, log } = useStore();
+  const { name: displayName } = useDisplayName();
   const [query, setQuery] = useState(''); const [scope, setScope] = useState('Tous');
   const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const [page, setPage] = useState(0);
@@ -19,8 +23,8 @@ export default function AuditPage() {
   const scopes = useMemo(() => Array.from(new Set(store.audit.map(e => e.scope))).sort((a, b) => a.localeCompare(b, 'fr')), [store.audit]);
   const dated = !!(from || to);
   const { events, filterError } = useMemo(
-    () => getAuditFilterResult(store.audit, { scope, query, from, to }),
-    [store.audit, scope, query, from, to],
+    () => getAuditFilterResult(store.audit, { scope, query, from, to }, person),
+    [store.audit, scope, query, from, to, person],
   );
   const pageCount = Math.max(1, Math.ceil(events.length / AUDIT_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -98,7 +102,7 @@ export default function AuditPage() {
            const linkedTicketId = ev.type === 'itsm.ticket.converted' && ev.ticketId && store.tickets.some(ticket => ticket.id === ev.ticketId)
              ? ev.ticketId
              : null;
-             return <div key={ev.id} className="flex min-w-0 gap-3 px-5 py-4"><div className="relative flex flex-col items-center"><div className={`mt-1 h-2.5 w-2.5 rounded-full ${firstVisibleIndex + i === 0 ? 'bg-primary' : 'bg-[#b4b7aa]'}`} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-baseline justify-between gap-2"><div className="break-words text-[12px] font-semibold">{ev.action}</div><time dateTime={ev.at} className="mono text-[9px] text-muted-foreground">{ev.at ? formatWAT(ev.at, 'datetime') : `${ev.time} · historique`}</time></div><div className="mt-1 break-words text-[10px] text-muted-foreground">{ev.actor} <span className="mx-1">·</span> {ev.scope}</div>{ev.type === 'itsm.ticket.converted' && ev.ticketId && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[10px]"><span><span className="font-semibold">Incident associé :</span> <span className="mono break-all">{ev.ticketId}</span></span>{linkedTicketId && <Link data-testid={`link-audit-ticket-${ev.ticketId}`} href={`/tickets?ticket=${encodeURIComponent(ev.ticketId)}`} className="focus-ring inline-flex items-center gap-1 font-semibold text-primary hover:underline">Ouvrir le ticket <ArrowRight size={12} /></Link>}</div>}{(ev.type === 'itsm.role.changed' || ev.type === 'itsm.role.attested') && <div className="mt-2 break-words rounded-md bg-muted/60 px-2.5 py-2 text-[10px] leading-relaxed"><div><span className="font-semibold">Compte cible :</span> <span className="break-all">{ev.targetUserId}</span></div><div><span className="font-semibold">{ev.type === 'itsm.role.attested' ? 'Rôle attesté :' : 'Rôle :'}</span> {ev.previousRole || 'Aucun accès'} → {ev.nextRole || 'Aucun accès'}</div><div><span className="font-semibold">Services :</span> {ev.previousServiceIds?.join(', ') || '—'} → {ev.serviceIds?.join(', ') || '—'}</div></div>}</div></div>;
+             return <div key={ev.id} className="flex min-w-0 gap-3 px-5 py-4"><div className="relative flex flex-col items-center"><div className={`mt-1 h-2.5 w-2.5 rounded-full ${firstVisibleIndex + i === 0 ? 'bg-primary' : 'bg-[#b4b7aa]'}`} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-baseline justify-between gap-2"><div className="break-words text-[12px] font-semibold">{ev.action}</div><time dateTime={ev.at} className="mono text-[9px] text-muted-foreground">{ev.at ? formatWAT(ev.at, 'datetime') : `${ev.time} · historique`}</time></div><div className="mt-1 break-words text-[10px] text-muted-foreground">{person(ev.actor)} <span className="mx-1">·</span> {ev.scope}</div>{ev.type === 'itsm.ticket.converted' && ev.ticketId && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-[10px]"><span><span className="font-semibold">Incident associé :</span> <span className="mono break-all">{ev.ticketId}</span></span>{linkedTicketId && <Link data-testid={`link-audit-ticket-${ev.ticketId}`} href={`/tickets?ticket=${encodeURIComponent(ev.ticketId)}`} className="focus-ring inline-flex items-center gap-1 font-semibold text-primary hover:underline">Ouvrir le ticket <ArrowRight size={12} /></Link>}</div>}{(ev.type === 'itsm.role.changed' || ev.type === 'itsm.role.attested') && <div className="mt-2 break-words rounded-md bg-muted/60 px-2.5 py-2 text-[10px] leading-relaxed"><div><span className="font-semibold">Compte cible :</span> <span className="break-all">{ev.targetUserId}</span></div><div><span className="font-semibold">{ev.type === 'itsm.role.attested' ? 'Rôle attesté :' : 'Rôle :'}</span> {ev.previousRole || 'Aucun accès'} → {ev.nextRole || 'Aucun accès'}</div><div><span className="font-semibold">Services :</span> {ev.previousServiceIds?.join(', ') || '—'} → {ev.serviceIds?.join(', ') || '—'}</div></div>}</div></div>;
          })}{!events.length && <div role="status" data-testid="empty-audit-state" className="p-8 text-center text-xs text-muted-foreground">{AUDIT_EMPTY_STATE_MESSAGE}</div>}</div>
         {events.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
           <span data-testid="text-audit-page-range" className="text-[10px] text-muted-foreground">Affichage de {firstVisibleIndex + 1} à {lastVisibleIndex} sur {events.length} événements</span>
@@ -111,6 +115,6 @@ export default function AuditPage() {
       </section>
       <aside className="space-y-4"><div className="panel p-5"><div className="eyebrow">PORTÉE DU JOURNAL</div><div className="mt-2 text-[14px] font-semibold">Trace d’habilitation côté serveur</div><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Le serveur conserve l’administrateur, le compte cible, les rôles avant et après, les périmètres et l’horodatage. Les autres événements du prototype ne constituent pas une archive inviolable ni une preuve de conformité; une chaîne WORM / SIEM reste à réaliser pour la production.</p><div className="mt-4 flex items-center gap-2 rounded-lg bg-[#f4ecd9] p-3 text-[10px] leading-relaxed text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]"><AlertTriangle size={14} className="shrink-0" />La réinitialisation locale ne supprime pas les changements d’habilitation enregistrés côté serveur.</div></div>
         <div className="panel p-5"><div className="eyebrow">EXPORT CSV</div><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">L’export reprend uniquement les événements filtrés, en UTF-8 avec cellules protégées contre l’interprétation de formules par les tableurs.</p></div>
-        <div className="panel p-5"><div className="eyebrow">SESSION ACTIVE</div><div className="mt-3 flex items-center gap-3"><Avatar name={store.profile.name} /><div><div className="text-[12px] font-semibold">{store.profile.name}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div></div>{['N1', 'N3'].includes(store.profile.clearance.slice(0, 2)) && <Button variant="outline" className="mt-4 w-full" testId="button-add-control" onClick={() => log('Contrôle de session consulté', 'Journal d’activité')}><Activity size={14} />Ajouter un événement de contrôle</Button>}</div></aside>
+        <div className="panel p-5"><div className="eyebrow">SESSION ACTIVE</div><div className="mt-3 flex items-center gap-3"><Avatar name={displayName} /><div><div className="text-[12px] font-semibold">{displayName}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div></div>{['N1', 'N3'].includes(store.profile.clearance.slice(0, 2)) && <Button variant="outline" className="mt-4 w-full" testId="button-add-control" onClick={() => log('Contrôle de session consulté', 'Journal d’activité')}><Activity size={14} />Ajouter un événement de contrôle</Button>}</div></aside>
     </div></div>;
 }
