@@ -274,6 +274,13 @@ body { font-family: var(--app-font-sans); }
 * { box-sizing: border-box; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']):not([type='reset']):not([type='range']):not([type='color']):not([type='file']):not([type='image']):not([type='hidden']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
 .app-shell { min-height: 100dvh; background: hsl(var(--background)); color: hsl(var(--foreground)); }
 .sidebar { background: hsl(var(--sidebar)); color: hsl(var(--sidebar-foreground)); }
 .panel { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 14px; }

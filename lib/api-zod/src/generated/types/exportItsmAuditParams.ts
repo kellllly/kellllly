@@ -7,8 +7,8 @@
  */
 
 export type ExportItsmAuditParams = {
-  q?: string;
-  scope?: string;
-  from?: Date;
-  to?: Date;
+q?: string;
+scope?: string;
+from?: Date;
+to?: Date;
 };

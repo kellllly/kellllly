@@ -5,6 +5,7 @@ export type ItsmDirectoryAccount = {
   email: string | null;
   role: ItsmRole | null;
   serviceIds: string[];
+  unavailableServiceIds: string[];
 };
 
 type ClerkDirectoryUser = {
@@ -39,16 +40,21 @@ export function parseItsmDirectoryQuery(
   return { q: typeof q === "string" ? q.trim() : "", limit: parsedLimit, offset: parsedOffset };
 }
 
-export function toItsmDirectoryAccount(user: ClerkDirectoryUser): ItsmDirectoryAccount {
+export function toItsmDirectoryAccount(
+  user: ClerkDirectoryUser,
+  availableServiceIds: ReadonlySet<string>,
+): ItsmDirectoryAccount {
   const role = isItsmRole(user.publicMetadata?.itsmRole)
     ? user.publicMetadata.itsmRole
     : null;
+  const serviceIds = role && Array.isArray(user.publicMetadata?.itsmServiceIds)
+    ? [...new Set(user.publicMetadata.itsmServiceIds.filter((id): id is string => typeof id === "string"))].sort()
+    : [];
   return {
     userId: user.id,
     email: user.primaryEmailAddress?.emailAddress ?? null,
     role,
-    serviceIds: role && Array.isArray(user.publicMetadata?.itsmServiceIds)
-      ? [...new Set(user.publicMetadata.itsmServiceIds.filter((id): id is string => typeof id === "string"))].sort()
-      : [],
+    serviceIds,
+    unavailableServiceIds: serviceIds.filter((id) => !availableServiceIds.has(id)),
   };
 }

@@ -3,7 +3,10 @@ import { useClerk, useUser } from '@clerk/react';
 import { getItsmWorkspace, importItsmExamples, saveItsmWorkspace } from '@workspace/api-client-react';
 import { migrate } from './seed';
 import { readDemoStore, type StorageIssue } from './storage';
-import { RecoveryDraftGuard, recoveryKey, watchRecoveryDraft } from './recovery-draft';
+import {
+  readRecoveryDraftsWithStatus, RecoveryDraftGuard,
+  recoveryKey, removeRecoveryDraft, watchRecoveryDraft, writeRecoveryDraft as writeStoredRecoveryDraft,
+} from './recovery-draft';
 import {
   changedPaths, confirmSharedRecovery, conflictDetails, mergeSharedChanges, RecoveryFlightGuard,
   recoveryEditDetails, serverRefusalReason, type ConflictChoices,
@@ -19,11 +22,15 @@ type Ctx = {
   log: (action: string, scope: string) => void;
   storageIssue: StorageIssue;
   dismissIssue: () => void;
+  unreadableRecoveryDraftCount: number;
   recovery: SyncRecovery | null;
+  recoveryDrafts: { draftId: string; changed: string[]; summary: string }[];
+  selectRecoveryDraft: (draftId: string) => void;
   resumeConflict: (choices?: ConflictChoices, reviewedVersion?: number) => Promise<void>;
   acceptRemoteSnapshot: () => void;
 };
 type SyncRecovery = {
+  draftId: string;
   changed: string[];
   collisions: string[];
   fields: { path: string; label: string; local: string; remote: string }[];
@@ -58,37 +65,40 @@ function isSharedData(value: unknown): value is SharedData {
   return data.schema === 2 && sharedArrayFields.every((field) => Array.isArray(data[field]));
 }
 
-function readRecoveryDraft(userId: string): PendingConflict | null {
-  try {
-    const raw = localStorage.getItem(recoveryKey(userId));
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid recovery draft');
-    const draft = parsed as Partial<PendingConflict>;
-    if (!isSharedData(draft.base) || !isSharedData(draft.local)
-      || (draft.draftId !== undefined && typeof draft.draftId !== 'string')
-      || !draft.remote || typeof draft.remote !== 'object' || Array.isArray(draft.remote)
-      || typeof draft.version !== 'number' || !Number.isFinite(draft.version)) {
-      throw new Error('Invalid recovery draft');
-    }
-    return draft as PendingConflict;
-  } catch {
-    try { localStorage.removeItem(recoveryKey(userId)); } catch { /* Leave inaccessible storage untouched. */ }
-    return null;
-  }
+function isPendingConflict(value: unknown): value is PendingConflict {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const draft = value as Partial<PendingConflict>;
+  return isSharedData(draft.base) && isSharedData(draft.local)
+    && (draft.draftId === undefined || typeof draft.draftId === 'string')
+    && Boolean(draft.remote) && typeof draft.remote === 'object' && !Array.isArray(draft.remote)
+    && typeof draft.version === 'number' && Number.isFinite(draft.version);
+}
+
+function readRecoveryDrafts(userId: string): { drafts: PendingConflict[]; unreadableCount: number } {
+  const key = recoveryKey(userId);
+  const result = readRecoveryDraftsWithStatus(localStorage, key);
+  const valid = result.drafts.filter(isPendingConflict);
+  const drafts = valid.map((draft) => {
+    if (draft.draftId) return draft;
+    const migrated = { ...draft, draftId: crypto.randomUUID() };
+    if (writeStoredRecoveryDraft(localStorage, key, migrated)) removeRecoveryDraft(localStorage, key, draft);
+    return migrated;
+  });
+  return { drafts, unreadableCount: result.unreadableCount + result.drafts.length - valid.length };
 }
 
 function writeRecoveryDraft(userId: string, pending: PendingConflict): boolean {
-  try {
-    localStorage.setItem(recoveryKey(userId), JSON.stringify(pending));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeStoredRecoveryDraft(localStorage, recoveryKey(userId), pending);
 }
 
-export function clearSyncRecoveryDraft(userId: string): void {
-  try { localStorage.removeItem(recoveryKey(userId)); } catch { /* Best effort during logout. */ }
+export function clearSyncRecoveryDraft(userId: string): boolean {
+  try {
+    const { drafts } = readRecoveryDrafts(userId);
+    return drafts.reduce(
+      (cleared, draft) => removeRecoveryDraft(localStorage, recoveryKey(userId), draft) && cleared,
+      true,
+    );
+  } catch { return false; }
 }
 
 const fieldLabels: Record<string, string> = {
@@ -219,17 +229,60 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   const storeRef = useRef(store);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [storageIssue, setIssue] = useState<StorageIssue>(local.current.issue);
+  const [unreadableRecoveryDraftCount, setUnreadableRecoveryDraftCount] = useState(0);
   const [retry, setRetry] = useState(0);
   const version = useRef(0);
   const lastSynced = useRef(sharedData(store));
   const pendingConflict = useRef<PendingConflict | null>(null);
+  const pendingConflicts = useRef<PendingConflict[]>([]);
   const [recovery, setRecovery] = useState<SyncRecovery | null>(null);
+  const [recoveryDrafts, setRecoveryDrafts] = useState<{ draftId: string; changed: string[]; summary: string }[]>([]);
   const writeQueue = useRef(Promise.resolve());
   const writeBlocked = useRef(false);
   const pendingWrites = useRef(0);
   const recoveryFlight = useRef<RecoveryFlightGuard | null>(null);
   recoveryFlight.current ??= new RecoveryFlightGuard();
   const draftGuard = useRef(new RecoveryDraftGuard(recoveryKey(userId), () => localStorage));
+
+  const updateRecoveryDraftList = useCallback((drafts: PendingConflict[]) => {
+    pendingConflicts.current = drafts;
+    setRecoveryDrafts(drafts.map((draft) => {
+      const changed = changedPaths(draft.base, draft.local);
+      const firstEdit = localEditDetails(draft.local, changed)[0];
+      return {
+        draftId: draft.draftId!,
+        changed: formatChangedPaths(changed),
+        summary: firstEdit ? `${firstEdit.path} : ${firstEdit.value.slice(0, 100)}` : 'Aucun détail disponible',
+      };
+    }));
+  }, []);
+
+  const activateRecoveryDraft = useCallback((pending: PendingConflict, persisted = true) => {
+    pendingConflict.current = pending;
+    draftGuard.current.track(pending, persisted);
+    writeBlocked.current = true;
+    const changed = changedPaths(pending.base, pending.local);
+    const remote = sharedData(applySnapshot(storeRef.current, pending.remote));
+    const collisions = mergeSharedChanges(pending.base, pending.local, remote).conflicts;
+    setRecovery({
+      draftId: pending.draftId!,
+      changed: formatChangedPaths(changed),
+      collisions: formatChangedPaths(collisions),
+      fields: recoveryFields(pending.local, remote, collisions),
+      localEdits: localEditDetails(pending.local, changed),
+      remoteVersion: pending.version,
+      busy: false,
+    });
+    setIssue({
+      kind: 'save',
+      message: 'Une modification refusée, conservée pour ce compte, a été retrouvée. Elle n’a pas été renvoyée. Reprenez-la explicitement ou abandonnez-la.',
+    });
+  }, []);
+
+  const selectRecoveryDraft = useCallback((draftId: string) => {
+    const pending = pendingConflicts.current.find((draft) => draft.draftId === draftId);
+    if (pending) activateRecoveryDraft(pending);
+  }, [activateRecoveryDraft]);
 
   const invalidateRecovery = useCallback(() => {
     draftGuard.current.invalidate();
@@ -253,20 +306,33 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   useEffect(() => watchRecoveryDraft(window, recoveryKey(userId), () => {
     const pending = pendingConflict.current;
     if (pending) isCurrentRecovery(pending);
-  }), [userId, isCurrentRecovery]);
+    try {
+      const readResult = readRecoveryDrafts(userId);
+      setUnreadableRecoveryDraftCount(readResult.unreadableCount);
+      const persisted = readResult.drafts;
+      const known = new Map(pendingConflicts.current.map((draft) => [draft.draftId, draft]));
+      updateRecoveryDraftList(persisted.map((draft) => ({
+        ...draft,
+        remote: known.get(draft.draftId!)?.remote ?? draft.remote,
+        version: known.get(draft.draftId!)?.version ?? draft.version,
+      })));
+    } catch { /* Keep the visible options if local storage is unavailable. */ }
+  }), [userId, isCurrentRecovery, updateRecoveryDraftList]);
 
   const hydrate = useCallback(async () => {
     setStatus('loading');
     writeBlocked.current = false;
     try {
       const source = local.current!;
-      const savedDraft = readRecoveryDraft(userId);
-      if (savedDraft) draftGuard.current.track(savedDraft, true);
+      const readResult = readRecoveryDrafts(userId);
+      setUnreadableRecoveryDraftCount(readResult.unreadableCount);
+      const savedDrafts = readResult.drafts;
+      if (savedDrafts[0]) draftGuard.current.track(savedDrafts[0], true);
       const current = await getItsmWorkspace();
       const currentClearance = (current.store.profile as { clearance?: unknown } | undefined)?.clearance;
       const role = typeof currentClearance === 'string' ? currentClearance.slice(0, 2) : '';
       let imported = current;
-      if (!savedDraft && ['N1', 'N2', 'N3'].includes(role)) {
+      if (!savedDrafts.length && ['N1', 'N2', 'N3'].includes(role)) {
         imported = await importItsmExamples({ store: sharedData(source.store) });
       }
       if (current.version > imported.version) imported = await getItsmWorkspace();
@@ -275,33 +341,14 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
       storeRef.current = hydrated;
       lastSynced.current = sharedData(hydrated);
       setLocalStore(hydrated);
-      if (savedDraft && draftGuard.current.isCurrent(savedDraft)) {
-        const pending: PendingConflict = {
-          ...savedDraft,
-          remote: imported.store,
-          version: imported.version,
-        };
-        pendingConflict.current = pending;
-        draftGuard.current.track(pending, true);
-        writeBlocked.current = true;
-        const changed = changedPaths(pending.base, pending.local);
-        const collisions = mergeSharedChanges(
-          pending.base,
-          pending.local,
-          sharedData(hydrated),
-        ).conflicts;
-        setRecovery({
-          changed: formatChangedPaths(changed),
-          collisions: formatChangedPaths(collisions),
-          fields: recoveryFields(pending.local, sharedData(hydrated), collisions),
-          localEdits: localEditDetails(pending.local, changed),
-          remoteVersion: imported.version,
-          busy: false,
-        });
-        setIssue({
-          kind: 'save',
-          message: 'Une modification refusée, conservée pour ce compte, a été retrouvée. Elle n’a pas été renvoyée. Reprenez-la explicitement ou abandonnez-la.',
-        });
+      if (savedDrafts.length > 0) {
+        const pending = savedDrafts.map((draft) => ({
+          ...draft, remote: imported.store, version: imported.version,
+        }));
+        updateRecoveryDraftList(pending);
+        if (pending[0] && draftGuard.current.isCurrent(savedDrafts[0])) {
+          activateRecoveryDraft(pending[0]);
+        }
       }
       setStatus('ready');
       if (source.issue?.kind === 'load') {
@@ -325,7 +372,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
           : 'Impossible de charger les données partagées.',
       });
     }
-  }, [userId]);
+  }, [userId, updateRecoveryDraftList, activateRecoveryDraft]);
 
   useEffect(() => { void hydrate(); }, [hydrate, retry]);
 
@@ -390,15 +437,11 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
             };
             pendingConflict.current = pending;
             const persisted = writeRecoveryDraft(userId, pending);
-            draftGuard.current.track(pending, persisted);
-            setRecovery({
-              changed: formatChangedPaths(changed),
-              collisions: [],
-              fields: [],
-              localEdits: localEditDetails(localChanges, changed),
-              remoteVersion: version.current,
-              busy: false,
-            });
+            updateRecoveryDraftList([
+              ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
+              pending,
+            ]);
+            activateRecoveryDraft(pending, persisted);
             setIssue({
               kind: 'save',
               message: error instanceof Error
@@ -416,15 +459,11 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
           const pending = { draftId: crypto.randomUUID(), base, local: localChanges, remote: latest.store, version: latest.version };
           pendingConflict.current = pending;
           const persisted = writeRecoveryDraft(userId, pending);
-          draftGuard.current.track(pending, persisted);
-          setRecovery({
-            changed: formatChangedPaths(changed),
-            collisions: formatChangedPaths(collisions),
-            fields: recoveryFields(localChanges, sharedData(applySnapshot(storeRef.current, latest.store)), collisions),
-            localEdits: localEditDetails(localChanges, changed),
-            remoteVersion: latest.version,
-            busy: false,
-          });
+          updateRecoveryDraftList([
+            ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
+            pending,
+          ]);
+          activateRecoveryDraft(pending, persisted);
           const canonical = applySnapshot(storeRef.current, latest.store);
           storeRef.current = canonical;
           lastSynced.current = sharedData(canonical);
@@ -441,7 +480,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     if (previous.theme !== next.theme) {
       try { localStorage.setItem(localThemeKey, next.theme); } catch { /* optional local preference */ }
     }
-  }, [status, userId]);
+  }, [status, userId, updateRecoveryDraftList, activateRecoveryDraft]);
 
   const resumeConflict = useCallback(async (choices?: ConflictChoices, reviewedVersion?: number) => {
     const pending = pendingConflict.current;
@@ -514,12 +553,19 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
       storeRef.current = canonical;
       lastSynced.current = sharedData(canonical);
       setLocalStore(canonical);
+      removeRecoveryDraft(localStorage, recoveryKey(userId), pending);
+      const remaining = pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId)
+        .map((draft) => ({ ...draft, remote: saved.store, version: saved.version }));
+      updateRecoveryDraftList(remaining);
       pendingConflict.current = null;
       draftGuard.current.invalidate();
-      clearSyncRecoveryDraft(userId);
-      writeBlocked.current = false;
-      setRecovery(null);
-      setIssue(null);
+      if (remaining.length) {
+        activateRecoveryDraft(remaining[0]!);
+      } else {
+        writeBlocked.current = false;
+        setRecovery(null);
+        setIssue(null);
+      }
     } catch (error) {
       if (!isCurrentRecovery(pending)) return;
       setRecovery((current) => current ? { ...current, busy: false } : current);
@@ -532,23 +578,36 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     } finally {
       flight.release();
     }
-  }, [userId, isCurrentRecovery]);
+  }, [userId, isCurrentRecovery, updateRecoveryDraftList, activateRecoveryDraft]);
 
   const acceptRemoteSnapshot = useCallback(() => {
     if (recoveryFlight.current?.isBusy) return;
     const pending = pendingConflict.current;
     if (!pending || !isCurrentRecovery(pending)) return;
-    if (pending) {
-      lastSynced.current = sharedData(applySnapshot(storeRef.current, pending.remote));
-      version.current = pending.version;
+    if (!removeRecoveryDraft(localStorage, recoveryKey(userId), pending)) {
+      setIssue({
+        kind: 'save',
+        message: 'Le stockage du navigateur n’a pas confirmé la suppression. L’abandon n’est pas confirmé : cette modification peut réapparaître au rechargement et rester disponible dans un autre onglet. Rétablissez l’accès au stockage puis réessayez. Aucune autre modification n’a été supprimée.',
+      });
+      return;
     }
+    const canonical = applySnapshot(storeRef.current, pending.remote);
+    storeRef.current = canonical;
+    setLocalStore(canonical);
+    lastSynced.current = sharedData(canonical);
+    version.current = pending.version;
+    const remaining = pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId);
+    updateRecoveryDraftList(remaining);
     pendingConflict.current = null;
     draftGuard.current.invalidate();
-    clearSyncRecoveryDraft(userId);
-    writeBlocked.current = false;
-    setRecovery(null);
-    setIssue(null);
-  }, [userId, isCurrentRecovery]);
+    if (remaining.length) {
+      activateRecoveryDraft(remaining[0]!);
+    } else {
+      writeBlocked.current = false;
+      setRecovery(null);
+      setIssue(null);
+    }
+  }, [userId, isCurrentRecovery, updateRecoveryDraftList, activateRecoveryDraft]);
 
   useEffect(() => {
     if (status !== 'ready') return;
@@ -591,7 +650,9 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   if (status === 'error') return <SyncPanel error={storageIssue?.message ?? 'Impossible de joindre le service ITSM.'} onRetry={() => setRetry((value) => value + 1)} />;
 
   return <StoreContext.Provider value={{
-    store, setStore, log, storageIssue, dismissIssue, recovery, resumeConflict, acceptRemoteSnapshot,
+    store, setStore, log, storageIssue, dismissIssue, unreadableRecoveryDraftCount,
+    recovery, recoveryDrafts, selectRecoveryDraft,
+    resumeConflict, acceptRemoteSnapshot,
   }}>{children}</StoreContext.Provider>;
 }
 

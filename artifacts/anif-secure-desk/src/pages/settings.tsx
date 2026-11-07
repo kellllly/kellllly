@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser } from '@clerk/react';
 import { BadgeCheck, ChevronLeft, ChevronRight, Moon, RefreshCw, Search, ShieldCheck, Sun, UserCog } from 'lucide-react';
@@ -6,12 +6,24 @@ import {
   attestItsmRole,
   assignItsmRole,
   checkItsmRoleArchive,
+  getItsmWorkspace,
   getItsmUserDirectory,
   getGetItsmUserDirectoryQueryKey,
 } from '@workspace/api-client-react';
 import { useStore } from '@/lib/store';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
 import { Button, Field, inputCls, SectionTitle, Warning } from '@/components/kit';
+
+type PilotServiceOption = { id: string; name: string };
+
+function pilotServiceOptions(value: unknown): PilotServiceOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(service => {
+    if (!service || typeof service !== 'object' || Array.isArray(service)) return [];
+    const { id, name } = service as Record<string, unknown>;
+    return typeof id === 'string' && typeof name === 'string' ? [{ id, name }] : [];
+  });
+}
 
 export default function SettingsPage() {
   const { store, setStore, log } = useStore();
@@ -20,17 +32,23 @@ export default function SettingsPage() {
   const [directorySearch, setDirectorySearch] = useState('');
   const [directoryPage, setDirectoryPage] = useState(0);
   const [role, setRole] = useState<'N1' | 'N2' | 'N3' | 'N4' | 'N5' | 'REVOKE'>('N2');
-  const [serviceIds, setServiceIds] = useState('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [pilotServices, setPilotServices] = useState<PilotServiceOption[]>(() => pilotServiceOptions(store.services));
   const [roleMessage, setRoleMessage] = useState('');
   const [roleError, setRoleError] = useState('');
   const [rolePending, setRolePending] = useState(false);
   const [archiveCheckPending, setArchiveCheckPending] = useState(false);
   const [archiveCheckMessage, setArchiveCheckMessage] = useState('');
   const [archiveCheckError, setArchiveCheckError] = useState('');
+  const [lastArchiveCheck, setLastArchiveCheck] = useState<{
+    checkedAt: string;
+    status: 'available' | 'unavailable';
+  } | null>(null);
   const [attestationMessage, setAttestationMessage] = useState('');
   const [attestationError, setAttestationError] = useState('');
   const [attestationPending, setAttestationPending] = useState(false);
   const [directoryAccessDeniedFor, setDirectoryAccessDeniedFor] = useState<string | null>(null);
+  const [directoryStreamStatus, setDirectoryStreamStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const isRoleAdmin = store.profile.clearance.startsWith('N1 ·');
   const queryClient = useQueryClient();
   const directoryPageSize = 10;
@@ -48,26 +66,60 @@ export default function SettingsPage() {
         const status = typeof error === 'object' && error !== null && 'status' in error
           ? error.status
           : undefined;
+        setTargetUserId('');
         if (status === 401 || status === 403) {
           setDirectoryAccessDeniedFor(currentUser?.id ?? null);
-          setTargetUserId('');
           queryClient.removeQueries({ queryKey: getGetItsmUserDirectoryQueryKey(), exact: false });
         }
         throw error;
       }
     },
     enabled: isRoleAdmin && Boolean(currentUser?.id) && directoryAccessDeniedFor !== currentUser?.id,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+  useEffect(() => {
+    setPilotServices(pilotServiceOptions(store.services));
+  }, [store.services]);
+  useEffect(() => {
+    if (!isRoleAdmin || !currentUser?.id || directoryAccessDeniedFor === currentUser.id) return;
+
+    const source = new EventSource('/api/itsm/users/events', { withCredentials: true });
+    let lastErrorRefreshAt = 0;
+    const refreshDirectory = () => {
+      void queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
+    };
+    const handleRevocation = () => {
+      source.close();
+      setTargetUserId('');
+      setDirectoryAccessDeniedFor(currentUser.id);
+      queryClient.removeQueries({ queryKey: getGetItsmUserDirectoryQueryKey(), exact: false });
+    };
+    source.onopen = () => {
+      setDirectoryStreamStatus('connected');
+      refreshDirectory();
+    };
+    source.addEventListener('directory-refresh', refreshDirectory);
+    source.addEventListener('access-revoked', handleRevocation);
+    source.onerror = () => {
+      setDirectoryStreamStatus('reconnecting');
+      // Revalidate through the protected directory endpoint if the stream drops.
+      // This also clears cached directory data if the account has lost N1.
+      if (Date.now() - lastErrorRefreshAt >= 5_000) {
+        lastErrorRefreshAt = Date.now();
+        refreshDirectory();
+      }
+    };
+    return () => source.close();
+  }, [currentUser?.id, directoryAccessDeniedFor, isRoleAdmin, queryClient]);
   const selectedAccount = directory.data?.accounts.find(account => account.userId === targetUserId);
+  const availableServiceIds = new Set(pilotServices.map(service => service.id));
+  const unavailableAccountServiceIds = selectedAccount?.unavailableServiceIds ?? [];
 
   const assignRole = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRoleMessage('');
     setRoleError('');
-    if (!isRoleAdmin || directory.isError || !selectedAccount) {
+    if (!isRoleAdmin || directory.isError || directory.isFetching || !selectedAccount) {
       setRoleError('Actualisez le répertoire et sélectionnez un compte avant de modifier une habilitation.');
       return;
     }
@@ -78,20 +130,70 @@ export default function SettingsPage() {
         : 'Retirer entièrement l’accès ITSM de ce compte ? Il ne pourra plus consulter ni modifier l’espace.');
       if (!confirmed) return;
     }
+    if (unavailableAccountServiceIds.length > 0 && role !== 'REVOKE') {
+      const requestedServiceIds = roleServiceIds(role, selectedServiceIds);
+      const roleScope = role === 'N1' || role === 'N2' || role === 'N5'
+        ? 'tous les services selon le rôle'
+        : requestedServiceIds.length
+          ? requestedServiceIds.join(', ')
+          : role === 'N3' ? 'tous les services' : 'aucun service';
+      const roleChange = selectedAccount.role !== role;
+      const roleConfirmation = roleChange
+        ? `Le rôle passera de ${selectedAccount.role ?? 'aucun accès'} à ${role}.`
+        : `Le rôle ${role} restera inchangé.`;
+      const confirmed = window.confirm(
+        `Confirmez-vous la correction du périmètre de ${selectedAccount.email ?? targetUserId} ? Les identifiants absents du pilote (${unavailableAccountServiceIds.join(', ')}) seront retirés. ${roleConfirmation} Les accès des autres comptes ne seront pas modifiés. Périmètre retenu : ${roleScope}.`,
+      );
+      if (!confirmed) return;
+    }
     setRolePending(true);
     try {
+      const requestedServiceIds = roleServiceIds(role, selectedServiceIds);
+      if (role === 'N3' || role === 'N4') {
+        let latestWorkspace;
+        try {
+          latestWorkspace = await getItsmWorkspace();
+        } catch {
+          setRoleError('Impossible d’actualiser le catalogue des services. Aucune attribution n’a été envoyée; réessayez lorsque la connexion sera rétablie.');
+          return;
+        }
+        const currentServices = pilotServiceOptions(latestWorkspace.store.services);
+        const currentIds = new Set(currentServices.map(service => service.id));
+        const disappearedIds = requestedServiceIds.filter(id => !currentIds.has(id));
+        setPilotServices(currentServices);
+        if (disappearedIds.length) {
+          const disappearedNames = disappearedIds.map(id => pilotServices.find(service => service.id === id)?.name ?? id);
+          setSelectedServiceIds(current => current.filter(id => currentIds.has(id)));
+          const plural = disappearedIds.length > 1;
+          setRoleError(`${plural ? 'Les services' : 'Le service'} ${disappearedNames.join(', ')} ${plural ? 'ne sont plus présents' : 'n’est plus présent'} dans le pilote. La liste a été actualisée; vérifiez le périmètre avant de renvoyer l’habilitation.`);
+          return;
+        }
+      }
       const result = await assignItsmRole(targetUserId.trim(), {
         role: role === 'REVOKE' ? null : role,
-        serviceIds: roleServiceIds(role, serviceIds),
+        serviceIds: requestedServiceIds,
       });
       setRoleMessage(result.role
         ? `Rôle ${result.role} attribué au compte ${result.userId}.`
         : `Accès ITSM retiré pour le compte ${result.userId}.`);
       setTargetUserId('');
-      setServiceIds('');
+      setSelectedServiceIds([]);
       await queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
     } catch (error) {
-      setRoleError(roleRequestError(error, 'assignment'));
+      const message = roleRequestError(error, 'assignment');
+      setRoleError(message);
+      if (typeof error === 'object' && error !== null && 'status' in error && error.status === 400
+        && /services? autorisés? sont introuvables/iu.test(error instanceof Error ? error.message : '')) {
+        try {
+          const latestWorkspace = await getItsmWorkspace();
+          const currentServices = pilotServiceOptions(latestWorkspace.store.services);
+          const currentIds = new Set(currentServices.map(service => service.id));
+          setPilotServices(currentServices);
+          setSelectedServiceIds(current => current.filter(id => currentIds.has(id)));
+        } catch {
+          setRoleError(`${message} Impossible d’actualiser automatiquement la liste; actualisez la page avant de réessayer.`);
+        }
+      }
       void queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
     } finally {
       setRolePending(false);
@@ -128,8 +230,19 @@ export default function SettingsPage() {
     try {
       const result = await checkItsmRoleArchive();
       setArchiveCheckMessage(result.message);
+      setLastArchiveCheck({ checkedAt: result.checkedAt, status: 'available' });
     } catch (error) {
       setArchiveCheckError(roleRequestError(error, 'archive'));
+      const data = error && typeof error === 'object' && 'data' in error
+        ? error.data
+        : null;
+      const checkedAt = data && typeof data === 'object' && !Array.isArray(data)
+        && 'checkedAt' in data && typeof data.checkedAt === 'string'
+        ? data.checkedAt
+        : null;
+      if (checkedAt && !Number.isNaN(Date.parse(checkedAt))) {
+        setLastArchiveCheck({ checkedAt, status: 'unavailable' });
+      }
     } finally {
       setArchiveCheckPending(false);
     }
@@ -147,7 +260,7 @@ export default function SettingsPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold">Connexion à l’archive des habilitations</div>
-                <p className="mt-1 text-[10px] text-muted-foreground">Vérification non destructive, sans modifier de compte ni créer d’événement.</p>
+                 <p className="mt-1 text-[10px] text-muted-foreground">Contrôle ponctuel non destructif, sans modifier de compte ni créer d’événement; il ne s’agit pas d’une surveillance continue.</p>
               </div>
               <Button type="button" variant="outline" className="h-8 shrink-0 px-3" disabled={archiveCheckPending} onClick={() => void checkRoleArchive()}>
                 <RefreshCw size={13} className={archiveCheckPending ? 'animate-spin' : ''} />
@@ -156,6 +269,14 @@ export default function SettingsPage() {
             </div>
             {archiveCheckError && <p role="alert" className="mt-3 text-xs text-destructive">{archiveCheckError}</p>}
             {archiveCheckMessage && <p role="status" className="mt-3 text-xs text-primary">{archiveCheckMessage}</p>}
+            {lastArchiveCheck && <p className="mt-3 text-[10px] text-muted-foreground">
+              Dernier contrôle ponctuel : {new Intl.DateTimeFormat('fr-FR', {
+                dateStyle: 'medium',
+                timeStyle: 'medium',
+                timeZone: 'Africa/Libreville',
+              }).format(new Date(lastArchiveCheck.checkedAt))}
+              {' — résultat : '}{lastArchiveCheck.status === 'available' ? 'archive accessible.' : 'archive indisponible.'}
+            </p>}
           </div>
           <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_1fr]">
             <div className="space-y-3">
@@ -164,20 +285,20 @@ export default function SettingsPage() {
               </Field>
               <div className="overflow-hidden rounded-lg border border-border" aria-label="Comptes du pilote">
                 {directory.isLoading ? <p role="status" className="p-4 text-xs text-muted-foreground">Chargement des comptes…</p>
+                  : directory.isError ? <p role="alert" className="p-4 text-xs text-destructive">{roleRequestError(directory.error, 'directory')}</p>
                   : directory.data?.accounts.length ? <div className="divide-y divide-border/70">
-                      {directory.data.accounts.map(account => <button key={account.userId} type="button" disabled={rolePending || attestationPending} aria-pressed={targetUserId === account.userId} onClick={() => { setTargetUserId(account.userId); setRole(account.role ?? 'N2'); setServiceIds(account.serviceIds.join(', ')); setRoleError(''); setRoleMessage(''); setAttestationError(''); setAttestationMessage(''); }} className={`block w-full p-3 text-left transition hover:bg-muted/50 disabled:opacity-50 ${targetUserId === account.userId ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : ''}`}>
+                      {directory.data.accounts.map(account => <button key={account.userId} type="button" disabled={rolePending || attestationPending} aria-pressed={targetUserId === account.userId} onClick={() => { setTargetUserId(account.userId); setRole(account.role ?? 'N2'); setSelectedServiceIds(account.serviceIds.filter(id => availableServiceIds.has(id))); setRoleError(''); setRoleMessage(''); setAttestationError(''); setAttestationMessage(''); }} className={`block w-full p-3 text-left transition hover:bg-muted/50 disabled:opacity-50 ${targetUserId === account.userId ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : ''}`}>
                         <span className="flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-semibold">{account.email ?? 'Adresse e-mail indisponible'}</span><span className="rounded-md bg-muted px-2 py-1 text-[9px] font-semibold">{account.role ?? 'Aucun accès'}</span></span>
                         <span className="mono mt-1 block break-all text-[9px] text-muted-foreground">{account.userId}</span>
+                        {account.unavailableServiceIds.length > 0 && <span data-testid={`status-directory-unavailable-services-${account.userId}`} className="mt-2 block break-words rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-800 dark:text-amber-200">Périmètre à corriger — services absents : {account.unavailableServiceIds.join(', ')}</span>}
                       </button>)}
-                    </div> : directory.isError ? <p role="alert" className="p-4 text-xs text-destructive">{roleRequestError(directory.error, 'directory')}</p>
-                      : <p role="status" className="p-4 text-xs text-muted-foreground">{directorySearch.trim() ? 'Aucun compte ne correspond à cette recherche.' : 'Aucun compte trouvé.'}</p>}
+                    </div> : <p role="status" className="p-4 text-xs text-muted-foreground">{directorySearch.trim() ? 'Aucun compte ne correspond à cette recherche.' : 'Aucun compte trouvé.'}</p>}
               </div>
               <div className="flex items-center justify-between gap-2">
-                <p role="status" className="text-[10px] text-muted-foreground">{directory.isFetching ? 'Actualisation du répertoire…' : 'Actualisation automatique toutes les 15 secondes.'}</p>
+                <p role="status" className="text-[10px] text-muted-foreground">{directory.isFetching ? 'Actualisation du répertoire…' : directoryStreamStatus === 'connected' ? 'Répertoire actualisé en direct lors des changements de rôle.' : 'Connexion au flux de mises à jour du répertoire…'}</p>
                 <Button type="button" variant="outline" className="h-8 px-2" disabled={directory.isFetching} onClick={() => void directory.refetch()}><RefreshCw size={13} className={directory.isFetching ? 'animate-spin' : ''} />Actualiser</Button>
               </div>
-              {directory.isError && directory.data && <p role="alert" className="text-[10px] text-destructive">Les résultats précédents restent visibles, mais les modifications sont désactivées. {roleRequestError(directory.error, 'directory')}</p>}
-              {directory.data && <div className="flex items-center justify-between gap-2">
+              {directory.data && !directory.isError && <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] text-muted-foreground">{directory.data.totalCount ? `${directory.data.offset + 1}–${Math.min(directory.data.offset + directory.data.accounts.length, directory.data.totalCount)} sur ${directory.data.totalCount}` : '0 compte'}</span>
                 <div className="flex gap-1">
                   <Button type="button" variant="outline" className="h-8 px-2" aria-label="Page précédente" disabled={directoryPage === 0 || directory.isFetching} onClick={() => setDirectoryPage(page => Math.max(0, page - 1))}><ChevronLeft size={14} /></Button>
@@ -211,11 +332,21 @@ export default function SettingsPage() {
                 <div className="eyebrow">COMPTE CIBLE</div>
                 {targetUserId ? <div className="mono mt-1 break-all text-[11px] font-semibold">{targetUserId}</div> : <p className="mt-1 text-[11px] text-muted-foreground">Choisissez un compte dans le répertoire.</p>}
               </div>
+              {unavailableAccountServiceIds.length > 0 && <p role="status" data-testid="status-unavailable-account-services" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-800 dark:text-amber-200">Ce compte comporte des identifiants de services absents du catalogue : {unavailableAccountServiceIds.join(', ')}. Ils ne seront retirés qu’après confirmation de l’enregistrement.</p>}
               <Field label="Nouvelle habilitation"><select value={role} onChange={e => setRole(e.target.value as typeof role)} className={inputCls}>{['N1', 'N2', 'N3', 'N4', 'N5', 'REVOKE'].map(value => <option key={value} value={value}>{value === 'REVOKE' ? 'Retirer entièrement l’accès' : value}</option>)}</select></Field>
-              {(role === 'N3' || role === 'N4') && <Field label="Services autorisés pour N3 / N4" hint="Identifiants de services existants, séparés par des virgules. Vide : tous les services pour N3, aucun pour N4."><input value={serviceIds} onChange={e => setServiceIds(e.target.value)} className={inputCls} placeholder="Identifiants des services du pilote" /></Field>}
-              {roleError && <p role="alert" className="text-xs text-destructive">{roleError}</p>}
+              {(role === 'N3' || role === 'N4') && <Field label="Services autorisés pour N3 / N4" hint="Cochez les services à autoriser. Sans sélection : N3 accède à tous les services; N4 n’en reçoit aucun.">
+                <div role="group" aria-label="Services disponibles dans le pilote" className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                  {pilotServices.length > 0 ? pilotServices.map(service => <label key={service.id} className="flex cursor-pointer items-start gap-2 rounded-md p-2 text-[11px] hover:bg-muted/50">
+                    <input data-testid={`input-role-service-${service.id}`} type="checkbox" checked={selectedServiceIds.includes(service.id)} onChange={event => setSelectedServiceIds(current => event.target.checked
+                      ? [...new Set([...current, service.id])]
+                      : current.filter(id => id !== service.id))} className="mt-0.5 accent-primary" />
+                    <span className="min-w-0"><span className="block font-medium">{service.name}</span><span className="mono text-[9px] text-muted-foreground">{service.id}</span></span>
+                  </label>) : <p role="status" data-testid="status-no-pilot-services" className="p-2 text-[10px] text-muted-foreground">Aucun service n’est disponible dans le catalogue du pilote.</p>}
+                </div>
+              </Field>}
+              {roleError && <p role="alert" data-testid="status-role-assignment-error" className="text-xs text-destructive">{roleError}</p>}
               {roleMessage && <p role="status" className="text-xs text-primary">{roleMessage}</p>}
-              <div className="flex justify-end"><Button type="submit" disabled={rolePending || attestationPending || directory.isError || !selectedAccount}><UserCog size={14} />{rolePending ? 'Enregistrement…' : role === 'REVOKE' ? 'Révoquer l’accès' : role === 'N1' ? 'Nommer ce compte N1' : 'Attribuer le rôle'}</Button></div>
+              <div className="flex justify-end"><Button type="submit" disabled={rolePending || attestationPending || directory.isFetching || directory.isError || !selectedAccount}><UserCog size={14} />{rolePending ? 'Enregistrement…' : role === 'REVOKE' ? 'Révoquer l’accès' : role === 'N1' ? 'Nommer ce compte N1' : 'Attribuer le rôle'}</Button></div>
             </form>
           </div>
        </section>}

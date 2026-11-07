@@ -1,5 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   applyWorkspaceUpdate,
   ITSM_ROLE_CHANGE_AUDIT_TYPE,
@@ -17,6 +22,9 @@ import {
 } from "../src/lib/itsm-workspace.ts";
 import type { WorkspaceActor } from "../src/lib/itsm-workspace.ts";
 import express from "express";
+import pino from "pino";
+import pinoHttp from "pino-http";
+import { build } from "esbuild";
 import { createItsmAuditExportHandler } from "../src/routes/itsm-audit-export.ts";
 import {
   changedPaths,
@@ -49,6 +57,27 @@ const empty = () => ({
   notifications: [],
   seeded: [],
 });
+const conversionBrowserFixture = (messageId = "e2e-support-message") => {
+  const message = {
+    id: messageId,
+    author: "Demandeur de test",
+    body: "Signalement fictif isolé pour vérifier la conversion en incident.",
+    time: "",
+    at: "2026-01-15T10:00:00.000Z",
+  };
+  return {
+    ...empty(),
+    conversations: [{
+      id: "e2e-conversion-support",
+      kind: "Support",
+      title: "Canal support isolé pour test",
+      messages: [message],
+      readCount: 1,
+      participants: ["Demandeur de test", "Compte de test navigateur"],
+      classification: "Interne",
+    }],
+  };
+};
 const candidateTicket = (id: string, kind = "Incident") => ({
   id,
   title: "Incident fictif de test",
@@ -114,6 +143,55 @@ test("role changes are recorded with server identity, roles, scope, and timestam
     assert.equal((userStoreView(next, actor(`reader-${role}`, role)).audit as Record<string, any>[])[0].id, event.id);
   }
   assert.deepEqual(userStoreView(next, actor("reader-N4", "N4")).audit, []);
+});
+
+test("old authorization events remain consultable beyond the 5,000-event journal limit", () => {
+  const historicRoleEvent = {
+    id: "historic-role-event",
+    type: ITSM_ROLE_CHANGE_AUDIT_TYPE,
+    action: "Habilitation modifiée",
+    actor: "admin-historique",
+    targetUserId: "account-historique",
+    previousRole: "N5",
+    nextRole: "N3",
+    previousServiceIds: [],
+    serviceIds: ["service-1"],
+    scope: "Support central",
+    at: "2020-01-01T00:00:00.000Z",
+    time: "01:00",
+  };
+  const ordinaryEvents = Array.from({ length: 5_000 }, (_, index) => ({
+    id: `ordinary-${index}`,
+    action: `Événement ordinaire ${index}`,
+  }));
+  const initial = { ...empty(), audit: [...ordinaryEvents, historicRoleEvent] };
+  const withNewRole = recordItsmRoleChange(initial, {
+    actorId: "admin-recent",
+    targetUserId: "account-recent",
+    previousRole: "N5",
+    nextRole: "N3",
+    previousServiceIds: [],
+    serviceIds: ["service-1"],
+    scope: "Support central",
+  }, at);
+  const changedAudit = withNewRole.audit as Record<string, any>[];
+  assert.equal(changedAudit.length, 5_002);
+  assert.ok(changedAudit.some((event) => event.id === historicRoleEvent.id));
+
+  const saved = applyWorkspaceUpdate(withNewRole, {
+    ...withNewRole,
+    audit: [{ id: "ordinary-new", action: "Nouvel événement ordinaire" }, ...changedAudit],
+  }, actor("support", "N3"), at);
+  const savedAudit = saved.audit as Record<string, any>[];
+
+  assert.equal(savedAudit.length, 5_002);
+  assert.ok(savedAudit.some((event) => event.id === historicRoleEvent.id));
+  assert.ok(savedAudit.some((event) => event.type === ITSM_ROLE_CHANGE_AUDIT_TYPE
+    && event.targetUserId === "account-recent"));
+  assert.ok(savedAudit.some((event) => event.action === "Nouvel événement ordinaire"));
+  assert.ok(!savedAudit.some((event) => event.id === ordinaryEvents[ordinaryEvents.length - 1].id));
+  assert.ok((userStoreView(saved, actor("auditor", "N5")).audit as Record<string, any>[])
+    .some((event) => event.id === historicRoleEvent.id));
 });
 
 test("role changes are sent to the configured external archive with stable event identity", async () => withoutDevelopmentArchiveMode(async () => {
@@ -502,6 +580,199 @@ test("N4 version conflicts include only records and details within assigned serv
   assert.ok(!JSON.stringify(response).includes("Détail hors périmètre"));
 });
 
+test("N4 version conflicts reveal no records when no service is assigned", () => {
+  const current = {
+    ...empty(),
+    services: [{ id: "service-secret", name: "Service confidentiel" }],
+    tickets: [{
+      ...candidateTicket("INC-secret"),
+      serviceId: "service-secret",
+      assetId: "asset-secret",
+      title: "Dossier confidentiel",
+      description: "Détail confidentiel du dossier",
+    }],
+    assets: [{ id: "asset-secret", name: "Équipement confidentiel" }],
+    kedb: [{ id: "KEDB-secret", serviceId: "service-secret", title: "Article confidentiel" }],
+    notifications: [{
+      id: "notification-secret",
+      ticketId: "INC-secret",
+      message: "Notification confidentielle",
+    }],
+    conversations: [{ id: "conversation-secret", title: "Canal confidentiel" }],
+    audit: [{ id: "audit-secret", action: "Événement confidentiel" }],
+  };
+  const n4 = actor("support-sans-service", "N4", []);
+  const rejected = saveWorkspaceAtVersion(current, 7, current, 6, n4, at);
+
+  assert.equal(rejected.conflict, true);
+  if (!rejected.conflict) assert.fail("The stale N4 save must receive a version conflict.");
+  const response = workspaceVersionConflictResponse(rejected.store, rejected.version, n4);
+
+  assert.equal(response.error, ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE);
+  assert.equal(response.current.version, 7);
+  const visible = response.current.store;
+  for (const collection of ["tickets", "services", "assets", "kedb", "notifications", "conversations", "audit"]) {
+    assert.deepEqual(visible[collection], [], `N4 without services must receive an empty ${collection} collection`);
+  }
+
+  const responseText = JSON.stringify(response);
+  for (const forbidden of [
+    "INC-secret",
+    "Dossier confidentiel",
+    "Détail confidentiel du dossier",
+    "service-secret",
+    "Service confidentiel",
+    "asset-secret",
+    "Équipement confidentiel",
+    "KEDB-secret",
+    "Article confidentiel",
+    "notification-secret",
+    "Notification confidentielle",
+    "conversation-secret",
+    "Canal confidentiel",
+    "audit-secret",
+    "Événement confidentiel",
+  ]) {
+    assert.ok(!responseText.includes(forbidden), `The N4 conflict response must not contain ${forbidden}`);
+  }
+});
+
+test("the real workspace save route returns a scoped 409 for a stale N4 save", {
+  skip: !process.env.DATABASE_URL && "Requires the PostgreSQL integration database",
+}, async () => {
+  const workspaceId = `itsm-n4-conflict-${randomUUID()}`;
+  const packageDir = fileURLToPath(new URL("..", import.meta.url));
+  const tempBuildDir = await mkdtemp(path.join(packageDir, "node_modules", ".itsm-n4-conflict-"));
+  let pool: import("pg").Pool | undefined;
+  let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
+
+  try {
+    const bundlePath = path.join(tempBuildDir, "itsm-workspace-route.mjs");
+    await mkdir(path.join(tempBuildDir, "node_modules"), { recursive: true });
+    await symlink(
+      path.resolve(packageDir, "../../lib/db/node_modules/pg"),
+      path.join(tempBuildDir, "node_modules/pg"),
+    );
+    await build({
+      entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
+      outfile: bundlePath,
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      external: ["express", "pino", "pino-http", "@clerk/express", "pg"],
+      sourcemap: false,
+      logLevel: "silent",
+    });
+    const { createItsmWorkspaceSaveRouter } = await import(bundlePath);
+    const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
+    const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
+    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+    const currentStore = {
+      ...empty(),
+      services: [
+        { id: "service-a", name: "Service autorisé" },
+        { id: "service-b", name: "Service confidentiel" },
+      ],
+      tickets: [
+        { ...candidateTicket("INC-allowed"), serviceId: "service-a", assetId: "asset-a", description: "Détail autorisé" },
+        { ...candidateTicket("INC-forbidden"), serviceId: "service-b", assetId: "asset-b", description: "Détail hors périmètre" },
+      ],
+      assets: [
+        { id: "asset-a", name: "Équipement autorisé" },
+        { id: "asset-b", name: "Équipement confidentiel" },
+      ],
+      kedb: [
+        { id: "KEDB-allowed", serviceId: "service-a", title: "Article autorisé" },
+        { id: "KEDB-forbidden", serviceId: "service-b", title: "Article confidentiel" },
+      ],
+      notifications: [
+        { id: "notification-allowed", ticketId: "INC-allowed", message: "Notification autorisée" },
+        { id: "notification-forbidden", ticketId: "INC-forbidden", message: "Notification confidentielle" },
+      ],
+      conversations: [{ id: "conversation-secret", title: "Canal confidentiel" }],
+      audit: [{ id: "audit-secret", action: "Événement confidentiel" }],
+    };
+    await pool.query(
+      `INSERT INTO "anif_itsm_workspace" (id, version, store, imported_users)
+       VALUES ($1, $2, $3::jsonb, ARRAY[]::text[])`,
+      [workspaceId, 4, JSON.stringify(currentStore)],
+    );
+
+    const app = express();
+    app.use(pinoHttp({ logger: pino({ level: "silent" }) }));
+    app.use(express.json());
+    app.use(createItsmWorkspaceSaveRouter({
+      workspaceId,
+      resolveActor: async () => actor("support-a", "N4", ["service-a"]),
+    }, (_req, _res, next) => next()));
+    server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve, reject) => {
+      server!.once("listening", resolve);
+      server!.once("error", reject);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/itsm`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: 3, store: empty() }),
+    });
+    const body = await response.json() as {
+      error?: string;
+      current?: { version: number; store: Record<string, unknown> };
+    };
+
+    assert.equal(response.status, 409);
+    assert.equal(body.current?.version, 4);
+    const visible = body.current?.store;
+    assert.ok(visible);
+    assert.deepEqual((visible.tickets as Record<string, unknown>[]).map((ticket) => ticket.id), ["INC-allowed"]);
+    assert.deepEqual((visible.services as Record<string, unknown>[]).map((service) => service.id), ["service-a"]);
+    assert.deepEqual((visible.assets as Record<string, unknown>[]).map((asset) => asset.id), ["asset-a"]);
+    assert.deepEqual((visible.kedb as Record<string, unknown>[]).map((article) => article.id), ["KEDB-allowed"]);
+    assert.deepEqual((visible.notifications as Record<string, unknown>[]).map((item) => item.id), ["notification-allowed"]);
+    assert.deepEqual(visible.conversations, []);
+    assert.deepEqual(visible.audit, []);
+
+    const responseText = JSON.stringify(body);
+    for (const forbidden of [
+      "INC-forbidden",
+      "Service confidentiel",
+      "asset-b",
+      "Équipement confidentiel",
+      "KEDB-forbidden",
+      "Article confidentiel",
+      "notification-forbidden",
+      "Notification confidentielle",
+      "conversation-secret",
+      "Canal confidentiel",
+      "audit-secret",
+      "Événement confidentiel",
+      "Détail hors périmètre",
+    ]) {
+      assert.ok(!responseText.includes(forbidden), `The N4 conflict response must not contain ${forbidden}`);
+    }
+    const { rows } = await pool.query(
+      'SELECT version FROM "anif_itsm_workspace" WHERE id = $1',
+      [workspaceId],
+    );
+    assert.equal(rows[0]?.version, 4, "a stale save must not change the persisted workspace version");
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => {
+        server!.close((error) => error ? reject(error) : resolve());
+      });
+    }
+    if (pool) {
+      await pool.query('DELETE FROM "anif_itsm_workspace" WHERE id = $1', [workspaceId]);
+      await pool.end();
+    }
+    await rm(tempBuildDir, { recursive: true, force: true });
+  }
+});
+
 test("N5 workspace view hides ticket, conversation, service, and asset details but retains audit and KEDB", () => {
   const store = {
     ...empty(),
@@ -622,6 +893,225 @@ test("authenticated ticket conversion is audited once, persists, and appears in 
       messages: [{ ...message, body: "Historique falsifié." }],
     }],
   }, actor("user-a"), at), /historique de messagerie ne peut pas être réécrit/);
+});
+
+test("concurrent authorized conversions of one Support message accept one save and return the winning state", {
+  skip: !process.env.DATABASE_URL && "Requires the PostgreSQL integration database",
+}, async () => {
+  const workspaceId = `itsm-conversion-race-${randomUUID()}`;
+  const packageDir = fileURLToPath(new URL("..", import.meta.url));
+  const tempBuildDir = await mkdtemp(path.join(packageDir, "node_modules", ".itsm-conversion-race-"));
+  let pool: import("pg").Pool | undefined;
+  let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
+
+  try {
+    const bundlePath = path.join(tempBuildDir, "itsm-workspace-route.mjs");
+    await mkdir(path.join(tempBuildDir, "node_modules"), { recursive: true });
+    await symlink(
+      path.resolve(packageDir, "../../lib/db/node_modules/pg"),
+      path.join(tempBuildDir, "node_modules/pg"),
+    );
+    await build({
+      entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
+      outfile: bundlePath,
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      external: ["express", "pino", "pino-http", "@clerk/express", "pg"],
+      sourcemap: false,
+      logLevel: "silent",
+    });
+    const { createItsmWorkspaceSaveRouter } = await import(bundlePath);
+    const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
+    const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
+    pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+
+    const message = {
+      id: "support-race-message",
+      author: "Demandeur fictif",
+      body: "Symptôme fictif converti simultanément.",
+      time: "",
+      at: at.toISOString(),
+    };
+    const currentStore = {
+      ...empty(),
+      conversations: [{
+        id: "support-race-conversation",
+        kind: "Support",
+        title: "Canal support isolé",
+        messages: [message],
+        readCount: 1,
+        participants: ["Demandeur fictif", "Support"],
+        classification: "Interne",
+      }],
+    };
+    await pool.query(
+      `INSERT INTO "anif_itsm_workspace" (id, version, store, imported_users)
+       VALUES ($1, 0, $2::jsonb, ARRAY[]::text[])`,
+      [workspaceId, JSON.stringify(currentStore)],
+    );
+
+    const app = express();
+    app.use(pinoHttp({ logger: pino({ level: "silent" }) }));
+    app.use(express.json());
+    app.use(createItsmWorkspaceSaveRouter({
+      workspaceId,
+      resolveActor: async (req) => actor(req.header("x-test-actor") ?? "missing-actor", "N1"),
+    }, (_req, _res, next) => next()));
+    server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve, reject) => {
+      server!.once("listening", resolve);
+      server!.once("error", reject);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+
+    const submitConversion = (accountId: string) => fetch(`http://127.0.0.1:${address.port}/itsm`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-test-actor": accountId,
+      },
+      body: JSON.stringify({
+        version: 0,
+        store: {
+          ...currentStore,
+          tickets: [{
+            ...candidateTicket(`client-${accountId}`),
+            status: "Nouveau",
+            conversationId: "support-race-conversation",
+            sourceMessageId: message.id,
+          }],
+        },
+      }),
+    });
+    const responses = await Promise.all([
+      submitConversion("authorized-a"),
+      submitConversion("authorized-b"),
+    ]);
+    const results = await Promise.all(responses.map(async (response) => ({
+      status: response.status,
+      body: await response.json() as {
+        store?: Record<string, any>;
+        version?: number;
+        current?: { store: Record<string, any>; version: number };
+      },
+    })));
+
+    assert.deepEqual(results.map((result) => result.status).sort(), [200, 409]);
+    const accepted = results.find((result) => result.status === 200)!;
+    const rejected = results.find((result) => result.status === 409)!;
+    assert.equal(accepted.body.version, 1);
+    assert.equal(accepted.body.store?.tickets.filter(
+      (ticket: Record<string, unknown>) => ticket.sourceMessageId === message.id,
+    ).length, 1);
+    assert.equal(accepted.body.store?.audit.filter(
+      (event: Record<string, unknown>) =>
+        event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE && event.sourceMessageId === message.id,
+    ).length, 1);
+    const winningTicket = accepted.body.store?.tickets.find(
+      (ticket: Record<string, unknown>) => ticket.sourceMessageId === message.id,
+    );
+    const winningAuditEvent = accepted.body.store?.audit.find(
+      (event: Record<string, unknown>) =>
+        event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE && event.sourceMessageId === message.id,
+    );
+    assert.ok(winningTicket);
+    assert.ok(winningAuditEvent);
+    assert.ok(["authorized-a", "authorized-b"].includes(winningAuditEvent.actor));
+    assert.equal(winningAuditEvent.actor, winningTicket.requester);
+    assert.equal(rejected.body.current?.version, 1);
+    assert.equal(rejected.body.current?.store.tickets.filter(
+      (ticket: Record<string, unknown>) => ticket.sourceMessageId === message.id,
+    ).length, 1);
+    assert.equal(rejected.body.current?.store.audit.filter(
+      (event: Record<string, unknown>) =>
+        event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE && event.sourceMessageId === message.id,
+    ).length, 1);
+
+    const { rows } = await pool.query(
+      'SELECT version, store FROM "anif_itsm_workspace" WHERE id = $1',
+      [workspaceId],
+    );
+    assert.equal(rows[0]?.version, 1);
+    const persisted = rows[0]?.store as Record<string, any>;
+    assert.equal(persisted.tickets.filter(
+      (ticket: Record<string, unknown>) => ticket.sourceMessageId === message.id,
+    ).length, 1);
+    assert.equal(persisted.audit.filter(
+      (event: Record<string, unknown>) =>
+        event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE && event.sourceMessageId === message.id,
+    ).length, 1);
+    assert.deepEqual(
+      persisted.conversations[0].messages,
+      [message],
+      "both attempts must leave the original Support message unchanged",
+    );
+  } finally {
+    if (server) {
+      await new Promise<void>((resolve, reject) => {
+        server!.close((error) => error ? reject(error) : resolve());
+      });
+    }
+    if (pool) {
+      await pool.query('DELETE FROM "anif_itsm_workspace" WHERE id = $1', [workspaceId]);
+      await pool.end();
+    }
+    await rm(tempBuildDir, { recursive: true, force: true });
+  }
+});
+
+test("each browser conversion run starts with a fresh isolated Support message", () => {
+  const sharedPilotData = {
+    ...empty(),
+    tickets: [{ ...candidateTicket("INC-shared"), title: "Donnée partagée hors test" }],
+    conversations: [{
+      id: "shared-support",
+      kind: "Support",
+      title: "Canal support partagé",
+      messages: [{ id: "shared-message", author: "Demandeur", body: "Message partagé intact." }],
+    }],
+  };
+  const untouchedSharedPilotData = structuredClone(sharedPilotData);
+
+  for (const run of [1, 2]) {
+    const fixture = conversionBrowserFixture();
+    const originalMessage = structuredClone(fixture.conversations[0].messages[0]);
+    assert.deepEqual(fixture.tickets, [], `Run ${run} must not inherit incidents from a previous run.`);
+    assert.deepEqual(fixture.conversations[0].messages, [originalMessage]);
+
+    const proposedTicket = {
+      ...candidateTicket(`INC-e2e-${run}`),
+      status: "Nouveau",
+      conversationId: fixture.conversations[0].id,
+      sourceMessageId: originalMessage.id,
+    };
+    const saved = saveWorkspaceAtVersion(
+      fixture,
+      0,
+      { ...fixture, tickets: [proposedTicket] },
+      0,
+      actor(`browser-run-${run}`, "N1"),
+      at,
+    );
+    if (saved.conflict) assert.fail(`Run ${run} must save against its isolated fixture.`);
+
+    assert.equal(saved.store.tickets.length, 1);
+    assert.equal(saved.store.tickets[0].sourceMessageId, originalMessage.id);
+    assert.deepEqual(saved.store.conversations[0].messages[0], originalMessage);
+    assert.equal(
+      saved.store.audit.filter((event) => event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE).length,
+      1,
+    );
+    assert.deepEqual(
+      conversionBrowserFixture().conversations[0].messages,
+      [originalMessage],
+      "A new run must recreate the same unconsumed source message.",
+    );
+    assert.deepEqual(conversionBrowserFixture().tickets, []);
+  }
+
+  assert.deepEqual(sharedPilotData, untouchedSharedPilotData, "The isolated browser fixture must not touch shared pilot data.");
 });
 
 test("conversation read progress is private to each authenticated account", () => {

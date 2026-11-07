@@ -114,7 +114,8 @@ export const GetItsmUserDirectoryResponse = zod.object({
   "userId": zod.string(),
   "email": zod.string().nullable(),
   "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal(null)]).nullable(),
-  "serviceIds": zod.array(zod.string())
+  "serviceIds": zod.array(zod.string()),
+  "unavailableServiceIds": zod.array(zod.string()).describe('Service identifiers assigned to this account but absent from the current pilot catalog')
 })),
   "totalCount": zod.number().int().min(getItsmUserDirectoryResponseTotalCountMin),
   "limit": zod.number().int().min(1).max(getItsmUserDirectoryResponseLimitMax),
@@ -127,7 +128,8 @@ export const GetItsmUserDirectoryResponse = zod.object({
  */
 export const CheckItsmRoleArchiveResponse = zod.object({
   "status": zod.enum(['available']),
-  "message": zod.string()
+  "message": zod.string(),
+  "checkedAt": zod.coerce.date()
 })
 
 

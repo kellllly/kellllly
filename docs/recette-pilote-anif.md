@@ -91,19 +91,6 @@ L’export authentifié a répondu `200`; l’utilisateur rapporte que le filtre
 
 **À confirmer :** si le test devait convertir le message `sup-2` (signalement d’impression), refaire cette sélection dans Firefox; l’écriture observée concernait `sup-1` (message de consigne). Ne pas supprimer le ticket `INC-2423` sans accord : il est maintenant partagé. Le journal d’audit général ne trace pas la conversion, mais l’historique du ticket en conserve la création.
 
-## Vérification après import dans GitHub — 2 novembre 2026
-
-Le code a été recopié depuis Replit dans le dépôt GitHub, avec une base PostgreSQL 16 locale vide portant le même schéma Drizzle. Le code Orval régénéré à partir de `openapi.yaml` est identique à celui présent sur Replit.
-
-| Vérification | Résultat |
-| --- | --- |
-| `pnpm run typecheck` (bibliothèques, API, frontend, scripts) | Réussi, sans erreur. Le blocage signalé ci-dessus (exports générés manquants, nullabilité) ne se reproduit plus avec le code actuel. |
-| Tests frontend | Réussis : 55 tests. |
-| Tests API avec `DATABASE_URL` | Réussis : 57 tests, dont le test d’intégration PostgreSQL de concurrence des rôles N1. |
-| Tests API sans `DATABASE_URL` | 3 échecs au chargement de `@workspace/db` (variable requise) et 1 test d’intégration ignoré. |
-
-Le serveur trace désormais la conversion d’un message support dans le journal général (`itsm.ticket.converted`); le point « le journal ne trace pas la conversion » ci-dessus est couvert par un test API. La recette avec Clerk et deux navigateurs authentifiés reste à faire.
-
 ## Couverture automatisée et limites
 
 Les suites automatisent les règles déterministes du domaine et du stockage, mais ne remplacent pas la recette authentifiée dans deux navigateurs. Ces vérifications ne valent pas audit, homologation ou certification de sécurité. Les éléments explicitement notés comme restant à vérifier doivent être validés avant le pilote.

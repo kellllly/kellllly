@@ -220,6 +220,12 @@ export const ItsmRoleArchiveCheckResponseStatus = {
 export interface ItsmRoleArchiveCheckResponse {
   status: ItsmRoleArchiveCheckResponseStatus;
   message: string;
+  checkedAt: string;
+}
+
+export interface ItsmRoleArchiveCheckFailureResponse {
+  error: string;
+  checkedAt: string;
 }
 
 /**
@@ -243,6 +249,8 @@ export interface ItsmUserDirectoryAccount {
   /** @nullable */
   role: ItsmUserDirectoryAccountRole;
   serviceIds: string[];
+  /** Service identifiers assigned to this account but absent from the current pilot catalog */
+  unavailableServiceIds: string[];
 }
 
 export interface ItsmUserDirectoryPage {
@@ -259,21 +267,25 @@ export interface ItsmUserDirectoryPage {
 }
 
 export type ExportItsmAuditParams = {
-  q?: string;
-  scope?: string;
-  from?: string;
-  to?: string;
+q?: string;
+scope?: string;
+from?: string;
+to?: string;
 };
 
 export type GetItsmUserDirectoryParams = {
-  /** @maxLength 120 */
-  q?: string;
-  /**
-   * @minimum 1
-   * @maximum 50
-   */
-  limit?: number;
-  /** @minimum 0 */
-  offset?: number;
+/**
+ * @maxLength 120
+ */
+q?: string;
+/**
+ * @minimum 1
+ * @maximum 50
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+offset?: number;
 };
 

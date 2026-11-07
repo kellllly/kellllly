@@ -10,4 +10,5 @@ import type { ItsmRoleArchiveCheckResponseStatus } from './itsmRoleArchiveCheckR
 export interface ItsmRoleArchiveCheckResponse {
   status: ItsmRoleArchiveCheckResponseStatus;
   message: string;
+  checkedAt: Date;
 }

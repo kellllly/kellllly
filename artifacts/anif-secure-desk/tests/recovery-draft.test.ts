@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RecoveryDraftGuard, recoveryKey, watchRecoveryDraft } from '../src/lib/recovery-draft.ts';
+import {
+  clearRecoveryDrafts, readRecoveryDrafts, readRecoveryDraftsWithStatus, RecoveryDraftGuard, recoveryKey, removeRecoveryDraft, watchRecoveryDraft,
+  writeRecoveryDraft,
+} from '../src/lib/recovery-draft.ts';
 
 class MemoryStorage implements Storage {
   values = new Map<string, string>();
@@ -24,6 +27,43 @@ function setup() {
   return { storage, key, draft, tabs, guards, drafts };
 }
 
+test('malformed JSON recovery drafts are reported and preserved verbatim', () => {
+  const storage = new MemoryStorage();
+  const key = recoveryKey('damaged-json');
+  const malformed = '{"base":';
+  storage.setItem(key, malformed);
+
+  const result = readRecoveryDraftsWithStatus(storage, key);
+
+  assert.deepEqual(result, { drafts: [], unreadableCount: 1 });
+  assert.equal(storage.getItem(key), malformed);
+});
+
+test('invalid recovery draft schemas are reported and preserved verbatim', () => {
+  const storage = new MemoryStorage();
+  const key = recoveryKey('damaged-schema');
+  const invalidSchema = JSON.stringify({ draftId: 42, local: { title: 'Local' } });
+  storage.setItem(`${key}:draft:bad-schema`, invalidSchema);
+
+  const result = readRecoveryDraftsWithStatus(storage, key);
+
+  assert.deepEqual(result, { drafts: [], unreadableCount: 1 });
+  assert.equal(storage.getItem(`${key}:draft:bad-schema`), invalidSchema);
+});
+
+test('cleanup leaves unreadable JSON and schema-invalid drafts in place', () => {
+  const storage = new MemoryStorage();
+  const key = recoveryKey('cleanup-invalid');
+  const malformedJson = '{"base":';
+  const invalidSchema = JSON.stringify({ draftId: 8, local: {} });
+  storage.setItem(key, malformedJson);
+  storage.setItem(`${key}:draft:bad-schema`, invalidSchema);
+
+  assert.equal(clearRecoveryDrafts(storage, key), false);
+  assert.equal(storage.getItem(key), malformedJson);
+  assert.equal(storage.getItem(`${key}:draft:bad-schema`), invalidSchema);
+});
+
 test('two tabs: abandoning or completing recovery invalidates the other tab and stale callbacks', () => {
   for (const action of ['abandon', 'resume']) {
     const { storage, key, tabs, guards, drafts } = setup();
@@ -42,7 +82,7 @@ test('two tabs: abandoning or completing recovery invalidates the other tab and 
       assert.equal(guards[0].isCurrent(drafts[0]), true);
       // Both successful resume and explicit abandon consume the persisted draft.
       if (action === 'resume') saves++;
-      storage.removeItem(key);
+      assert.equal(removeRecoveryDraft(storage, key, drafts[0]), true);
       guards[0].invalidate();
       // A click already queued before the browser dispatches storage must also fail.
       staleResume();
@@ -87,6 +127,95 @@ test('comparison updates preserve identity but replacement drafts block old acti
   assert.equal(guards[1].isCurrent(drafts[1]), true);
   storage.setItem(key, JSON.stringify({ ...draft, draftId: 'replacement' }));
   assert.equal(guards[1].isCurrent(drafts[1]), false);
+});
+
+test('two tabs persist different drafts independently; resuming and abandoning one keep the other actionable', () => {
+  const storage = new MemoryStorage();
+  const key = recoveryKey('same-account');
+  const draftA = { draftId: 'tab-a', base: { title: 'Base' }, local: { title: 'Change A' }, version: 1 };
+  const draftB = { draftId: 'tab-b', base: { title: 'Base' }, local: { title: 'Change B' }, version: 1 };
+  const tabA = new RecoveryDraftGuard(key, () => storage);
+  const tabB = new RecoveryDraftGuard(key, () => storage);
+
+  assert.equal(writeRecoveryDraft(storage, key, draftA), true);
+  tabA.track(draftA, true);
+  assert.equal(writeRecoveryDraft(storage, key, draftB), true);
+  tabB.track(draftB, true);
+  assert.deepEqual(readRecoveryDrafts(storage, key).map((draft) => draft.draftId), ['tab-a', 'tab-b']);
+  assert.equal(tabA.isCurrent(draftA), true);
+  assert.equal(tabB.isCurrent(draftB), true);
+
+  // Tab A completes its explicitly requested resume. This consumes only A's entry.
+  let resumes = 0;
+  if (tabA.isCurrent(draftA)) resumes += 1;
+  removeRecoveryDraft(storage, key, draftA);
+  assert.equal(resumes, 1);
+  assert.equal(tabA.isCurrent(draftA), false);
+  assert.equal(tabB.isCurrent(draftB), true);
+  assert.deepEqual(readRecoveryDrafts(storage, key).map((draft) => draft.draftId), ['tab-b']);
+
+  // Tab B can still abandon its own change without resuming or deleting A again.
+  removeRecoveryDraft(storage, key, draftB);
+  assert.equal(tabB.isCurrent(draftB), false);
+  assert.deepEqual(readRecoveryDrafts(storage, key), []);
+});
+
+test('failed explicit abandon stays visible after storage recovers, reloads, and in another tab', () => {
+  const { storage, key, draft, tabs, guards, drafts } = setup();
+  const otherDraft = { draftId: 'other-tab', base: { title: 'Base' }, local: { title: 'Other change' } };
+  assert.equal(writeRecoveryDraft(storage, key, otherDraft), true);
+  const otherTabGuard = new RecoveryDraftGuard(key, () => storage);
+  otherTabGuard.track(drafts[1], true);
+  const independentDraftGuard = new RecoveryDraftGuard(key, () => storage);
+  independentDraftGuard.track(otherDraft, true);
+  const originalRemove = storage.removeItem.bind(storage);
+  let storageBlocked = true;
+  storage.removeItem = (itemKey: string) => {
+    if (storageBlocked) throw new Error('Storage access denied');
+    originalRemove(itemKey);
+  };
+
+  assert.equal(removeRecoveryDraft(storage, key, drafts[0]), false);
+  assert.deepEqual(readRecoveryDrafts(storage, key).map((item) => item.draftId), [draft.draftId, otherDraft.draftId]);
+  assert.equal(guards[0].isCurrent(drafts[0]), true);
+  assert.equal(otherTabGuard.isCurrent(drafts[1]), true);
+  // A reload reads the persisted draft again; a failed attempt did not claim success.
+  assert.deepEqual(readRecoveryDrafts(storage, key).map((item) => item.draftId), [draft.draftId, otherDraft.draftId]);
+
+  storageBlocked = false;
+  assert.equal(removeRecoveryDraft(storage, key, drafts[0]), true);
+  guards[0].invalidate();
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
+  let abandonedDraftStillVisible = true;
+  const unsubscribe = watchRecoveryDraft(tabs[1] as unknown as Window, key, () => {
+    if (!otherTabGuard.isCurrent(drafts[1])) abandonedDraftStillVisible = false;
+  });
+  const event = new Event('storage');
+  Object.assign(event, { key, storageArea: storage });
+  try {
+    tabs[1]!.dispatchEvent(event);
+    assert.equal(abandonedDraftStillVisible, false);
+    assert.equal(independentDraftGuard.isCurrent(otherDraft), true);
+    assert.deepEqual(readRecoveryDrafts(storage, key).map((item) => item.draftId), [otherDraft.draftId]);
+  } finally {
+    unsubscribe();
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else Reflect.deleteProperty(globalThis, 'localStorage');
+  }
+});
+
+test('clear reports blocked storage and verifies account-scoped cleanup after recovery', () => {
+  const { storage, key, draft } = setup();
+  storage.setItem(recoveryKey('another-account'), JSON.stringify(draft));
+  const originalRemove = storage.removeItem.bind(storage);
+  storage.removeItem = () => { throw new Error('Storage access denied'); };
+  assert.equal(clearRecoveryDrafts(storage, key), false);
+  assert.equal(readRecoveryDrafts(storage, key).length, 1);
+  storage.removeItem = originalRemove;
+  assert.equal(clearRecoveryDrafts(storage, key), true);
+  assert.equal(readRecoveryDrafts(storage, key).length, 0);
+  assert.equal(readRecoveryDrafts(storage, recoveryKey('another-account')).length, 1);
 });
 
 test('account isolation and legacy drafts remain supported', () => {

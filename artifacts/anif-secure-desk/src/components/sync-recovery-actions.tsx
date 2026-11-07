@@ -3,7 +3,7 @@ import { useStore } from '@/lib/store';
 import { choicesForRecoveryVersion, type ConflictChoices } from '@/lib/sync-recovery';
 
 export function SyncRecoveryActions() {
-  const { recovery, resumeConflict, acceptRemoteSnapshot } = useStore();
+  const { recovery, recoveryDrafts, selectRecoveryDraft, resumeConflict, acceptRemoteSnapshot } = useStore();
   const [selection, setSelection] = useState<{ version: number; choices: ConflictChoices }>(() => ({
     version: recovery?.remoteVersion ?? 0,
     choices: {},
@@ -15,6 +15,29 @@ export function SyncRecoveryActions() {
   };
   const complete = recovery.fields.every((field) => choices[field.path]);
   return <div className="space-y-3">
+    {recoveryDrafts.length > 1 && <fieldset className="space-y-2">
+      <legend className="font-semibold">Choisissez la modification à traiter</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {recoveryDrafts.map((draft, index) => <button
+          key={draft.draftId}
+          type="button"
+          disabled={recovery.busy}
+          aria-pressed={draft.draftId === recovery.draftId}
+          data-testid={`button-select-recovery-${index + 1}`}
+          onClick={() => selectRecoveryDraft(draft.draftId)}
+          className={`focus-ring min-w-0 rounded-lg border px-3 py-2 text-left text-sm ${
+            draft.draftId === recovery.draftId
+              ? 'border-[#9e655d] bg-white/70 font-semibold dark:bg-black/10'
+              : 'border-border bg-white/30 hover:bg-white/60 dark:bg-black/5 dark:hover:bg-black/10'
+          }`}
+        >
+          <span className="block">Modification {index + 1}</span>
+          <span className="mt-1 block text-xs font-normal text-muted-foreground">
+            {draft.changed.join(' ; ') || 'Espace partagé'} · {draft.summary}
+          </span>
+        </button>)}
+      </div>
+    </fieldset>}
     {recovery.fields.length > 0 && <>
       <p className="font-semibold">Choisissez chaque valeur à conserver.</p>
       {recovery.fields.map((field) => <fieldset key={field.path} disabled={recovery.busy} className="min-w-0 rounded-lg border border-[#d39b90]/70 p-2">

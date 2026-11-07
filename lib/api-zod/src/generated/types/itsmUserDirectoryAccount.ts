@@ -14,4 +14,6 @@ export interface ItsmUserDirectoryAccount {
   /** @nullable */
   role: ItsmUserDirectoryAccountRole;
   serviceIds: string[];
+  /** Service identifiers assigned to this account but absent from the current pilot catalog */
+  unavailableServiceIds: string[];
 }

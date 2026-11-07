@@ -46,18 +46,28 @@ do not flood the logs. When a later check succeeds, the server emits a recovery
 event.
 
 An unsuccessful archive write during a role change emits the same unavailable
-event immediately. Search or configure log-based alerting for:
+event immediately. These events are also sent to the Slack operations channel
+configured by `ITSM_ROLE_ARCHIVE_ALERT_CHANNEL_ID`. The channel ID for the
+workspace's `#ops` channel is `C0CGM1B1V08`. Slack must be connected to this Repl
+through the Replit Slack connector; the API server uses the connector SDK, which
+adds authentication outside the message body.
+
+Slack messages clearly distinguish `ITSM role archive unavailable` from
+`ITSM role archive recovered`. Search or configure log-based alerting for:
 
 - `alert=itsm_role_archive_unavailable` — the archive destination cannot be
   reached, is misconfigured, or did not acknowledge a role-change event.
 - `alert=itsm_role_archive_recovered` — the periodic check detected recovery.
 
 These events include only the alert name, component, status, and source
-(`periodic_health_check` or `role_change`). They do not include authentication
-tokens, raw errors, account identifiers, email addresses, roles, or service
-assignments. In particular, archive alert events use the process logger rather
-than the request logger, so they do not inherit the target account's request
-path.
+(`periodic_health_check`, `role_change`, or `role_attestation`). Slack messages
+contain only the human-readable alert name, status, and source. They do not
+include authentication tokens, raw errors, account identifiers, email
+addresses, roles, or service assignments. In particular, archive alert events
+use the process logger rather than the request logger, so they do not inherit
+the target account's request path. If Slack delivery fails, the server logs a
+separate sanitized delivery-failure event and does not interrupt the archive
+operation or health monitor.
 
 A role-assignment refusal for another reason is not an archive outage. For
 example, a non-N1 actor, an attempt to remove the last N1, or an invalid request

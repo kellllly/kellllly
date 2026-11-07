@@ -12,14 +12,27 @@ type AuditExportDependencies = {
 
 function csvCell(value: unknown): string {
   let text = String(value ?? "");
-  if (typeof value === "string" && (/^[\s﻿]*[=+\-@]/u.test(text) || /^[\t\r\n]/u.test(text))) {
+  if (typeof value === "string" && (/^[\s\uFEFF]*[=+\-@]/u.test(text) || /^[\t\r\n]/u.test(text))) {
     text = `'${text}`;
   }
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function normalizeAuditSearchText(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 function csvDateBoundary(date: string, end: boolean): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const [year, month, day] = date.split("-").map(Number);
+  const calendarDate = new Date(0);
+  calendarDate.setUTCHours(0, 0, 0, 0);
+  calendarDate.setUTCFullYear(year, month - 1, day);
+  if (
+    calendarDate.getUTCFullYear() !== year
+    || calendarDate.getUTCMonth() !== month - 1
+    || calendarDate.getUTCDate() !== day
+  ) return null;
   const value = new Date(`${date}T${end ? "23:59:59.999" : "00:00:00"}+01:00`).getTime();
   return Number.isFinite(value) ? value : null;
 }
@@ -41,37 +54,52 @@ export function createItsmAuditExportHandler({
       throw error;
     }
 
-    const rawEvents = await loadAuditEvents();
-    const query = String(req.query.q ?? "").trim().toLocaleLowerCase("fr");
+    const query = normalizeAuditSearchText(String(req.query.q ?? "").trim());
     const scope = String(req.query.scope ?? "Tous");
-    const from = csvDateBoundary(String(req.query.from ?? ""), false);
-    const to = csvDateBoundary(String(req.query.to ?? ""), true);
+    const rawFrom = String(req.query.from ?? "");
+    const rawTo = String(req.query.to ?? "");
+    const from = csvDateBoundary(rawFrom, false);
+    const to = csvDateBoundary(rawTo, true);
+    if ((rawFrom && from === null) || (rawTo && to === null)) {
+      res.status(400).json({ error: "La date de début ou de fin est invalide. Utilisez le format AAAA-MM-JJ avec une date réelle." });
+      return;
+    }
+
+    let rawEvents: unknown[];
+    try {
+      rawEvents = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for CSV export");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
     const events = rawEvents.filter((value): value is Record<string, unknown> =>
       Boolean(value && typeof value === "object" && !Array.isArray(value)))
       .filter((event) => {
         if (scope !== "Tous" && event.scope !== scope) return false;
-        if (query && [
+        const searchable = [
           event.action, event.actor, event.scope, event.time, event.targetUserId,
           event.previousRole, event.nextRole,
           ...(Array.isArray(event.previousServiceIds) ? event.previousServiceIds : []),
           ...(Array.isArray(event.serviceIds) ? event.serviceIds : []),
-        ].filter(Boolean).join(" ").toLocaleLowerCase("fr").includes(query) === false) return false;
+        ].filter(Boolean).join(" ");
+        if (query && !normalizeAuditSearchText(searchable).includes(query)) return false;
         const at = typeof event.at === "string" ? Date.parse(event.at) : Number.NaN;
         if (from !== null && (!Number.isFinite(at) || at < from)) return false;
         if (to !== null && (!Number.isFinite(at) || at > to)) return false;
         return true;
       });
     const rows = [
-      ["Identifiant", "Action", "Acteur", "Compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO"],
+      ["Identifiant", "Action", "Acteur", "Compte cible", "Ancien rôle", "Nouveau rôle", "Ancien périmètre", "Nouveau périmètre", "Périmètre", "Horodatage ISO", "Heure enregistrée"],
       ...events.map((event) => [
         event.id, event.action, event.actor, event.targetUserId,
         event.previousRole, event.nextRole,
         Array.isArray(event.previousServiceIds) ? event.previousServiceIds.join(", ") : "",
         Array.isArray(event.serviceIds) ? event.serviceIds.join(", ") : "",
-        event.scope, event.at,
+        event.scope, event.at, event.time,
       ]),
     ];
-    const csv = `﻿${rows.map((rowValues) => rowValues.map(csvCell).join(";")).join("\r\n")}\r\n`;
+    const csv = `\uFEFF${rows.map((rowValues) => rowValues.map(csvCell).join(";")).join("\r\n")}\r\n`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="journal-anif-${new Date().toISOString().slice(0, 10)}.csv"`);
     res.send(csv);

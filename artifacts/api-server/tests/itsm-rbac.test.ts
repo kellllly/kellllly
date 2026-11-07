@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { clerkMiddleware } from "@clerk/express";
 import { build } from "esbuild";
 import {
   canChangeItsmRole,
@@ -209,6 +210,13 @@ test("audit export sends filtered CSV to authorized roles and no journal data to
           time: "14:00",
           at: "2026-10-30T11:00:00.000Z",
         },
+        {
+          id: "event-legacy",
+          action: "Trace historique",
+          actor: "ancien-agent",
+          scope: "Pilote",
+          time: "09:17",
+        },
       ];
     },
   }));
@@ -240,13 +248,152 @@ test("audit export sends filtered CSV to authorized roles and no journal data to
   assert.doesNotMatch(timeOnlyCsv, /event-filtered|private-journal-entry/);
   assert.equal(loadCount, 2);
 
+  const historicalResponse = await fetch(`http://127.0.0.1:${address.port}/audit/export?q=09%3A17`);
+  const historicalCsv = await historicalResponse.text();
+  assert.equal(historicalResponse.status, 200);
+  const historicalRows = historicalCsv.split("\r\n").filter(Boolean);
+  assert.equal(historicalRows.length, 2, "the hour search should export only the historical event");
+  assert.equal(
+    historicalRows[1],
+    '"event-legacy";"Trace historique";"ancien-agent";"";"";"";"";"";"Pilote";"";"09:17"',
+  );
+  assert.equal(loadCount, 3);
+
+  for (const invalidDateQuery of ["from=2026-02-30", "to=2026-13-01"]) {
+    const invalidDateResponse = await fetch(
+      `http://127.0.0.1:${address.port}/audit/export?${invalidDateQuery}`,
+    );
+    const refusal = await invalidDateResponse.text();
+    assert.equal(invalidDateResponse.status, 400);
+    assert.doesNotMatch(invalidDateResponse.headers.get("content-type") ?? "", /text\/csv/);
+    assert.match(refusal, /date .* invalide/i);
+    assert.doesNotMatch(refusal, /event-allowed|event-filtered|private-journal-entry/);
+    assert.equal(loadCount, 3, "invalid dates must be rejected before journal events are loaded");
+  }
+
   currentActor = actor("N2");
   const unauthorizedResponse = await fetch(url);
   const refusal = await unauthorizedResponse.text();
   assert.equal(unauthorizedResponse.status, 403);
   assert.doesNotMatch(unauthorizedResponse.headers.get("content-type") ?? "", /text\/csv/);
   assert.doesNotMatch(refusal, /event-allowed|event-filtered|private-journal-entry/);
-  assert.equal(loadCount, 2, "the journal must not be loaded for a role without export permission");
+  assert.equal(loadCount, 3, "the journal must not be loaded for a role without export permission");
+});
+
+test("the mounted audit export route rejects requests without a Clerk session", async (t) => {
+  const packageDir = fileURLToPath(new URL("..", import.meta.url));
+  const tempBuildDir = await mkdtemp(path.join(packageDir, "node_modules", ".itsm-audit-auth-test-"));
+  const tempNodeModules = path.join(tempBuildDir, "node_modules");
+  await mkdir(tempNodeModules, { recursive: true });
+  await symlink(
+    path.resolve(packageDir, "../../lib/db/node_modules/pg"),
+    path.join(tempNodeModules, "pg"),
+  );
+
+  try {
+    const bundlePath = path.join(tempBuildDir, "itsm-route.mjs");
+    await build({
+      entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
+      outfile: bundlePath,
+      bundle: true,
+      platform: "node",
+      format: "esm",
+      external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+      sourcemap: false,
+      logLevel: "silent",
+    });
+    const { default: itsmRouter } = await import(bundlePath);
+    const app = express();
+    app.use(clerkMiddleware({
+      publishableKey: "pk_test_Y2xlcmsuZGV2JA",
+      secretKey: "sk_test_c2VjcmV0",
+    }));
+    app.use("/api", itsmRouter);
+
+    const server = app.listen(0, "127.0.0.1");
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("listening", resolve);
+        server.once("error", reject);
+      });
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/itsm/audit/export`);
+      const body = await response.text();
+
+      assert.equal(response.status, 401);
+      assert.doesNotMatch(response.headers.get("content-type") ?? "", /text\/csv/i);
+      assert.doesNotMatch(body, /text\/csv|Identifiant|event-|private-journal-entry/i);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+  } finally {
+    await rm(tempBuildDir, { recursive: true, force: true });
+  }
+});
+
+test("audit export matches accent-insensitive, case-insensitive client journal searches", async (t) => {
+  const app = express();
+  app.get("/audit/export", createItsmAuditExportHandler({
+    resolveActor: async () => actor("N1"),
+    loadAuditEvents: async () => [
+      {
+        id: "event-accented",
+        action: "Habilitation modifiée",
+        actor: "Élodie",
+        scope: "Messagerie",
+        time: "13:00",
+        at: "2026-10-30T10:00:00.000Z",
+      },
+      {
+        id: "event-unaccented",
+        action: "Habilitation modifiee",
+        actor: "Elodie",
+        scope: "Messagerie",
+        time: "13:01",
+        at: "2026-10-30T10:01:00.000Z",
+      },
+      {
+        id: "event-other",
+        action: "Habilitation supprimée",
+        actor: "Élodie",
+        scope: "Messagerie",
+        time: "13:02",
+        at: "2026-10-30T10:02:00.000Z",
+      },
+    ],
+  }));
+
+  const server = app.listen(0, "127.0.0.1");
+  t.after(() => new Promise<void>((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  const csvResults = await Promise.all(
+    ["MODIFIEE", "modifiée", "  modifi\u0065\u0301e  "].map(async (query) => {
+      const params = new URLSearchParams({ q: query });
+      const response = await fetch(`http://127.0.0.1:${address.port}/audit/export?${params}`);
+      assert.equal(response.status, 200);
+      return response.text();
+    }),
+  );
+
+  for (const csv of csvResults) {
+    const exportedIds = csv.split("\r\n").filter(Boolean).slice(1).map((row) => row.split(";")[0]);
+    assert.deepEqual(exportedIds, ['"event-accented"', '"event-unaccented"']);
+    assert.doesNotMatch(csv, /event-other|Habilitation supprimée/u);
+  }
+  assert.equal(csvResults[0], csvResults[1]);
+  assert.equal(csvResults[1], csvResults[2]);
 });
 
 test("only N1 can assign ITSM roles", () => {
@@ -279,11 +426,12 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
   const { createItsmRoleAssignmentRouter } = await import(bundlePath);
   t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
 
-  type FailureMode = "clerk-update" | "journal-write" | "journal-write-after-persist" | "restore-clerk" | "archive-write";
+  type FailureMode = "clerk-update" | "journal-write" | "journal-write-after-persist" | "journal-verification-failure" | "journal-write-after-persist-verification-failure" | "restore-clerk" | "archive-write";
   const runFailureCase = async (mode: FailureMode) => {
     const admin = { id: "admin-1", publicMetadata: { itsmRole: "N1", itsmServiceIds: [] } };
     const target = { id: "target-1", publicMetadata: { itsmRole: "N5", itsmServiceIds: [], department: "Support" } };
     let updateCalls = 0;
+    let lockCalls = 0;
     let audit: unknown[] = [];
     const alerts: Record<string, unknown>[] = [];
     const app = express();
@@ -326,17 +474,23 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
         status: "unavailable",
         source: "role_change",
       }),
-      withLock: async (operation) => operation(
+      withLock: async (operation) => {
+        lockCalls += 1;
+        if ((mode === "journal-verification-failure" || mode === "journal-write-after-persist-verification-failure") && lockCalls === 2) {
+          throw new Error("Simulated journal verification failure");
+        }
+        return operation(
           { services: [], audit },
           async (nextStore) => {
-            if (mode === "journal-write-after-persist") {
+            if (mode === "journal-write-after-persist" || mode === "journal-write-after-persist-verification-failure") {
               audit = structuredClone(nextStore.audit as unknown[]);
               throw new Error("Simulated network error after journal persistence");
             }
             if (mode !== "clerk-update") throw new Error("Simulated journal write failure");
             audit = structuredClone(nextStore.audit as unknown[]);
           },
-        ),
+        );
+      },
     }, (_req, _res, next) => next()));
 
     const server = app.listen(0, "127.0.0.1");
@@ -356,11 +510,25 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
         },
       );
       const body = await response.json() as { error?: string };
-      if (mode !== "journal-write-after-persist") {
+      let retryStatus: number | null = null;
+      let retryBody: { error?: string } | null = null;
+      if (mode === "journal-write-after-persist-verification-failure") {
+        const retryResponse = await fetch(
+          `http://127.0.0.1:${address.port}/itsm/users/${target.id}/role`,
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ role: "N2", serviceIds: [] }),
+          },
+        );
+        retryStatus = retryResponse.status;
+        retryBody = await retryResponse.json() as { error?: string };
+      }
+      if (mode !== "journal-write-after-persist" && mode !== "journal-write-after-persist-verification-failure") {
         assert.equal(response.status, 503);
         assert.equal(audit.length, 0, "failed role changes must not appear in the audit");
       }
-      return { body, target, updateCalls, alerts, audit, status: response.status };
+      return { body, target, updateCalls, alerts, audit, status: response.status, retryStatus, retryBody };
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => error ? reject(error) : resolve());
@@ -398,6 +566,23 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
     assert.equal(result.alerts.length, 0);
   });
 
+  await t.test("a journal write and verification failure alerts without restoring the Clerk role", async () => {
+    const result = await runFailureCase("journal-verification-failure");
+    assert.equal(result.status, 503);
+    assert.equal(result.target.publicMetadata.itsmRole, "N2");
+    assert.deepEqual(result.target.publicMetadata.itsmServiceIds, []);
+    assert.equal(result.updateCalls, 1, "the route must not automatically restore Clerk when journal persistence cannot be verified");
+    assert.equal(result.audit.length, 0);
+    assert.match(result.body.error ?? "", /journal est incertain/i);
+    assert.match(result.body.error ?? "", /n’a pas été restauré automatiquement/i);
+    assert.equal(result.alerts.length, 1);
+    assert.equal(result.alerts[0].alert, "itsm_role_reconciliation_required");
+    assert.equal(result.alerts[0].targetUserId, "target-1");
+    assert.equal(result.alerts[0].expectedPreviousRole, "N5");
+    assert.equal(result.alerts[0].requestedRole, "N2");
+    assert.match(String(result.alerts[0].message), /audit persistence could not be verified/i);
+  });
+
   await t.test("a journal persisted before a network error is confirmed without restoring Clerk", async () => {
     const result = await runFailureCase("journal-write-after-persist");
     assert.equal(result.status, 200);
@@ -407,6 +592,26 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
     assert.equal(result.audit.length, 1);
     assert.equal((result.audit[0] as { type?: string }).type, "itsm.role.changed");
     assert.equal((result.audit[0] as { targetUserId?: string }).targetUserId, "target-1");
+    assert.equal((result.audit[0] as { nextRole?: string }).nextRole, "N2");
+    assert.deepEqual(findItsmRoleReconciliationIssues([
+      { id: "target-1", role: "N2", serviceIds: [] },
+    ], result.audit), []);
+  });
+
+  await t.test("retrying after uncertain journal verification reuses the existing role trace", async () => {
+    const result = await runFailureCase("journal-write-after-persist-verification-failure");
+    assert.equal(result.status, 503, "the first request must report the simulated verification uncertainty");
+    assert.match(result.body.error ?? "", /journal est incertain/i);
+    assert.equal(result.retryStatus, 200, "a retry should succeed once Clerk and the existing journal trace agree");
+    assert.equal(result.retryBody?.error, undefined);
+    assert.equal(result.target.publicMetadata.itsmRole, "N2", "the retry must leave the requested Clerk role in place");
+    assert.deepEqual(result.target.publicMetadata.itsmServiceIds, []);
+    assert.equal(result.updateCalls, 1, "the retry must not update Clerk again when the persisted role trace already matches");
+    assert.equal(result.audit.length, 1, "the retry must not append a duplicate role trace");
+    assert.equal((result.audit[0] as { type?: string }).type, "itsm.role.changed");
+    assert.equal((result.audit[0] as { actor?: string }).actor, "admin-1");
+    assert.equal((result.audit[0] as { targetUserId?: string }).targetUserId, "target-1");
+    assert.equal((result.audit[0] as { previousRole?: string }).previousRole, "N5");
     assert.equal((result.audit[0] as { nextRole?: string }).nextRole, "N2");
     assert.deepEqual(findItsmRoleReconciliationIssues([
       { id: "target-1", role: "N2", serviceIds: [] },
@@ -425,6 +630,127 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
     assert.equal(result.alerts[0].requestedRole, "N2");
     assert.match(String(result.alerts[0].procedure), /compare Clerk public metadata with the ITSM audit/i);
   });
+});
+
+test("the HTTP role route protects the last N1 and permits removal after an active replacement", async (t) => {
+  const packageDir = fileURLToPath(new URL("..", import.meta.url));
+  const tempBuildDir = await mkdtemp(path.join(packageDir, "node_modules", ".itsm-last-n1-test-"));
+  const tempNodeModules = path.join(tempBuildDir, "node_modules");
+  await mkdir(tempNodeModules, { recursive: true });
+  await symlink(
+    path.resolve(packageDir, "../../lib/db/node_modules/pg"),
+    path.join(tempNodeModules, "pg"),
+  );
+  const bundlePath = path.join(tempBuildDir, "itsm-role-route.mjs");
+  await build({
+    entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
+    outfile: bundlePath,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+    sourcemap: false,
+    logLevel: "silent",
+  });
+  const { createItsmRoleAssignmentRouter } = await import(bundlePath);
+  t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
+
+  const soleAdmin = {
+    id: "sole-n1",
+    publicMetadata: { itsmRole: "N1", itsmServiceIds: [], department: "Sole admin" },
+  };
+  const replacement = {
+    id: "replacement-n1",
+    publicMetadata: { itsmRole: "N1", itsmServiceIds: [], department: "Replacement" },
+  };
+  const formerAdmin = {
+    id: "former-n1",
+    publicMetadata: { itsmRole: "N1", itsmServiceIds: [], department: "Former admin" },
+  };
+  const users = new Map([
+    [soleAdmin.id, soleAdmin],
+    [replacement.id, replacement],
+    [formerAdmin.id, formerAdmin],
+  ]);
+  let actorId = soleAdmin.id;
+  let activeAdmins = [soleAdmin.id];
+  let audit: unknown[] = [];
+  let updateCalls = 0;
+  const archived: unknown[] = [];
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    (req as typeof req & { log: { error: () => void; warn: () => void } }).log = {
+      error: () => undefined,
+      warn: () => undefined,
+    };
+    next();
+  });
+  app.use(createItsmRoleAssignmentRouter({
+    resolveActor: async () => ({ id: actorId, role: "N1", serviceIds: [] }),
+    getUser: async (userId) => {
+      const user = users.get(userId);
+      if (!user) throw new Error("Unknown account");
+      return user;
+    },
+    activeN1Ids: async () => activeAdmins,
+    updateUserMetadata: async (userId, metadata) => {
+      updateCalls += 1;
+      const user = users.get(userId);
+      assert.ok(user);
+      user.publicMetadata = metadata.publicMetadata;
+    },
+    archiveRoleChange: async (event) => { archived.push(event); },
+    reportArchiveUnavailable: () => undefined,
+    withLock: async (operation) => operation(
+      { services: [], audit },
+      async (nextStore) => { audit = structuredClone(nextStore.audit as unknown[]); },
+    ),
+  }, (_req, _res, next) => next()));
+
+  const server = app.listen(0, "127.0.0.1");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("listening", resolve);
+      server.once("error", reject);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const endpoint = (userId: string) => `http://127.0.0.1:${address.port}/itsm/users/${userId}/role`;
+    const removeAccess = (userId: string) => fetch(endpoint(userId), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: null, serviceIds: [] }),
+    });
+
+    const soleAdminBefore = structuredClone(soleAdmin.publicMetadata);
+    const denied = await removeAccess(soleAdmin.id);
+    const deniedBody = await denied.json() as { error?: string };
+    assert.equal(denied.status, 403);
+    assert.match(deniedBody.error ?? "", /dernier accès N1 actif/i);
+    assert.deepEqual(soleAdmin.publicMetadata, soleAdminBefore);
+    assert.equal(updateCalls, 0, "a refusal must not call Clerk");
+    assert.equal(archived.length, 0, "a refusal must not archive a role event");
+    assert.equal(audit.length, 0, "a refusal must not write the audit journal");
+
+    actorId = replacement.id;
+    activeAdmins = [replacement.id, formerAdmin.id];
+    const removed = await removeAccess(formerAdmin.id);
+    const removedBody = await removed.json() as { userId?: string; role?: string | null };
+    assert.equal(removed.status, 200);
+    assert.equal(removedBody.userId, formerAdmin.id);
+    assert.equal(removedBody.role, null);
+    assert.equal(formerAdmin.publicMetadata.itsmRole, null);
+    assert.equal(updateCalls, 1, "the old N1 may be removed when another active N1 remains");
+    assert.equal(archived.length, 1);
+    assert.equal(audit.length, 1);
+    assert.equal((audit[0] as { targetUserId?: string }).targetUserId, formerAdmin.id);
+    assert.equal((audit[0] as { nextRole?: string | null }).nextRole, null);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  }
 });
 
 test("role attestations require N1 and preserve Clerk metadata while bootstrap is audited", async (t) => {
@@ -633,6 +959,8 @@ test("bootstrap and deliberate revocation preserve unrelated metadata and cannot
   const initial = metadataForItsmBootstrap(metadata);
   assert.equal(initial.itsmRole, "N1");
   assert.deepEqual(initial.department, "Pilote");
+  const manuallyAssigned = metadataForItsmRoleChange(metadata, "N1", []);
+  assert.equal(initial.itsmBootstrapCompleted, manuallyAssigned.itsmBootstrapCompleted);
   assert.equal(isBootstrapAdmin("pilot@example.test", "verified", initial.itsmBootstrapCompleted, "pilot@example.test"), false);
   const revoked = metadataForItsmRoleChange(initial, null, ["ignored-service"]);
   assert.equal(revoked.itsmRole, null);

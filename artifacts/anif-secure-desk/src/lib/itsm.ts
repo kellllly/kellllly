@@ -102,6 +102,13 @@ const watDateFormatter = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
+/** Return a stable, filename-safe export name using the Libreville calendar date. */
+export function getAuditExportFilename(now: Date = new Date()): string {
+  const parts = watDateFormatter.formatToParts(timestamp(now));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? '';
+  return `journal-anif-${part('year')}-${part('month')}-${part('day')}.csv`;
+}
+
 /** Build an inclusive range ending today on the Libreville calendar. */
 export function getRecentAuditDateRange(days: number, now: Date = new Date()): { from: string; to: string } {
   if (!Number.isInteger(days) || days < 1) {
@@ -118,6 +125,23 @@ export function getRecentAuditDateRange(days: number, now: Date = new Date()): {
   firstDay.setUTCDate(firstDay.getUTCDate() - days + 1);
 
   return { from: firstDay.toISOString().slice(0, 10), to };
+}
+
+/** Return the inclusive WAT range for one calendar day before today (0 = today). */
+export function getAuditCalendarDayRange(dayOffset: number, now: Date = new Date()): { from: string; to: string } {
+  if (!Number.isInteger(dayOffset) || dayOffset < 0) {
+    throw new RangeError('Le décalage de jour doit être un entier positif ou nul.');
+  }
+  if (!Number.isFinite(now.getTime())) {
+    throw new RangeError('La date de référence est invalide.');
+  }
+
+  const parts = watDateFormatter.formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? '';
+  const date = new Date(`${part('year')}-${part('month')}-${part('day')}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - dayOffset);
+  const calendarDay = date.toISOString().slice(0, 10);
+  return { from: calendarDay, to: calendarDay };
 }
 
 export type AuditFilters = {
@@ -153,28 +177,54 @@ export function hasAuditExportSelection(events: readonly AuditEvent[]): boolean 
   return events.length > 0;
 }
 
-export function createAuditExportRunner() {
+const DEFAULT_AUDIT_EXPORT_TIMEOUT_MS = 30_000;
+const AUDIT_EXPORT_TIMEOUT_MESSAGE = 'Le serveur ne répond pas. Réessayez.';
+const AUDIT_EXPORT_CANCELLED_MESSAGE = 'Export annulé.';
+
+export function createAuditExportRunner(timeoutMs = DEFAULT_AUDIT_EXPORT_TIMEOUT_MS) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError('Le délai maximal de l’export doit être positif.');
+  }
   let inProgress = false;
+  let activeController: AbortController | null = null;
 
   return {
     get isRunning(): boolean {
       return inProgress;
     },
+    cancel(): void {
+      activeController?.abort(new Error(AUDIT_EXPORT_CANCELLED_MESSAGE));
+    },
     run<T>(
       events: readonly AuditEvent[],
-      exportSelection: () => T | Promise<T>,
+      exportSelection: (signal: AbortSignal) => T | Promise<T>,
       onStateChange?: (isRunning: boolean, error?: string) => void,
     ): Promise<T> | undefined {
       if (inProgress || !hasAuditExportSelection(events)) return undefined;
       inProgress = true;
+      const controller = new AbortController();
+      activeController = controller;
       return (async () => {
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
           onStateChange?.(true, '');
-          return await exportSelection();
+          const cancelled = new Promise<never>((_, reject) => {
+            controller.signal.addEventListener('abort', () => {
+              const reason = controller.signal.reason;
+              reject(reason instanceof Error ? reason : new Error(AUDIT_EXPORT_CANCELLED_MESSAGE));
+            }, { once: true });
+          });
+          timeout = setTimeout(() => {
+            controller.abort(new Error(AUDIT_EXPORT_TIMEOUT_MESSAGE));
+          }, timeoutMs);
+          const request = Promise.resolve(exportSelection(controller.signal));
+          return await Promise.race([request, cancelled]);
         } catch (error) {
           onStateChange?.(true, getAuditExportErrorMessage(error));
           throw error;
         } finally {
+          if (timeout !== undefined) clearTimeout(timeout);
+          if (activeController === controller) activeController = null;
           inProgress = false;
           onStateChange?.(false);
         }
@@ -185,6 +235,16 @@ export function createAuditExportRunner() {
 
 export function getAuditExportErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Échec de l’export.';
+}
+
+export async function readAuditCsvResponse(
+  response: Pick<Response, 'ok' | 'json' | 'blob'>,
+): Promise<Blob> {
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? 'Export refusé par le serveur.');
+  }
+  return response.blob();
 }
 
 export function runAuditExport<T>(
@@ -213,6 +273,10 @@ function watDayBoundary(date: string, endOfDay = false): number {
   return new Date(`${date}T${time}${WAT_OFFSET}`).getTime();
 }
 
+function normalizeAuditSearchText(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
 /** Apply the journal's scope, text and inclusive WAT calendar-day filters together. */
 export function filterAuditEvents(events: readonly AuditEvent[], filters: AuditFilters): AuditEvent[] {
   const { scope, query, from, to } = filters;
@@ -221,7 +285,7 @@ export function filterAuditEvents(events: readonly AuditEvent[], filters: AuditF
   if (from && to && from > to) {
     throw new RangeError('La date de début doit être antérieure ou égale à la date de fin.');
   }
-  const normalizedQuery = query.toLowerCase();
+  const normalizedQuery = normalizeAuditSearchText(query.trim());
   const dated = !!(from || to);
 
   return events.filter(event => {
@@ -229,8 +293,9 @@ export function filterAuditEvents(events: readonly AuditEvent[], filters: AuditF
     const searchable = [
       event.action, event.actor, event.scope, event.time, event.targetUserId,
       event.previousRole, event.nextRole, ...(event.previousServiceIds ?? []), ...(event.serviceIds ?? []),
-    ].filter(Boolean).join(' ').toLowerCase();
-    if (normalizedQuery && !searchable.includes(normalizedQuery)) return false;
+    ].filter(Boolean).join(' ');
+    const normalizedSearchable = normalizeAuditSearchText(searchable);
+    if (normalizedQuery && !normalizedSearchable.includes(normalizedQuery)) return false;
     if (dated) {
       if (!event.at) return false;
       const eventTime = new Date(event.at).getTime();
@@ -266,7 +331,7 @@ export function auditEventsToCsv(events: readonly AuditEvent[]): string {
 /** Neutralize spreadsheet formula injection, then quote and escape CSV content. */
 export function csvCell(value: string | number | null | undefined): string {
   let text = value == null ? '' : String(value);
-  if (typeof value === 'string' && (/^[\s﻿]*[=+\-@]/u.test(text) || /^[\t\r\n]/u.test(text))) {
+  if (typeof value === 'string' && (/^[\s\uFEFF]*[=+\-@]/u.test(text) || /^[\t\r\n]/u.test(text))) {
     text = `'${text}`;
   }
   return `"${text.replaceAll('"', '""')}"`;
@@ -280,5 +345,5 @@ export function toCsv(
   if (rows.some(row => row.length !== headers.length)) {
     throw new RangeError('Le nombre de colonnes CSV est incohérent.');
   }
-  return '﻿' + [headers, ...rows].map(row => row.map(csvCell).join(';')).join('\r\n') + '\r\n';
+  return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(';')).join('\r\n') + '\r\n';
 }

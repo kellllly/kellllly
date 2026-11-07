@@ -15,6 +15,8 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
 }, async () => {
   const workspaceId = `itsm-role-test-${randomUUID()}`;
   const accountPrefix = `itsm-role-test-${randomUUID()}`;
+  const assignedServiceId = `${accountPrefix}-service`;
+  const assignedServiceName = "Direction du support";
   const packageDir = fileURLToPath(new URL("..", import.meta.url));
   const tempBuildDir = await mkdtemp(path.join(packageDir, "node_modules", ".itsm-role-test-"));
   let pool: import("pg").Pool | undefined;
@@ -42,14 +44,22 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
     const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
     const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    await withAdminChangeLock(async (store: Record<string, unknown>, saveStore: (nextStore: Record<string, unknown>) => Promise<void>) => {
+      await saveStore({
+        ...store,
+        services: [{ id: assignedServiceId, name: assignedServiceName }],
+      });
+    }, workspaceId);
 
     const users = new Map<string, { id: string; publicMetadata: Record<string, unknown> }>();
     const adminA = `${accountPrefix}-admin-a`;
     const adminB = `${accountPrefix}-admin-b`;
     const nonAdmin = `${accountPrefix}-user`;
+    const scopedUser = `${accountPrefix}-scoped-user`;
     users.set(adminA, { id: adminA, publicMetadata: { itsmRole: "N1", itsmServiceIds: [] } });
     users.set(adminB, { id: adminB, publicMetadata: { itsmRole: "N1", itsmServiceIds: [] } });
     users.set(nonAdmin, { id: nonAdmin, publicMetadata: { itsmRole: "N5", itsmServiceIds: [] } });
+    users.set(scopedUser, { id: scopedUser, publicMetadata: { itsmRole: "N5", itsmServiceIds: [] } });
 
     let rejectNextClerkUpdate = false;
     let rejectNextArchiveWrite = false;
@@ -174,6 +184,56 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
       "concurrent demotions must leave exactly one active N1",
     );
 
+    const scopedUserMetadataBefore = structuredClone(users.get(scopedUser)!.publicMetadata);
+    assert.equal(scopedUserMetadataBefore.itsmRole, "N5");
+    assert.deepEqual(scopedUserMetadataBefore.itsmServiceIds, []);
+    const scopedAssignmentActor = [...users.values()].find((user) => user.publicMetadata.itsmRole === "N1")!;
+    const scopedAssignmentResponse = await fetch(endpoint(scopedUser), {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-test-actor": scopedAssignmentActor.id },
+      body: JSON.stringify({ role: "N4", serviceIds: [assignedServiceId] }),
+    });
+    assert.equal(scopedAssignmentResponse.status, 200);
+    assert.deepEqual(await scopedAssignmentResponse.json(), {
+      userId: scopedUser,
+      role: "N4",
+      label: "Services d’appui",
+      serviceIds: [assignedServiceId],
+    });
+    assert.deepEqual(users.get(scopedUser)!.publicMetadata, {
+      ...scopedUserMetadataBefore,
+      itsmRole: "N4",
+      itsmServiceIds: [assignedServiceId],
+      itsmBootstrapCompleted: true,
+    }, "the assigned N4 role and service scope must be reflected in Clerk metadata");
+    const scopedArchivedEvent = archivedRoleEvents.find((event) => event.targetUserId === scopedUser);
+    assert.ok(scopedArchivedEvent, "the restricted assignment must be archived");
+    assert.equal(scopedArchivedEvent.previousRole, "N5");
+    assert.equal(scopedArchivedEvent.nextRole, "N4");
+    assert.deepEqual(scopedArchivedEvent.previousServiceIds, []);
+    assert.deepEqual(scopedArchivedEvent.serviceIds, [assignedServiceId]);
+    assert.equal(scopedArchivedEvent.scope, `Tous les services → ${assignedServiceName}`);
+    const { rows: workspaceAfterScopedAssignment } = await pool.query(
+      'SELECT store FROM "anif_itsm_workspace" WHERE id = $1',
+      [workspaceId],
+    );
+    const persistedScopedEvent = (workspaceAfterScopedAssignment[0].store.audit as Record<string, unknown>[])
+      .find((event) => event.id === scopedArchivedEvent.id);
+    assert.ok(persistedScopedEvent, "the N4 assignment must remain in the persisted journal");
+    assert.deepEqual({
+      previousRole: persistedScopedEvent.previousRole,
+      nextRole: persistedScopedEvent.nextRole,
+      previousServiceIds: persistedScopedEvent.previousServiceIds,
+      serviceIds: persistedScopedEvent.serviceIds,
+      scope: persistedScopedEvent.scope,
+    }, {
+      previousRole: "N5",
+      nextRole: "N4",
+      previousServiceIds: [],
+      serviceIds: [assignedServiceId],
+      scope: `Tous les services → ${assignedServiceName}`,
+    });
+
     const clerkMetadataBeforeInvalidAssignment = structuredClone(users.get(nonAdmin)!.publicMetadata);
     const archivedEventsBeforeInvalidAssignment = structuredClone(archivedRoleEvents);
     const { rows: journalBeforeInvalidAssignment } = await pool.query(
@@ -232,11 +292,36 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
     onActorResolved = resolveActorCaptured;
     const staleRequest = removeAdmin(survivingAdmin.id, nonAdmin);
     await actorCaptured;
+    const targetMetadataBeforeStaleRefusal = structuredClone(users.get(nonAdmin)!.publicMetadata);
+    const archivedEventsBeforeStaleRefusal = structuredClone(archivedRoleEvents);
+    const { rows: workspaceBeforeStaleRefusal } = await pool.query(
+      'SELECT version, store FROM "anif_itsm_workspace" WHERE id = $1',
+      [workspaceId],
+    );
     survivingAdmin.publicMetadata.itsmRole = "N2";
     await blocker.query("COMMIT");
     blocker.release();
     blocker = undefined;
     assert.equal((await staleRequest).status, 403, "a request carrying a stale N1 snapshot must be refused");
+    assert.deepEqual(
+      users.get(nonAdmin)!.publicMetadata,
+      targetMetadataBeforeStaleRefusal,
+      "a request refused after N1 demotion must not change target role metadata",
+    );
+    assert.deepEqual(
+      archivedRoleEvents,
+      archivedEventsBeforeStaleRefusal,
+      "a request refused after N1 demotion must not create an archived role event",
+    );
+    const { rows: workspaceAfterStaleRefusal } = await pool.query(
+      'SELECT version, store FROM "anif_itsm_workspace" WHERE id = $1',
+      [workspaceId],
+    );
+    assert.deepEqual(
+      workspaceAfterStaleRefusal,
+      workspaceBeforeStaleRefusal,
+      "a request refused after N1 demotion must not mutate the workspace",
+    );
 
     // Clerk failures must be surfaced as an error response, never as HTTP success.
     survivingAdmin.publicMetadata.itsmRole = "N1";

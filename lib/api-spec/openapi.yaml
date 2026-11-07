@@ -171,6 +171,10 @@ paths:
           description: Only N1 can check the role archive
         "503":
           description: The configured archive is unavailable or does not support the check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRoleArchiveCheckFailureResponse"
   /itsm/users/{userId}/role:
     put:
       operationId: assignItsmRole
@@ -467,7 +471,15 @@ components:
       properties:
         status: { type: string, enum: [available] }
         message: { type: string }
-      required: [status, message]
+        checkedAt: { type: string, format: date-time }
+      required: [status, message, checkedAt]
+    ItsmRoleArchiveCheckFailureResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        error: { type: string }
+        checkedAt: { type: string, format: date-time }
+      required: [error, checkedAt]
     ItsmUserDirectoryAccount:
       type: object
       additionalProperties: false
@@ -480,7 +492,11 @@ components:
         serviceIds:
           type: array
           items: { type: string }
-      required: [userId, email, role, serviceIds]
+        unavailableServiceIds:
+          description: Service identifiers assigned to this account but absent from the current pilot catalog
+          type: array
+          items: { type: string }
+      required: [userId, email, role, serviceIds, unavailableServiceIds]
     ItsmUserDirectoryPage:
       type: object
       additionalProperties: false

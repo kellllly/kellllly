@@ -17,6 +17,7 @@ export * from './exportItsmAuditParams';
 export * from './getItsmUserDirectoryParams';
 export * from './healthStatus';
 export * from './itsmImportInput';
+export * from './itsmRoleArchiveCheckFailureResponse';
 export * from './itsmRoleArchiveCheckResponse';
 export * from './itsmRoleArchiveCheckResponseStatus';
 export * from './itsmRoleAssignment';

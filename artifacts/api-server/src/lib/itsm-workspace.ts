@@ -47,6 +47,15 @@ export const ITSM_ROLE_AUDIT_TYPES = [
   ITSM_ROLE_ATTESTATION_AUDIT_TYPE,
 ] as const;
 export const ITSM_TICKET_CONVERSION_AUDIT_TYPE = "itsm.ticket.converted";
+const MAX_NON_ROLE_AUDIT_EVENTS = 5000;
+function retainItsmAuditEvents(events: unknown): JsonRecord[] {
+  let retainedNonRoleEvents = 0;
+  return records(events).filter((event) => {
+    if (ITSM_ROLE_AUDIT_TYPES.includes(event.type as typeof ITSM_ROLE_AUDIT_TYPES[number])) return true;
+    retainedNonRoleEvents += 1;
+    return retainedNonRoleEvents <= MAX_NON_ROLE_AUDIT_EVENTS;
+  });
+}
 const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Africa/Libreville", hour: "2-digit", minute: "2-digit",
 }).format(now);
@@ -367,7 +376,8 @@ export function recordItsmRoleChange(
     at: newStamp(now),
     time: shortTime(now),
   };
-  next.audit = [event, ...records(next.audit)].slice(0, 5000);
+  // Keep every authorization event; the 5,000-entry limit applies to other events.
+  next.audit = retainItsmAuditEvents([event, ...records(next.audit)]);
   return next;
 }
 
@@ -397,7 +407,7 @@ export function recordItsmRoleAttestation(
     at: newStamp(now),
     time: shortTime(now),
   };
-  next.audit = [event, ...records(next.audit)].slice(0, 5000);
+  next.audit = retainItsmAuditEvents([event, ...records(next.audit)]);
   return next;
 }
 
@@ -502,10 +512,10 @@ function importMerge(current: JsonRecord, source: JsonRecord, actor: WorkspaceAc
     merged[collection] = currentItems;
   }
   const at = newStamp(now);
-  merged.audit = [{
+  merged.audit = retainItsmAuditEvents([{
     id: randomUUID(), action: "Exemples locaux importés sans écraser les données partagées",
     actor: actor.id, scope: "Espace ITSM", at, time: shortTime(now),
-  }, ...records(merged.audit)];
+  }, ...records(merged.audit)]);
   merged.services = Array.isArray(current.services) ? current.services : records(source.services);
   merged.assets = Array.isArray(current.assets) ? current.assets : records(source.assets);
   merged.seeded = Array.isArray(source.seeded) ? source.seeded : [];
@@ -865,7 +875,7 @@ export function applyWorkspaceUpdate(
         time: shortTime(now),
       };
     });
-  next.audit = [...conversionEvents, ...additions, ...oldAudit].slice(0, 5000);
+  next.audit = retainItsmAuditEvents([...conversionEvents, ...additions, ...oldAudit]);
 
   // KEDB is generated exclusively by the server when requester confirmation closes a ticket.
   const kedb = records(current.kedb);
@@ -901,11 +911,16 @@ export type VersionedWorkspaceSave =
 export const ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE =
   "La modification a été refusée, car l’espace partagé a changé. L’état distant actuel est joint pour permettre une reprise contrôlée.";
 
+export type ItsmWorkspaceVersionConflictResponse = {
+  error: typeof ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE;
+  current: { store: JsonRecord; version: number };
+};
+
 export function workspaceVersionConflictResponse(
   store: JsonRecord,
   version: number,
   actor: WorkspaceActor,
-) {
+): ItsmWorkspaceVersionConflictResponse {
   return {
     error: ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE,
     current: { store: userStoreView(store, actor), version },

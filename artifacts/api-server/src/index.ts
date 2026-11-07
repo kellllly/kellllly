@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { createItsmRoleReconciliationMonitor } from "./lib/itsm-workspace";
 import { createItsmRoleArchiveHealthMonitor } from "./lib/itsm-role-archive-monitor";
+import { notifyItsmRoleArchiveAlert } from "./lib/itsm-role-archive-slack-alerts";
 import { checkItsmRoleArchiveAvailability, scanItsmRoleReconciliation } from "./routes/itsm";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
@@ -31,6 +32,7 @@ async function start(): Promise<void> {
     createItsmRoleArchiveHealthMonitor({
       checkArchiveConnection: checkItsmRoleArchiveAvailability,
       logger,
+      notify: notifyItsmRoleArchiveAlert,
     }).start();
     createItsmRoleReconciliationMonitor({
       scan: scanItsmRoleReconciliation,

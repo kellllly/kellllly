@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { migrate } from '../src/lib/seed';
-import { createIncidentFromMessage, isConvertibleSupportMessage } from '../src/lib/message-conversion';
+import { createIncidentFromMessage, filterSupportMessages, isConvertibleSupportMessage } from '../src/lib/message-conversion';
 
 test('support instructions cannot be converted and reports stay linked to their source message', () => {
   const store = migrate(null);
@@ -70,4 +70,18 @@ test('a newly sent support instruction keeps its type after reload and is not co
   assert.equal(isConvertibleSupportMessage(reloadedInstruction), false);
   assert.equal(reloadedReport.isInstruction, false);
   assert.equal(isConvertibleSupportMessage(reloadedReport), true);
+});
+
+test('support message filters preserve chronological order and leave other message types untouched', () => {
+  const messages = [
+    { id: 'instruction-early', author: 'Agent', body: 'Consigne initiale', time: '', isInstruction: true },
+    { id: 'report-early', author: 'Agent', body: 'Premier signalement', time: '', isInstruction: false },
+    { id: 'system-followup', author: 'Suivi', body: 'Incident ouvert', time: '', system: true, ticketId: 'INC-1' },
+    { id: 'legacy-report', author: 'Agent', body: 'Signalement historique', time: '' },
+    { id: 'instruction-late', author: 'Agent', body: 'Consigne suivante', time: '', isInstruction: true },
+  ];
+
+  assert.deepEqual(filterSupportMessages(messages, 'all'), messages);
+  assert.deepEqual(filterSupportMessages(messages, 'instruction').map(message => message.id), ['instruction-early', 'instruction-late']);
+  assert.deepEqual(filterSupportMessages(messages, 'report').map(message => message.id), ['report-early', 'legacy-report']);
 });

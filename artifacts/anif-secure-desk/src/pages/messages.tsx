@@ -4,8 +4,8 @@ import { ArrowRight, Eye, EyeOff, Headphones, LockKeyhole, Plus, Send, TicketPlu
 import { formatWAT } from '@/lib/itsm';
 import { useNow, useStore } from '@/lib/store';
 import { LEVEL_LABEL, isOpen, messageTime, nextTicketId, nowIso, priorityTone, statusTone, ticketSla, uid, unreadOf, withTicketEvent } from '@/lib/domain';
-import { createIncidentFromMessage, isConvertibleSupportMessage } from '@/lib/message-conversion';
-import type { Conversation, Level, Message, Ticket } from '@/lib/types';
+import { createIncidentFromMessage, filterSupportMessages, isConvertibleSupportMessage } from '@/lib/message-conversion';
+import type { Conversation, Level, Message, SupportMessageFilter, Ticket } from '@/lib/types';
 import { Avatar, Badge, Button, Field, Modal, SearchBox, Warning, inputCls, textareaCls } from '@/components/kit';
 import { PriorityPreview, SlaBar } from '@/components/ticket-parts';
 
@@ -20,6 +20,7 @@ export default function MessagesPage() {
   const [converting, setConverting] = useState<{ message: Message; conversation: Conversation } | null>(null);
   const [focusTicket, setFocusTicket] = useState('');
   const [focusMessageId, setFocusMessageId] = useState('');
+  const [supportMessageFilter, setSupportMessageFilter] = useState<SupportMessageFilter>('all');
   const [supportMessageKind, setSupportMessageKind] = useState<'report' | 'instruction'>('report');
   const messageListRef = useRef<HTMLDivElement>(null);
 
@@ -27,7 +28,7 @@ export default function MessagesPage() {
     const params = new URLSearchParams(search);
     const c = params.get('c');
     const messageId = params.get('m');
-    if (c) { setActive(c); setFilter('Toutes'); }
+    if (c) { setActive(c); setFilter('Toutes'); setQuery(''); }
     if (messageId) setFocusMessageId(messageId);
     else if (c) setFocusMessageId('');
     if (c || messageId) setLocation('/messages', { replace: true });
@@ -36,6 +37,7 @@ export default function MessagesPage() {
   const q = query.trim().toLowerCase();
   const filtered = store.conversations.filter(c => (filter === 'Toutes' || c.kind === filter) && (!q || `${c.title} ${c.participants.join(' ')}`.toLowerCase().includes(q) || c.messages.some(m => m.body.toLowerCase().includes(q))));
   const convo = filtered.find(c => c.id === active) ?? filtered[0];
+  const sourceMessageUnavailable = !!focusMessageId && !!convo && convo.id === active && !convo.messages.some(message => message.id === focusMessageId);
   const msgLen = convo?.messages.length ?? 0;
 
   useEffect(() => {
@@ -56,6 +58,11 @@ export default function MessagesPage() {
   }, [convo?.id, msgLen]);
 
   const linked = useMemo(() => (convo ? store.tickets.filter(t => t.conversationId === convo.id) : []), [store.tickets, convo]);
+  const visibleMessages = convo
+    ? convo.kind === 'Support'
+      ? filterSupportMessages(convo.messages, supportMessageFilter)
+      : convo.messages
+    : [];
   const sideTicket = linked.find(t => t.id === focusTicket) ?? linked[0];
   const draft = convo ? store.drafts[convo.id] ?? '' : '';
   const setDraft = (v: string) => convo && setStore(s => ({ ...s, drafts: { ...s.drafts, [convo.id]: v } }));
@@ -83,35 +90,51 @@ export default function MessagesPage() {
   };
   const ticketFor = (m: Message) => store.tickets.find(t => t.sourceMessageId === m.id || t.id === m.ticketId);
 
-  return <div className="page-enter"><Warning />
+  return <div className="page-enter min-w-0"><Warning />
     <div role="note" className="mb-4 rounded-xl border border-[#bfd0d1] bg-[#e8f0ef] px-4 py-3 text-[11px] leading-relaxed text-[#365456] dark:bg-[#24383b] dark:text-[#bdd3d1]"><strong>Messagerie simulée.</strong> Les conversations fictives sont partagées dans le pilote, mais aucun message n’est envoyé à une personne ni à un service externe.</div>
-    <div className="panel grid min-h-[650px] overflow-hidden lg:grid-cols-[300px_1fr] 2xl:grid-cols-[300px_1fr_330px]">
-      <aside className="border-b border-border lg:border-b-0 lg:border-r"><div className="p-4"><div className="mb-3 flex items-center justify-between"><div><div className="eyebrow">ESPACE DE TRAVAIL</div><h2 className="mt-1 text-[15px] font-semibold">Conversations</h2></div><button data-testid="button-new-conversation" aria-label="Nouvelle conversation" onClick={() => setCreating(true)} className="focus-ring rounded-lg border border-border p-2 hover:bg-muted"><Plus size={16} /></button></div>
+    <div className="panel grid min-h-[650px] min-w-0 overflow-hidden lg:grid-cols-[300px_1fr] 2xl:grid-cols-[300px_1fr_330px]">
+      <aside className="min-w-0 border-b border-border lg:border-b-0 lg:border-r"><div className="p-4"><div className="mb-3 flex items-center justify-between"><div><div className="eyebrow">ESPACE DE TRAVAIL</div><h2 className="mt-1 text-[15px] font-semibold">Conversations</h2></div><button data-testid="button-new-conversation" aria-label="Nouvelle conversation" onClick={() => setCreating(true)} className="focus-ring rounded-lg border border-border p-2 hover:bg-muted"><Plus size={16} /></button></div>
         <SearchBox testId="input-search-messages" value={query} onChange={setQuery} placeholder="Conversation ou contenu de message" />
-        <div className="mt-3 flex gap-1 overflow-auto">{['Toutes', 'Support', 'Groupe', 'Équipe', 'Comité'].map(f => <button key={f} data-testid={`filter-conv-${f}`} onClick={() => setFilter(f)} className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${filter === f ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{f}</button>)}</div></div>
-        <div className="max-h-[440px] overflow-y-auto lg:max-h-[600px]">{filtered.map(c => { const last = c.messages.at(-1); const u = unreadOf(c); const hits = q ? c.messages.filter(m => m.body.toLowerCase().includes(q)).length : 0; return <button key={c.id} data-testid={`row-conversation-${c.id}`} onClick={() => setActive(c.id)} className={`w-full border-t border-border/70 px-4 py-3.5 text-left hover:bg-muted/60 ${convo?.id === c.id ? 'bg-[#edf3ed] dark:bg-[#263b36]' : ''}`}><div className="flex gap-3">{c.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={c.participants[1] || c.title} />}<div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><div className={`truncate text-[12px] ${u ? 'font-bold' : 'font-semibold'}`}>{c.title}</div><span className="shrink-0 text-[10px] text-muted-foreground">{last ? messageTime(last) : ''}</span></div><div className="mt-1 truncate text-[11px] text-muted-foreground">{last?.body ?? 'Aucun message'}</div><div className="mt-2 flex items-center gap-2"><Badge tone={c.kind === 'Support' ? 'blue' : 'neutral'}>{c.kind}</Badge>{hits > 0 && <span className="text-[10px] text-primary">{hits} message(s) trouvé(s)</span>}{u > 0 && <span data-testid={`badge-unread-${c.id}`} className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">{u}</span>}</div></div></div></button>; })}{filtered.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Aucune conversation ni message trouvé.</div>}</div>
+        <div className="mt-3 flex min-w-0 gap-1 overflow-x-auto overflow-y-hidden">{['Toutes', 'Support', 'Groupe', 'Équipe', 'Comité'].map(f => <button key={f} data-testid={`filter-conv-${f}`} onClick={() => setFilter(f)} className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${filter === f ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{f}</button>)}</div></div>
+        <div className="max-h-[440px] overflow-x-hidden overflow-y-auto lg:max-h-[600px]">{filtered.map(c => { const last = c.messages.at(-1); const u = unreadOf(c); const hits = q ? c.messages.filter(m => m.body.toLowerCase().includes(q)).length : 0; const lastIsSupportMessage = c.kind === 'Support' && last && !last.system; return <button key={c.id} data-testid={`row-conversation-${c.id}`} onClick={() => { setActive(c.id); setFocusMessageId(''); }} className={`w-full border-t border-border/70 px-4 py-3.5 text-left hover:bg-muted/60 ${convo?.id === c.id ? 'bg-[#edf3ed] dark:bg-[#263b36]' : ''}`}><div className="flex gap-3">{c.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={c.participants[1] || c.title} />}<div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><div className={`truncate text-[12px] ${u ? 'font-bold' : 'font-semibold'}`}>{c.title}</div><span className="shrink-0 text-[10px] text-muted-foreground">{last ? messageTime(last) : ''}</span></div>{lastIsSupportMessage ? <div className="mt-1 flex min-w-0 items-center gap-1.5"><span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{last.body}</span><Badge testId={`badge-last-message-kind-${c.id}`} tone={last.isInstruction ? 'amber' : 'blue'}>{last.isInstruction ? 'Consigne' : 'Signalement'}</Badge></div> : <div className="mt-1 truncate text-[11px] text-muted-foreground">{last?.body ?? 'Aucun message'}</div>}<div className="mt-2 flex items-center gap-2"><Badge tone={c.kind === 'Support' ? 'blue' : 'neutral'}>{c.kind}</Badge>{hits > 0 && <span className="text-[10px] text-primary">{hits} message(s) trouvé(s)</span>}{u > 0 && <span data-testid={`badge-unread-${c.id}`} className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-primary-foreground">{u}</span>}</div></div></div></button>; })}{filtered.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Aucune conversation ni message trouvé.</div>}</div>
       </aside>
 
-      {convo ? <section className="flex min-h-[550px] min-w-0 flex-col">
-        <div className="flex items-center gap-3 border-b border-border px-5 py-4">{convo.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={convo.participants[1] || convo.title} />}<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{convo.title}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{convo.participants.join(' · ')}</div></div><Badge tone={convo.classification === 'Restreint' ? 'amber' : 'green'}>{convo.classification}</Badge><button data-testid="button-toggle-read" onClick={() => toggleRead(convo)} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted" title="Basculer lu / non lu">{unreadOf(convo) > 0 ? <><Eye size={13} />Marquer lu</> : <><EyeOff size={13} />Marquer non lu</>}</button></div>
+      {convo ? <section className="flex h-[70dvh] min-h-[550px] max-h-[720px] min-w-0 flex-col">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-4 sm:px-5">{convo.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={convo.participants[1] || convo.title} />}<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{convo.title}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{convo.participants.join(' · ')}</div></div><Badge tone={convo.classification === 'Restreint' ? 'amber' : 'green'}>{convo.classification}</Badge><button data-testid="button-toggle-read" onClick={() => toggleRead(convo)} className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted" title="Basculer lu / non lu">{unreadOf(convo) > 0 ? <><Eye size={13} />Marquer lu</> : <><EyeOff size={13} />Marquer non lu</>}</button></div>
         {convo.kind === 'Support' && <div className="border-b border-border bg-[#e1eaf0]/60 px-5 py-2.5 text-[10px] leading-relaxed text-[#3b6177] dark:bg-[#263c4a]/50 dark:text-[#a8c8d8]">Canal support : seuls ses messages peuvent être convertis en incident, après relecture manuelle d’un résumé technique. Aucune anonymisation automatique n’est effectuée.</div>}
-        <div ref={messageListRef} className="flex-1 space-y-5 overflow-y-auto bg-[#f7f6f1] p-5 dark:bg-[#172428] md:p-7" data-testid="list-messages">{convo.messages.map(m => {
+        {convo.kind === 'Support' && <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2.5" role="group" aria-label="Filtrer l’historique du canal support">
+          <span className="mr-1 text-[10px] font-semibold text-muted-foreground">Afficher :</span>
+          {([
+            ['all', 'Tout'],
+            ['report', 'Signalements'],
+            ['instruction', 'Consignes'],
+          ] as const).map(([value, label]) => <button
+            key={value}
+            type="button"
+            data-testid={`filter-support-messages-${value}`}
+            aria-pressed={supportMessageFilter === value}
+            onClick={() => setSupportMessageFilter(value)}
+            className={`rounded-full px-3 py-1.5 text-[10px] font-semibold ${supportMessageFilter === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+          >{label}</button>)}
+        </div>}
+        {sourceMessageUnavailable && <div role="status" data-testid="text-source-message-unavailable" className="border-b border-[#d8b875]/70 bg-[#f4ecd9] px-5 py-3 text-[11px] leading-relaxed text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]">Le message source {focusMessageId} n’est plus disponible dans cette conversation. Vous pouvez consulter le reste de l’historique.</div>}
+        <div ref={messageListRef} className="min-h-0 min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto bg-[#f7f6f1] p-5 dark:bg-[#172428] md:p-7" data-testid="list-messages">{visibleMessages.map(m => {
           const mine = m.author === store.profile.name && !m.system; const t = ticketFor(m); const hit = q && m.body.toLowerCase().includes(q);
-          const isSourceMessage = m.id === focusMessageId;
-          if (m.system) return <div key={m.id} data-message-id={m.id} data-testid={`message-${m.id}`} className={`flex justify-center rounded-lg ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><button onClick={() => m.ticketId && setFocusTicket(m.ticketId)} className="max-w-[88%] rounded-full border border-border bg-card px-3.5 py-1.5 text-center text-[10px] text-muted-foreground hover:border-primary/40"><span className="mono mr-1.5">{messageTime(m)}</span>{m.body}</button></div>;
-          return <div key={m.id} data-message-id={m.id} data-testid={`message-${m.id}`} className={`flex gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={m.author} /><div className={`max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex items-baseline gap-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{m.author}</span><span>{messageTime(m)}</span></div><div className={`rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{m.body}</div>
+          const isSourceMessage = convo.id === active && m.id === focusMessageId;
+          if (m.system) return <div key={m.id} data-message-id={m.id} data-testid={`message-${m.id}`} className={`flex min-w-0 justify-center rounded-lg ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><button onClick={() => m.ticketId && setFocusTicket(m.ticketId)} className="max-w-[88%] break-words rounded-full border border-border bg-card px-3.5 py-1.5 text-center text-[10px] text-muted-foreground hover:border-primary/40">{messageTime(m)} {m.body}</button></div>;
+          return <div key={m.id} data-message-id={m.id} className={`flex min-w-0 gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={m.author} /><div className={`min-w-0 max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{m.author}</span><span>{messageTime(m)}</span></div><div className={`break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{m.body}</div>
             {convo.kind === 'Support' && <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <Badge tone={m.isInstruction ? 'amber' : 'blue'}>{m.isInstruction ? 'Consigne' : 'Signalement'}</Badge>
               {t ? <button data-testid={`button-linked-${m.id}`} onClick={() => setFocusTicket(t.id)} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:underline"><Badge tone={statusTone(t.status)}>{t.id} · {t.status}</Badge></button> : isConvertibleSupportMessage(m) && <button data-testid={`button-convert-${m.id}`} onClick={() => setConverting({ message: m, conversation: convo })} className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"><TicketPlus size={12} />Convertir en incident</button>}
             </div>}
           </div></div>;
-        })}{!convo.messages.length && <div className="py-10 text-center text-[11px] text-muted-foreground">Aucun message. Commencez l’échange ci-dessous.</div>}</div>
+        })}{!visibleMessages.length && <div className="py-10 text-center text-[11px] text-muted-foreground">{convo.messages.length ? 'Aucun message pour ce filtre.' : 'Aucun message. Commencez l’échange ci-dessous.'}</div>}</div>
         <form onSubmit={send} className="border-t border-border p-4"><div className="eyebrow mb-2 flex items-center gap-1.5"><LockKeyhole size={11} />Échange simulé · ne pas saisir de données sensibles</div>
           {convo.kind === 'Support' && <div className="mb-2 max-w-xs"><Field label="Type du message" hint="Une consigne ne peut pas être convertie en incident."><select data-testid="select-support-message-kind" value={supportMessageKind} onChange={e => setSupportMessageKind(e.target.value as 'report' | 'instruction')} className={inputCls}><option value="report">Signalement</option><option value="instruction">Consigne</option></select></Field></div>}
           <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 focus-within:ring-2 focus-within:ring-primary/25"><textarea data-testid="input-message" rows={2} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} placeholder="Écrire un message…" className="max-h-28 min-h-[42px] flex-1 resize-y bg-transparent px-2 py-1.5 text-[12px] outline-none placeholder:text-muted-foreground" aria-label="Message" /><Button type="submit" testId="button-send" className="px-3 py-2" disabled={!draft.trim()}><Send size={14} /><span className="hidden sm:inline">Simuler l’envoi</span></Button></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-muted-foreground"><span>{draft ? 'Brouillon temporaire dans cette session' : 'Entrée pour simuler l’envoi · Maj + Entrée pour une nouvelle ligne'}</span><span>Les conversations fictives sont partagées. Aucun message n’est transmis à un destinataire externe.</span></div></form>
       </section> : <div className="grid min-h-[500px] place-items-center text-sm text-muted-foreground">Sélectionnez une conversation.</div>}
 
-      <aside className="border-t border-border p-4 lg:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0" data-testid="panel-linked-tickets">
+      <aside className="min-w-0 border-t border-border p-4 lg:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0" data-testid="panel-linked-tickets">
         <div className="eyebrow">TICKETS LIÉS À CETTE DISCUSSION</div>
         {!linked.length ? <p className="mt-3 rounded-lg border border-dashed border-border p-4 text-[11px] leading-relaxed text-muted-foreground">{convo?.kind === 'Support' ? 'Aucun ticket encore. Convertissez un message du canal pour suivre ici son état sans quitter la messagerie.' : 'Seul le canal support permet la conversion de messages en incidents.'}</p>
           : <><div className="mt-3 flex flex-wrap gap-1.5">{linked.map(t => <button key={t.id} onClick={() => setFocusTicket(t.id)} className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${sideTicket?.id === t.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{t.id}</button>)}</div>{sideTicket && <SideTicket ticket={sideTicket} />}</>}

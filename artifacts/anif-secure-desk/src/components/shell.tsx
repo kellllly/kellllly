@@ -32,7 +32,7 @@ const initials = (n: string) => n.split(' ').filter(Boolean).map(x => x[0]).join
 
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { store, storageIssue, dismissIssue, recovery } = useStore();
+  const { store, storageIssue, dismissIssue, unreadableRecoveryDraftCount, recovery } = useStore();
   const { signOut } = useClerk();
   const [mobileNav, setMobileNav] = useState(false);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
@@ -71,6 +71,10 @@ export function Shell({ children }: { children: ReactNode }) {
           <button onClick={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })} aria-label="Se déconnecter" title="Se déconnecter" className="focus-ring grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground"><LogOut size={15} /></button>
         </div>
       </header>
+      {unreadableRecoveryDraftCount > 0 && <div role="alert" data-testid="alert-recovery-draft-unreadable" className="flex items-start gap-3 border-b border-[#d39b90] bg-[#f5e2df] px-4 py-3 text-[11px] leading-relaxed text-[#7d3a31] dark:bg-[#4c302d] dark:text-[#f0c1b9] md:px-8">
+        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+        <p><strong>Reprise locale illisible :</strong> {unreadableRecoveryDraftCount === 1 ? 'Un brouillon ne peut pas être relu' : `${unreadableRecoveryDraftCount} brouillons ne peuvent pas être relus`} (JSON ou structure invalide). Le contenu brut est conservé dans ce navigateur et n’a pas été chargé. Évitez de réinitialiser le stockage local avant sa récupération.</p>
+      </div>}
       {storageIssue && <div role="alert" data-testid="alert-storage" className="flex items-start gap-3 border-b border-[#d39b90] bg-[#f5e2df] px-4 py-3 text-[11px] leading-relaxed text-[#7d3a31] dark:bg-[#4c302d] dark:text-[#f0c1b9] md:px-8">
         <AlertTriangle size={15} className="mt-0.5 shrink-0" />
         <div className="flex-1">
@@ -87,7 +91,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 </div>)}
               </div>
             </details>}
-            <SyncRecoveryActions key={recovery.remoteVersion} />
+            <SyncRecoveryActions key={`${recovery.draftId}-${recovery.remoteVersion}`} />
           </div>}
         </div>
         {!recovery && <button onClick={dismissIssue} aria-label="Masquer l’alerte de synchronisation" className="focus-ring rounded p-1 hover:bg-black/5"><X size={14} /></button>}

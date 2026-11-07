@@ -4,6 +4,7 @@ export type Level = 1 | 2 | 3;
 export type TicketKind = 'Incident' | 'Demande' | 'Problème' | 'Changement';
 export type TicketStatus = 'Nouveau' | 'Pris en compte' | 'En cours' | 'En attente' | 'Résolu' | 'Clos' | 'Rejeté';
 export type RoleKey = 'Direction' | 'Analyste' | 'SSI / support' | 'Services d’appui' | 'Auditeur temporaire';
+export type SupportMessageFilter = 'all' | 'report' | 'instruction';
 
 export type DemoProfile = { name: string; role: string; clearance: string };
 export type Message = {

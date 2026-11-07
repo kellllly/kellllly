@@ -49,9 +49,9 @@ const clerkAppearance = {
     borderRadius: '0.7rem',
   },
   elements: {
-    rootBox: 'w-full flex justify-center',
-    cardBox: 'bg-[#fffefa] rounded-2xl w-[440px] max-w-full overflow-hidden',
-    card: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    rootBox: 'w-full min-w-0 flex justify-center',
+    cardBox: 'bg-[#fffefa] rounded-2xl w-full max-w-[440px] min-w-0 overflow-hidden',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none max-[239px]:!px-2',
     footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
     headerTitle: 'text-[#1d3034] font-semibold',
     headerSubtitle: 'text-[#526767]',
@@ -87,13 +87,13 @@ function HomeRedirect() {
 }
 
 function SignInPage() {
-  return <div className="grid min-h-[100dvh] place-items-center bg-[#f4f3ed] px-4 py-8">
+  return <div className="grid min-h-[100dvh] w-full min-w-0 place-items-center bg-[#f4f3ed] px-0 py-8 min-[240px]:px-4">
     <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
   </div>;
 }
 
 function SignUpPage() {
-  return <div className="grid min-h-[100dvh] place-items-center bg-[#f4f3ed] px-4 py-8">
+  return <div className="grid min-h-[100dvh] w-full min-w-0 place-items-center bg-[#f4f3ed] px-0 py-8 min-[240px]:px-4">
     <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
   </div>;
 }

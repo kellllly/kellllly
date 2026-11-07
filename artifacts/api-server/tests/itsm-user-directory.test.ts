@@ -45,15 +45,20 @@ test("directory projection exposes only account identity and current ITSM role",
     privateMetadata: { investigation: "must-not-leak" },
     unsafeTopLevelValue: "must-not-leak",
   };
-  const projected = toItsmDirectoryAccount(source);
+  const projected = toItsmDirectoryAccount(source, new Set(["available-service"]));
   assert.deepEqual(projected, {
     userId: "user_pilot_1",
     email: "pilot@example.test",
     role: "N3",
     serviceIds: ["internal-service"],
+    unavailableServiceIds: ["internal-service"],
   });
-  assert.deepEqual(Object.keys(projected).sort(), ["email", "role", "serviceIds", "userId"]);
+  assert.deepEqual(Object.keys(projected).sort(), ["email", "role", "serviceIds", "unavailableServiceIds", "userId"]);
   assert.doesNotMatch(JSON.stringify(projected), /must-not-leak/);
+  assert.deepEqual(
+    toItsmDirectoryAccount(source, new Set(["internal-service"])).unavailableServiceIds,
+    [],
+  );
 });
 
 test("directory projection labels missing email and invalid ITSM roles safely", () => {
@@ -61,10 +66,11 @@ test("directory projection labels missing email and invalid ITSM roles safely", 
     id: "user_without_email",
     primaryEmailAddress: null,
     publicMetadata: { itsmRole: "custom" },
-  }), {
+  }, new Set()), {
     userId: "user_without_email",
     email: null,
     role: null,
     serviceIds: [],
+    unavailableServiceIds: [],
   });
 });

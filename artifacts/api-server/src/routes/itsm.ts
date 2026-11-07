@@ -20,6 +20,7 @@ import { eq } from "drizzle-orm";
 import { Router, type IRouter, type Request, type RequestHandler, type Response } from "express";
 import { logger } from "../lib/logger";
 import { reportItsmRoleArchiveUnavailable } from "../lib/itsm-role-archive-monitor";
+import { notifyItsmRoleArchiveAlert } from "../lib/itsm-role-archive-slack-alerts";
 import {
   mergeLocalExamples,
   checkItsmRoleArchiveConnection,
@@ -33,10 +34,16 @@ import {
   userStoreView,
   workspaceVersionConflictResponse,
   type WorkspaceActor,
+  type VersionedWorkspaceSave,
   type ItsmRoleSnapshot,
   type ItsmRoleChangeArchiveEvent,
 } from "../lib/itsm-workspace";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
+import {
+  publishItsmRoleDirectoryEvent,
+  subscribeToItsmRoleDirectoryEvents,
+  type ItsmRoleDirectoryEvent,
+} from "../lib/itsm-role-directory-events";
 import {
   canChangeItsmRole,
   isBootstrapAdmin,
@@ -51,6 +58,8 @@ import {
 import { createItsmAuditExportHandler } from "./itsm-audit-export";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
+
+export { publishItsmRoleDirectoryEvent };
 
 const router: IRouter = Router();
 const WORKSPACE_ID = "anif-pilot";
@@ -150,6 +159,7 @@ const requireAuth: RequestHandler = (req, res, next) => {
 type RoleArchiveCheckDependencies = {
   resolveActor: typeof actorFor;
   checkArchiveConnection: typeof checkItsmRoleArchiveConnection;
+  now: () => Date;
 };
 
 function createRoleArchiveCheckHandler(dependencies: RoleArchiveCheckDependencies) {
@@ -167,13 +177,17 @@ function createRoleArchiveCheckHandler(dependencies: RoleArchiveCheckDependencie
         message: developmentRoleArchiveEnabled()
           ? "L’archive de développement répond. Son stockage reste dans le même environnement, sans garantie d’indépendance ni d’immutabilité."
           : "L’archive répond à l’adresse configurée.",
+        checkedAt: dependencies.now().toISOString(),
       }));
     } catch (error) {
       const message = error instanceof ItsmRoleArchiveUnavailableError
         ? error.message
         : "Impossible de vérifier la connexion à l’archive.";
       req.log.warn({ err: error, actorId: actor.id }, "External role archive connection check failed");
-      res.status(503).json({ error: message });
+      res.status(503).json({
+        error: message,
+        checkedAt: dependencies.now().toISOString(),
+      });
     }
   };
 }
@@ -186,6 +200,7 @@ export function createItsmRoleArchiveCheckRouter(
   archiveCheckRouter.post("/itsm/role-archive/check", authMiddleware, createRoleArchiveCheckHandler({
     resolveActor: actorFor,
     checkArchiveConnection: checkItsmRoleArchiveAvailability,
+    now: () => new Date(),
     ...overrides,
   }));
   return archiveCheckRouter;
@@ -279,7 +294,11 @@ const bootstrapItsmAdmin = createItsmBootstrapAdmin({
   getUser: (userId) => clerkClient.users.getUser(userId),
   updateUserMetadata: (userId, metadata) => clerkClient.users.updateUserMetadata(userId, metadata),
   archiveRoleChange: publishItsmRoleChangeToArchive,
-  reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_change"),
+  reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(
+    logger,
+    "role_change",
+    notifyItsmRoleArchiveAlert,
+  ),
   withLock: withAdminChangeLock,
 });
 
@@ -319,6 +338,111 @@ function actorOrReply(req: Request, res: Response, actor: WorkspaceActor | null)
   return actor !== null && !res.headersSent;
 }
 
+type RoleDirectoryEventsDependencies = {
+  resolveActor: typeof actorFor;
+  getUser: (userId: string) => Promise<{ publicMetadata: Record<string, unknown> }>;
+  subscribe: typeof subscribeToItsmRoleDirectoryEvents;
+  heartbeatMs: number;
+};
+
+export function createItsmRoleDirectoryEventsRouter(
+  overrides: Partial<RoleDirectoryEventsDependencies> = {},
+  authMiddleware: RequestHandler = requireAuth,
+): IRouter {
+  const dependencies: RoleDirectoryEventsDependencies = {
+    resolveActor: actorFor,
+    getUser: (userId) => clerkClient.users.getUser(userId),
+    subscribe: subscribeToItsmRoleDirectoryEvents,
+    heartbeatMs: 25_000,
+    ...overrides,
+  };
+  const eventsRouter: IRouter = Router();
+
+  eventsRouter.get("/itsm/users/events", authMiddleware, async (req, res): Promise<void> => {
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    if (actor.role !== "N1") {
+      res.status(403).json({ error: "Le répertoire des comptes est réservé aux N1." });
+      return;
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.write(": connected\n\n");
+
+    let closed = false;
+    let checkingAuthorization = false;
+    let pendingAuthorizationCheck = false;
+    let pendingEvent: ItsmRoleDirectoryEvent | undefined;
+    let heartbeat: ReturnType<typeof setInterval>;
+    let unsubscribe = () => {};
+
+    const closeStream = (notifyRevocation: boolean) => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+      if (notifyRevocation && !res.writableEnded) {
+        res.write("event: access-revoked\ndata: {}\n\n");
+      }
+      if (!res.writableEnded) res.end();
+    };
+
+    const recheckAuthorization = async (event?: ItsmRoleDirectoryEvent): Promise<void> => {
+      if (closed) return;
+      if (checkingAuthorization) {
+        pendingAuthorizationCheck = true;
+        if (event) pendingEvent = event;
+        return;
+      }
+      checkingAuthorization = true;
+      try {
+        const currentUser = await dependencies.getUser(actor.id);
+        if (currentUser.publicMetadata.itsmRole !== "N1") {
+          closeStream(true);
+          return;
+        }
+        if (event && !res.writableEnded) {
+          res.write(`event: directory-refresh\ndata: ${JSON.stringify({
+            userId: event.userId,
+            role: event.role,
+          })}\n\n`);
+        }
+      } catch (error) {
+        req.log.warn({ err: error, actorId: actor.id }, "Could not recheck ITSM directory event access");
+        closeStream(true);
+        return;
+      } finally {
+        checkingAuthorization = false;
+      }
+      if (pendingAuthorizationCheck && !closed) {
+        pendingAuthorizationCheck = false;
+        const queuedEvent = pendingEvent;
+        pendingEvent = undefined;
+        void recheckAuthorization(queuedEvent);
+      }
+    };
+
+    unsubscribe = dependencies.subscribe((event) => {
+      void recheckAuthorization(event);
+    });
+    heartbeat = setInterval(() => {
+      if (closed) return;
+      res.write(": keep-alive\n\n");
+      void recheckAuthorization();
+    }, dependencies.heartbeatMs);
+    res.on("close", () => closeStream(false));
+  });
+
+  return eventsRouter;
+}
+
+router.use(createItsmRoleDirectoryEventsRouter());
+
 router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
   const actor = await actorFor(req, res);
   if (!actorOrReply(req, res, actor)) return;
@@ -332,40 +456,83 @@ router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
   res.json(response);
 });
 
-router.get("/itsm/users", requireAuth, async (req, res): Promise<void> => {
-  const actor = await actorFor(req, res);
-  if (!actorOrReply(req, res, actor)) return;
-  if (actor.role !== "N1") {
-    res.status(403).json({ error: "Le répertoire des comptes est réservé aux N1." });
-    return;
-  }
-  if (req.query.q !== undefined && typeof req.query.q !== "string") {
-    res.status(400).json({ error: "Recherche invalide." });
-    return;
-  }
-  const parsed = GetItsmUserDirectoryQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const { q, limit, offset } = parsed.data;
-  try {
-    const page = await clerkClient.users.getUserList({
-      limit,
-      offset,
-      ...(q?.trim() ? { query: q.trim() } : {}),
-    });
-    res.json(GetItsmUserDirectoryResponse.parse({
-      accounts: page.data.map(toItsmDirectoryAccount),
-      totalCount: page.totalCount,
-      limit,
-      offset,
-    }));
-  } catch (error) {
-    req.log.error({ err: error }, "Could not load ITSM user directory");
-    res.status(503).json({ error: "Impossible de charger le répertoire des comptes du pilote." });
-  }
-});
+type ItsmUserDirectoryDependencies = {
+  resolveActor: typeof actorFor;
+  getUserList: (options: {
+    limit: number;
+    offset: number;
+    query?: string;
+  }) => Promise<unknown>;
+  getAvailableServiceIds: () => Promise<ReadonlySet<string>>;
+};
+
+export function createItsmUserDirectoryRouter(
+  overrides: Partial<ItsmUserDirectoryDependencies> = {},
+  authMiddleware: RequestHandler = requireAuth,
+): IRouter {
+  const dependencies: ItsmUserDirectoryDependencies = {
+    resolveActor: actorFor,
+    getUserList: (options) => clerkClient.users.getUserList(options),
+    getAvailableServiceIds: async () => {
+      const [workspaceRow] = await db.select({ store: itsmWorkspaceTable.store }).from(itsmWorkspaceTable)
+        .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
+      const pilotServices = Array.isArray(workspaceRow?.store?.services) ? workspaceRow.store.services : [];
+      return new Set(pilotServices.flatMap((service) => {
+        if (!service || typeof service !== "object" || Array.isArray(service)) return [];
+        const id = (service as Record<string, unknown>).id;
+        return typeof id === "string" && id.length > 0 ? [id] : [];
+      }));
+    },
+    ...overrides,
+  };
+  const directoryRouter: IRouter = Router();
+
+  directoryRouter.get("/itsm/users", authMiddleware, async (req, res): Promise<void> => {
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    if (actor.role !== "N1") {
+      res.status(403).json({ error: "Le répertoire des comptes est réservé aux N1." });
+      return;
+    }
+    if (req.query.q !== undefined && typeof req.query.q !== "string") {
+      res.status(400).json({ error: "Recherche invalide." });
+      return;
+    }
+    const parsed = GetItsmUserDirectoryQueryParams.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const { q, limit, offset } = parsed.data;
+    try {
+      const [page, availableServiceIds] = await Promise.all([
+        dependencies.getUserList({
+          limit,
+          offset,
+          ...(q?.trim() ? { query: q.trim() } : {}),
+        }),
+        dependencies.getAvailableServiceIds(),
+      ]);
+      if (!page || typeof page !== "object") throw new Error("Invalid ITSM directory provider response.");
+      const providerPage = page as { data?: unknown; totalCount?: unknown };
+      if (!Array.isArray(providerPage.data)) throw new Error("Invalid ITSM directory provider page.");
+      res.json(GetItsmUserDirectoryResponse.parse({
+        accounts: providerPage.data.map((user) =>
+          toItsmDirectoryAccount(user as Parameters<typeof toItsmDirectoryAccount>[0], availableServiceIds)),
+        totalCount: providerPage.totalCount,
+        limit,
+        offset,
+      }));
+    } catch (error) {
+      req.log.error({ err: error }, "Could not load ITSM user directory");
+      res.status(503).json({ error: "Impossible de charger le répertoire des comptes du pilote." });
+    }
+  });
+
+  return directoryRouter;
+}
+
+router.use(createItsmUserDirectoryRouter());
 
 router.post("/itsm", requireAuth, async (req, res): Promise<void> => {
   const parsed = ImportItsmExamplesBody.safeParse(req.body);
@@ -412,62 +579,95 @@ router.post("/itsm", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
-router.put("/itsm", requireAuth, async (req, res): Promise<void> => {
-  const parsed = SaveItsmWorkspaceBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-  const actor = await actorFor(req, res);
-  if (!actorOrReply(req, res, actor)) return;
-  if (actor.role === "N5") {
-    res.status(403).json({ error: "Le rôle N5 est en consultation seule." });
-    return;
-  }
-  requirePermission(actor, "saveWorkspace");
-  try {
-    const outcome = await db.transaction(async (tx) => {
-      await tx.insert(itsmWorkspaceTable).values({
-        id: WORKSPACE_ID, version: 0, store: {}, importedUsers: [],
-      }).onConflictDoNothing();
-      const [row] = await tx.select().from(itsmWorkspaceTable)
-        .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID)).for("update");
-      if (!row) throw new Error("Espace ITSM indisponible.");
-      const saved = saveWorkspaceAtVersion(
-        row.store,
-        row.version,
-        parsed.data.store,
-        parsed.data.version,
+type WorkspaceSaveDependencies = {
+  resolveActor: typeof actorFor;
+  workspaceId: string;
+  saveWorkspace: (input: {
+    workspaceId: string;
+    submitted: Record<string, unknown>;
+    expectedVersion: number;
+    actor: WorkspaceActor;
+  }) => Promise<VersionedWorkspaceSave>;
+};
+
+export function createItsmWorkspaceSaveRouter(
+  overrides: Partial<WorkspaceSaveDependencies> = {},
+  authMiddleware: RequestHandler = requireAuth,
+): IRouter {
+  const saveRouter: IRouter = Router();
+  const dependencies: WorkspaceSaveDependencies = {
+    resolveActor: actorFor,
+    workspaceId: WORKSPACE_ID,
+    saveWorkspace: async ({ workspaceId, submitted, expectedVersion, actor }) =>
+      db.transaction(async (tx) => {
+        await tx.insert(itsmWorkspaceTable).values({
+          id: workspaceId, version: 0, store: {}, importedUsers: [],
+        }).onConflictDoNothing();
+        const [row] = await tx.select().from(itsmWorkspaceTable)
+          .where(eq(itsmWorkspaceTable.id, workspaceId)).for("update");
+        if (!row) throw new Error("Espace ITSM indisponible.");
+        const saved = saveWorkspaceAtVersion(
+          row.store,
+          row.version,
+          submitted,
+          expectedVersion,
+          actor,
+        );
+        if (!saved.conflict) {
+          await tx.update(itsmWorkspaceTable).set({
+            store: saved.store,
+            version: saved.version,
+            updatedAt: new Date(),
+          }).where(eq(itsmWorkspaceTable.id, workspaceId));
+        }
+        return saved;
+      }),
+    ...overrides,
+  };
+
+  saveRouter.put("/itsm", authMiddleware, async (req, res): Promise<void> => {
+    const parsed = SaveItsmWorkspaceBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    if (actor.role === "N5") {
+      res.status(403).json({ error: "Le rôle N5 est en consultation seule." });
+      return;
+    }
+    requirePermission(actor, "saveWorkspace");
+    try {
+      const outcome = await dependencies.saveWorkspace({
+        workspaceId: dependencies.workspaceId,
+        submitted: parsed.data.store,
+        expectedVersion: parsed.data.version,
         actor,
-      );
-      if (saved.conflict) return { conflict: true as const, row, store: saved.store, version: saved.version };
-      const [updated] = await tx.update(itsmWorkspaceTable).set({
-        store: saved.store,
-        version: saved.version,
-        updatedAt: new Date(),
-      }).where(eq(itsmWorkspaceTable.id, WORKSPACE_ID)).returning();
-      return { conflict: false as const, row: updated! };
-    });
-    if (outcome.conflict) {
-      const conflict = workspaceVersionConflictResponse(outcome.store, outcome.version, actor);
-      res.status(409).json({
-        ...conflict,
-        current: GetItsmWorkspaceResponse.parse(conflict.current),
       });
-      return;
+      if (outcome.conflict) {
+        const conflict = workspaceVersionConflictResponse(outcome.store, outcome.version, actor);
+        res.status(409).json({
+          ...conflict,
+          current: GetItsmWorkspaceResponse.parse(conflict.current),
+        });
+        return;
+      }
+      res.json(SaveItsmWorkspaceResponse.parse({
+        store: userStoreView(outcome.store, actor), version: outcome.version,
+      }));
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      req.log.warn({ err: error }, "Rejected ITSM workspace update");
+      res.status(400).json({ error: error instanceof Error ? error.message : "Modification refusée." });
     }
-    res.json(SaveItsmWorkspaceResponse.parse({
-      store: userStoreView(outcome.row.store, actor), version: outcome.row.version,
-    }));
-  } catch (error) {
-    if (error instanceof ItsmAuthorizationError) {
-      res.status(403).json({ error: error.message });
-      return;
-    }
-    req.log.warn({ err: error }, "Rejected ITSM workspace update");
-    res.status(400).json({ error: error instanceof Error ? error.message : "Modification refusée." });
-  }
-});
+  });
+
+  return saveRouter;
+}
 
 router.get("/itsm/audit/export", requireAuth, createItsmAuditExportHandler({
   resolveActor: actorFor,
@@ -559,6 +759,41 @@ function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
       const previousServiceIds = Array.isArray(target.publicMetadata.itsmServiceIds)
         ? target.publicMetadata.itsmServiceIds.filter((id): id is string => typeof id === "string")
         : [];
+      const result = AssignItsmRoleResponse.parse({
+        userId: targetUserId,
+        role,
+        label: role ? itsmRoleName(role as ItsmRole) : "Aucun accès",
+        serviceIds: uniqueServiceIds,
+      });
+      const normalizeServiceIds = (ids: string[]) => [...new Set(ids)].sort();
+      const latestRoleChange = Array.isArray(workspaceStore.audit)
+        ? workspaceStore.audit.find((event) =>
+          Boolean(
+            event
+            && typeof event === "object"
+            && "type" in event
+            && event.type === "itsm.role.changed"
+            && "targetUserId" in event
+            && event.targetUserId === targetUserId,
+          ))
+        : undefined;
+      const alreadyRecorded = Boolean(
+        target.publicMetadata.itsmRole === role
+        && JSON.stringify(normalizeServiceIds(previousServiceIds)) === JSON.stringify(normalizeServiceIds(uniqueServiceIds))
+        && latestRoleChange
+        && typeof latestRoleChange === "object"
+        && "actor" in latestRoleChange
+        && latestRoleChange.actor === actor.id
+        && "nextRole" in latestRoleChange
+        && latestRoleChange.nextRole === role
+        && "serviceIds" in latestRoleChange
+        && Array.isArray(latestRoleChange.serviceIds)
+        && JSON.stringify(normalizeServiceIds(latestRoleChange.serviceIds.filter((id: unknown): id is string => typeof id === "string")))
+          === JSON.stringify(normalizeServiceIds(uniqueServiceIds)),
+      );
+      if (alreadyRecorded) {
+        return { status: 200, result } as const;
+      }
       const services = Array.isArray(workspaceStore.services)
         ? workspaceStore.services.filter((service): service is Record<string, unknown> =>
           Boolean(service && typeof service === "object" && !Array.isArray(service)))
@@ -594,12 +829,6 @@ function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
       } catch {
         throw new ItsmRoleArchiveUnavailableError();
       }
-      const result = AssignItsmRoleResponse.parse({
-        userId: targetUserId,
-        role,
-        label: role ? itsmRoleName(role as ItsmRole) : "Aucun accès",
-        serviceIds: uniqueServiceIds,
-      });
       roleChangeRecovery.value = { eventId: roleChangeEvent.id, result };
       await saveStore(nextStore);
       return {
@@ -611,6 +840,10 @@ function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
       res.status(outcome.status).json({ error: outcome.error });
       return;
     }
+    publishItsmRoleDirectoryEvent({
+      userId: outcome.result.userId,
+      role: outcome.result.role,
+    });
     res.json(outcome.result);
   } catch (error) {
     const archiveUnavailable = error instanceof ItsmRoleArchiveUnavailableError;
@@ -625,6 +858,10 @@ function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
               Boolean(event && typeof event === "object" && "id" in event && event.id === pendingRoleChange.eventId)),
         ));
         if (auditWasPersisted) {
+          publishItsmRoleDirectoryEvent({
+            userId: pendingRoleChange.result.userId,
+            role: pendingRoleChange.result.role,
+          });
           res.json(pendingRoleChange.result);
           return;
         }
@@ -695,7 +932,11 @@ export function createItsmRoleAssignmentRouter(
     activeN1Ids,
     updateUserMetadata: (userId, metadata) => clerkClient.users.updateUserMetadata(userId, metadata),
     archiveRoleChange: publishItsmRoleChangeToArchive,
-    reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_change"),
+    reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(
+      logger,
+      "role_change",
+      notifyItsmRoleArchiveAlert,
+    ),
     withLock: withAdminChangeLock,
     ...overrides,
   }));
@@ -802,7 +1043,11 @@ export function createItsmRoleAttestationRouter(
     resolveActor: actorFor,
     getUser: (userId) => clerkClient.users.getUser(userId),
     archiveRoleChange: publishItsmRoleChangeToArchive,
-    reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(logger, "role_attestation"),
+    reportArchiveUnavailable: () => reportItsmRoleArchiveUnavailable(
+      logger,
+      "role_attestation",
+      notifyItsmRoleArchiveAlert,
+    ),
     withLock: withAdminChangeLock,
     ...overrides,
   }));
@@ -810,6 +1055,7 @@ export function createItsmRoleAttestationRouter(
 }
 
 router.use(createItsmRoleArchiveCheckRouter());
+router.use(createItsmWorkspaceSaveRouter());
 router.use(createItsmRoleAssignmentRouter());
 router.use(createItsmRoleAttestationRouter());
 

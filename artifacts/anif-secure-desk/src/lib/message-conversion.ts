@@ -1,8 +1,14 @@
 import { formatWAT, priorityFor } from './itsm';
-import type { Level, Message, Ticket } from './types';
+import type { Level, Message, SupportMessageFilter, Ticket } from './types';
 
 export function isConvertibleSupportMessage(message: Message): boolean {
   return !message.system && !message.isInstruction;
+}
+
+export function filterSupportMessages(messages: Message[], filter: SupportMessageFilter): Message[] {
+  if (filter === 'all') return messages;
+  const showInstructions = filter === 'instruction';
+  return messages.filter(message => !message.system && Boolean(message.isInstruction) === showInstructions);
 }
 
 export function createIncidentFromMessage({

@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import { SLA_POLICIES, formatWAT, priorityFor, slaProgress } from '@/lib/itsm';
 import { ASSIGNEES, CATEGORIES, KINDS, LEVEL_LABEL, fmtDuration } from '@/lib/domain';
 import type { Asset, Level, Service, TicketKind } from '@/lib/types';
-import { Badge, Button, Field, inputCls, textareaCls } from './kit';
+import { Badge, Button, dialogStickyActionsCls, Field, inputCls, textareaCls } from './kit';
 
 export type TicketDraft = { kind: TicketKind; title: string; description: string; category: string; impact: Level; urgency: Level; supportLevel: Level; assignee: string; serviceId: string; assetId: string };
 export const emptyDraft = (p: Partial<TicketDraft> = {}): TicketDraft => ({ kind: 'Incident', title: '', description: '', category: 'Applications', impact: 2, urgency: 2, supportLevel: 1, assignee: 'Équipe support', serviceId: '', assetId: '', ...p });
@@ -56,6 +56,6 @@ export function TicketForm({ initial, services, assets, submitLabel, onSubmit, o
     </div>
     <Field label="Assignation"><select data-testid="select-assignee" value={d.assignee} onChange={e => set('assignee', e.target.value)} className={inputCls}>{ASSIGNEES.map(x => <option key={x}>{x}</option>)}</select></Field>
     {d.kind === 'Changement' && <p className="rounded-lg border border-border bg-muted/50 p-3 text-[10px] leading-relaxed text-muted-foreground">Un changement ne peut démarrer qu’après une décision CAB enregistrée (approbation simulée ou rejet motivé).</p>}
-    <div className="flex justify-end gap-2 pt-2"><Button variant="outline" onClick={onCancel} testId="button-cancel-ticket">Annuler</Button><Button type="submit" testId="button-submit-ticket"><Check size={14} />{submitLabel}</Button></div>
+     <div data-dialog-sticky-actions className={`${dialogStickyActionsCls} pt-3`}><Button className="w-full sm:w-auto" variant="outline" onClick={onCancel} testId="button-cancel-ticket">Annuler</Button><Button className="w-full sm:w-auto" type="submit" testId="button-submit-ticket"><Check size={14} />{submitLabel}</Button></div>
   </form>;
 }

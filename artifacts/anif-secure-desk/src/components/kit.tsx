@@ -26,6 +26,9 @@ export function Modal({ title, description, onClose, children, wide = false }: {
   const restoreFocus = useRef<HTMLElement | null>(
     typeof document === 'undefined' ? null : document.activeElement as HTMLElement,
   );
+  const restoreScroll = useRef<ScrollPosition[]>(
+    typeof document === 'undefined' ? [] : captureScrollPositions(document.activeElement),
+  );
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,10 +59,10 @@ export function Modal({ title, description, onClose, children, wide = false }: {
   return <Dialog open onOpenChange={o => { if (!o) onClose(); }}>
     <DialogContent
       ref={dialogRef}
-      aria-describedby={description ? undefined : undefined}
       onCloseAutoFocus={event => {
         event.preventDefault();
         if (restoreFocus.current?.isConnected) restoreFocus.current.focus({ preventScroll: true });
+        restoreScrollAfterViewportSettles(restoreScroll.current);
       }}
       onFocusCapture={event => {
         const focused = event.target as HTMLElement;
@@ -68,13 +71,94 @@ export function Modal({ title, description, onClose, children, wide = false }: {
           keepFocusedFieldVisible(dialog, focused);
         });
       }}
-      className={`max-h-[92dvh] w-[calc(100%-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[14px] border-border bg-card p-5 md:p-6 ${wide ? 'max-w-[680px]' : 'max-w-[520px]'}`}
+      className={`box-border min-w-0 max-h-[92dvh] w-[calc(100%-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-[14px] border-border bg-card p-5 md:p-6 ${wide ? 'max-w-[680px]' : 'max-w-[520px]'}`}
     >
-      <DialogHeader className="text-left"><DialogTitle className="pr-6 text-[17px] font-semibold tracking-[-.01em]">{title}</DialogTitle><DialogDescription className={description ? 'text-[11px] leading-relaxed' : 'sr-only'}>{description ?? title}</DialogDescription></DialogHeader>
+      <DialogHeader className="min-w-0 text-left">
+        <DialogTitle className="min-w-0 break-words pr-6 text-[17px] font-semibold tracking-[-.01em]">{title}</DialogTitle>
+        {description && <DialogDescription className="break-words text-[11px] leading-relaxed">{description}</DialogDescription>}
+      </DialogHeader>
       {children}
     </DialogContent>
   </Dialog>;
 }
+
+type ScrollPosition = {
+  target: Window | HTMLElement;
+  left: number;
+  top: number;
+};
+
+function captureScrollPositions(opener: Element | null): ScrollPosition[] {
+  const positions: ScrollPosition[] = [{
+    target: window,
+    left: window.scrollX,
+    top: window.scrollY,
+  }];
+  const scrollingElement = document.scrollingElement;
+  if (scrollingElement) {
+    positions.push({ target: scrollingElement as HTMLElement, left: scrollingElement.scrollLeft, top: scrollingElement.scrollTop });
+  }
+
+  let ancestor = opener?.parentElement ?? null;
+  while (ancestor && ancestor !== document.body && ancestor !== document.documentElement) {
+    const style = window.getComputedStyle(ancestor);
+    const scrollableX = /(auto|scroll|overlay)/.test(style.overflowX) && ancestor.scrollWidth > ancestor.clientWidth;
+    const scrollableY = /(auto|scroll|overlay)/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight;
+    if (scrollableX || scrollableY) {
+      positions.push({ target: ancestor, left: ancestor.scrollLeft, top: ancestor.scrollTop });
+    }
+    ancestor = ancestor.parentElement;
+  }
+
+  return positions;
+}
+
+function restoreScrollPositions(positions: ScrollPosition[]) {
+  for (const { target, left, top } of positions) {
+    if (target instanceof Window) target.scrollTo(left, top);
+    else if (target.isConnected) target.scrollTo(left, top);
+  }
+}
+
+function restoreScrollAfterViewportSettles(positions: ScrollPosition[]) {
+  const viewport = window.visualViewport;
+  let restoreTimer: number | undefined;
+  const scheduleRestore = () => {
+    window.clearTimeout(restoreTimer);
+    restoreTimer = window.setTimeout(() => restoreScrollPositions(positions), 80);
+  };
+  const cleanup = () => {
+    window.clearTimeout(restoreTimer);
+    window.removeEventListener('scroll', scheduleRestore);
+    window.removeEventListener('pointerdown', cancelRestore);
+    window.removeEventListener('touchstart', cancelRestore);
+    window.removeEventListener('wheel', cancelRestore);
+    window.removeEventListener('keydown', cancelOnNavigationKey);
+    viewport?.removeEventListener('resize', scheduleRestore);
+    viewport?.removeEventListener('scroll', scheduleRestore);
+  };
+  const finish = () => {
+    restoreScrollPositions(positions);
+    cleanup();
+  };
+  const cancelRestore = () => cleanup();
+  const cancelOnNavigationKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') cancelRestore();
+  };
+
+  restoreScrollPositions(positions);
+  window.requestAnimationFrame(() => restoreScrollPositions(positions));
+  window.addEventListener('scroll', scheduleRestore, { passive: true });
+  window.addEventListener('pointerdown', cancelRestore, { passive: true });
+  window.addEventListener('touchstart', cancelRestore, { passive: true });
+  window.addEventListener('wheel', cancelRestore, { passive: true });
+  window.addEventListener('keydown', cancelOnNavigationKey);
+  viewport?.addEventListener('resize', scheduleRestore);
+  viewport?.addEventListener('scroll', scheduleRestore);
+  window.setTimeout(finish, 900);
+}
+
+export const dialogStickyActionsCls = 'sticky bottom-[-20px] z-10 -mx-5 flex flex-col-reverse gap-2 border-t border-border bg-card px-5 pb-1 pt-3 sm:flex-row sm:justify-end md:-mx-6 md:px-6';
 
 function keepFocusedFieldVisible(dialog: HTMLElement, focused: HTMLElement) {
   if (!focused.isConnected || !dialog.contains(focused)) return;
@@ -103,10 +187,10 @@ function keepFocusedFieldVisible(dialog: HTMLElement, focused: HTMLElement) {
 }
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return <label className="block text-[11px] font-semibold">{label}{children}{hint && <span className="mt-1 block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
+  return <label className="block min-w-0 text-[11px] font-semibold">{label}{children}{hint && <span className="mt-1 block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
 }
-export const inputCls = 'focus-ring mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-3 text-[12px] font-normal text-foreground';
-export const textareaCls = 'focus-ring mt-1.5 w-full rounded-lg border border-border bg-card p-3 text-[12px] font-normal leading-relaxed text-foreground';
+export const inputCls = 'focus-ring mt-1.5 h-10 w-full min-w-0 max-w-full rounded-lg border border-border bg-card px-3 text-[12px] font-normal text-foreground';
+export const textareaCls = 'focus-ring mt-1.5 w-full min-w-0 max-w-full rounded-lg border border-border bg-card p-3 text-[12px] font-normal leading-relaxed text-foreground';
 
 export function Avatar({ name, small = false }: { name: string; small?: boolean }) {
   return <div className={`grid shrink-0 place-items-center rounded-full bg-[#e8ddc7] font-bold text-[#514b3e] ${small ? 'h-7 w-7 text-[9px]' : 'h-9 w-9 text-[11px]'}`}>{name.split(' ').filter(Boolean).slice(0, 2).map(n => n[0]).join('')}</div>;

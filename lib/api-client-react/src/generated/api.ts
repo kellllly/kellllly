@@ -31,6 +31,7 @@ import type {
   GetItsmUserDirectoryParams,
   HealthStatus,
   ItsmImportInput,
+  ItsmRoleArchiveCheckFailureResponse,
   ItsmRoleArchiveCheckResponse,
   ItsmRoleAssignment,
   ItsmRoleAssignmentInput,
@@ -692,7 +693,7 @@ export const checkItsmRoleArchive = async ( options?: Parameters<typeof customFe
 
 export const getCheckItsmRoleArchiveMutationKey = () => ['checkItsmRoleArchive'] as const;
 
-export const getCheckItsmRoleArchiveMutationOptions = <TError = ErrorType<void>,
+export const getCheckItsmRoleArchiveMutationOptions = <TError = ErrorType<void | ItsmRoleArchiveCheckFailureResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkItsmRoleArchive>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof checkItsmRoleArchive>>, TError,void, TContext> => {
 
@@ -721,13 +722,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CheckItsmRoleArchiveMutationResult = NonNullable<Awaited<ReturnType<typeof checkItsmRoleArchive>>>
 
-    export type CheckItsmRoleArchiveMutationError = ErrorType<void>
+    export type CheckItsmRoleArchiveMutationError = ErrorType<void | ItsmRoleArchiveCheckFailureResponse>
 
 
     /**
  * @summary Check the external role archive connection without creating an event
  */
-export const useCheckItsmRoleArchive = <TError = ErrorType<void>,
+export const useCheckItsmRoleArchive = <TError = ErrorType<void | ItsmRoleArchiveCheckFailureResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkItsmRoleArchive>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof checkItsmRoleArchive>>,
