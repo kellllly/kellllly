@@ -39,9 +39,10 @@ export function Shell({ children }: { children: ReactNode }) {
   const { signOut } = useClerk();
   const [mobileNav, setMobileNav] = useState(false);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
+  const isDashboard = location === '/' || location === '/user-portal';
   const unread = useMemo(() => store.conversations.reduce((n, c) => n + unreadOf(c), 0), [store.conversations]);
   const roleCode = store.profile.clearance.slice(0, 2);
-  return <div className="app-shell flex min-h-[100dvh]"><Watermark name={displayName} />
+  return <div className={`app-shell flex min-h-[100dvh] ${isDashboard ? 'anif-dashboard-shell' : ''}`}><Watermark name={displayName} />
     <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col overflow-y-auto px-4 py-5 transition-transform lg:sticky lg:top-0 lg:h-[100dvh] lg:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="mb-8 flex items-center gap-3 px-2">
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#4e9d83] text-[#102c28]"><ShieldCheck size={21} strokeWidth={2.2} /></div>
