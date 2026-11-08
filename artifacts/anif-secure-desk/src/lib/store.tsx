@@ -13,6 +13,7 @@ import {
   rebaseAfterSave, recoveryEditDetails, serverRefusalReason, type ConflictChoices,
 } from './sync-recovery';
 import { saveRefusalOutcome, SUSPENDED_EDIT_MESSAGE } from './save-refusal';
+import { isNetworkFailure, OFFLINE_DRAFT_ID, OFFLINE_RETRY_MS } from './offline';
 import type { Store } from './types';
 
 export { STORAGE_KEY } from './storage';
@@ -30,6 +31,8 @@ type Ctx = {
   selectRecoveryDraft: (draftId: string) => void;
   resumeConflict: (choices?: ConflictChoices, reviewedVersion?: number) => Promise<void>;
   acceptRemoteSnapshot: () => void;
+  /** ISO time the API became unreachable; edits are kept locally until it is back. */
+  offlineSince: string | null;
   /** True while this tab refuses shared edits (refused save not yet reconciled). */
   writesSuspended: boolean;
   /** Reload the canonical shared workspace and resume saving. */
@@ -255,6 +258,25 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
   // Saves queued before a refusal carry the refused snapshot; they must not be replayed.
   const writeGeneration = useRef(0);
   const pendingWrites = useRef(0);
+  // Offline-first: while the API is unreachable, edits stay local (and in a
+  // recovery draft with a fixed id) and are sent once it answers again.
+  const offline = useRef(false);
+  const [offlineSince, setOfflineSince] = useState<string | null>(null);
+  const keepOfflineDraft = () => writeRecoveryDraft(userId, {
+    draftId: OFFLINE_DRAFT_ID,
+    base: lastSynced.current,
+    local: sharedData(storeRef.current),
+    remote: lastSynced.current as unknown as Record<string, unknown>,
+    version: version.current,
+  });
+  const clearOfflineDraft = () => {
+    try { removeRecoveryDraft(localStorage, recoveryKey(userId), { draftId: OFFLINE_DRAFT_ID, base: null, local: null }); } catch { /* storage unavailable */ }
+  };
+  const goOffline = () => {
+    offline.current = true;
+    setOfflineSince((current) => current ?? new Date().toISOString());
+    keepOfflineDraft();
+  };
   const recoveryFlight = useRef<RecoveryFlightGuard | null>(null);
   recoveryFlight.current ??= new RecoveryFlightGuard();
   const draftGuard = useRef(new RecoveryDraftGuard(recoveryKey(userId), () => localStorage));
@@ -341,13 +363,15 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
       const source = local.current!;
       const readResult = readRecoveryDrafts(userId);
       setUnreadableRecoveryDraftCount(readResult.unreadableCount);
-      const savedDrafts = readResult.drafts;
+      // A copy kept while offline is resent automatically when it does not collide.
+      const offlineSaved = readResult.drafts.find((draft) => draft.draftId === OFFLINE_DRAFT_ID);
+      let savedDrafts = readResult.drafts.filter((draft) => draft !== offlineSaved);
       if (savedDrafts[0]) draftGuard.current.track(savedDrafts[0], true);
       const current = await getItsmWorkspace();
       const currentClearance = (current.store.profile as { clearance?: unknown } | undefined)?.clearance;
       const role = typeof currentClearance === 'string' ? currentClearance.slice(0, 2) : '';
       let imported = current;
-      if (!savedDrafts.length && ['N1', 'N2', 'N3'].includes(role)) {
+      if (!savedDrafts.length && !offlineSaved && ['N1', 'N2', 'N3'].includes(role)) {
         imported = await importItsmExamples({ store: sharedData(source.store) });
       }
       if (current.version > imported.version) imported = await getItsmWorkspace();
@@ -356,6 +380,30 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
       storeRef.current = hydrated;
       lastSynced.current = sharedData(hydrated);
       setLocalStore(hydrated);
+      let offlineResent = false;
+      if (offlineSaved) {
+        const merged = mergeSharedChanges(offlineSaved.base, offlineSaved.local, sharedData(hydrated));
+        if (!merged.conflicts.length && merged.value) {
+          try {
+            const sent = sharedData(applySnapshot(hydrated, merged.value as unknown as Record<string, unknown>));
+            const saved = await saveItsmWorkspace({ store: sent, version: imported.version });
+            version.current = saved.version;
+            const canonical = applySnapshot(storeRef.current, saved.store);
+            storeRef.current = canonical;
+            lastSynced.current = sharedData(canonical);
+            setLocalStore(canonical);
+            clearOfflineDraft();
+            offlineResent = true;
+          } catch { /* Kept as a recovery draft below: nothing is lost. */ }
+        }
+        if (!offlineResent) {
+          // Colliding or refused: the person decides, as for any refused edit.
+          const asDraft = { ...offlineSaved, draftId: crypto.randomUUID() };
+          if (writeRecoveryDraft(userId, asDraft)) clearOfflineDraft();
+          savedDrafts = [asDraft, ...savedDrafts];
+          draftGuard.current.track(asDraft, true);
+        }
+      }
       if (savedDrafts.length > 0) {
         const pending = savedDrafts.map((draft) => ({
           ...draft, remote: imported.store, version: imported.version,
@@ -366,6 +414,9 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
         }
       }
       setStatus('ready');
+      if (offlineResent) {
+        setIssue({ kind: 'save', message: 'Les saisies faites hors ligne ont été envoyées et fusionnées avec l’espace partagé.' });
+      }
       if (source.issue?.kind === 'load') {
         setIssue({
           kind: 'load',
@@ -396,6 +447,135 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     try { localStorage.setItem(localThemeKey, store.theme); } catch { /* optional local preference */ }
   }, [store.theme]);
 
+  const queueSharedWrite = useCallback(() => {
+    const generation = writeGeneration.current;
+    pendingWrites.current += 1;
+    writeQueue.current = writeQueue.current.then(async () => {
+      if (writeBlocked.current || generation !== writeGeneration.current) {
+        pendingWrites.current -= 1;
+        return;
+      }
+      if (offline.current) {
+        keepOfflineDraft();
+        pendingWrites.current -= 1;
+        return;
+      }
+      try {
+        // Send the latest local state, not the one captured when the edit was
+        // queued: an earlier save may have replaced client message IDs with the
+        // server's, and replaying the stale IDs would be refused as a rewrite.
+        const sent = sharedData(storeRef.current);
+        if (JSON.stringify(sent) === JSON.stringify(lastSynced.current)) return;
+        const saved = await saveItsmWorkspace({ store: sent, version: version.current });
+        version.current = saved.version;
+        const savedShared = sharedData(applySnapshot(storeRef.current, saved.store));
+        // Keep edits made while this save was in flight; the next queued write sends them.
+        const rebased = rebaseAfterSave(sent, sharedData(storeRef.current), savedShared);
+        const canonical = applySnapshot(storeRef.current, rebased as unknown as Record<string, unknown>);
+        storeRef.current = canonical;
+        lastSynced.current = savedShared;
+        setLocalStore(canonical);
+        clearOfflineDraft();
+      } catch (error) {
+        if (isNetworkFailure(error, navigator.onLine)) {
+          // Not a refusal: keep the edit locally and send it when the API answers.
+          goOffline();
+          return;
+        }
+        // The offline copy is superseded by the conflict handling below.
+        clearOfflineDraft();
+        blockWrites(true);
+        writeGeneration.current += 1;
+        const base = lastSynced.current;
+        const localChanges = sharedData(storeRef.current);
+        const changed = changedPaths(base, localChanges);
+        if (!isVersionConflict(error)) {
+          let refreshed = false;
+          try {
+            const latest = await getItsmWorkspace();
+            version.current = latest.version;
+            const canonical = applySnapshot(storeRef.current, latest.store);
+            storeRef.current = canonical;
+            lastSynced.current = sharedData(canonical);
+            setLocalStore(canonical);
+            refreshed = true;
+          } catch { /* Keep writes suspended; the person can resynchronize explicitly. */ }
+          const outcome = saveRefusalOutcome(error, refreshed);
+          if (outcome.resumeWrites) blockWrites(false);
+          setIssue({ kind: 'save', message: outcome.message });
+          return;
+        }
+        let latest = snapshotFromError(error);
+        try {
+          latest ??= await getItsmWorkspace();
+        } catch {
+          const pending = {
+            draftId: crypto.randomUUID(),
+            base,
+            local: localChanges,
+            remote: lastSynced.current as Record<string, unknown>,
+            version: version.current,
+          };
+          pendingConflict.current = pending;
+          const persisted = writeRecoveryDraft(userId, pending);
+          updateRecoveryDraftList([
+            ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
+            pending,
+          ]);
+          activateRecoveryDraft(pending, persisted);
+          setIssue({
+            kind: 'save',
+            message: error instanceof Error
+              ? `${error.message} L’état distant n’a pas pu être chargé. Votre modification ${persisted ? 'est conservée pour ce compte et ne sera renvoyée que sur demande' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`
+              : `Échec de l’enregistrement partagé. Votre modification ${persisted ? 'est conservée pour ce compte' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`,
+          });
+          return;
+        }
+        version.current = latest.version;
+        // Another account or the server (SLA monitor, ephemeral purge) saved
+        // first. When the two sets of changes do not overlap, merge them and
+        // resend once instead of asking the person to resolve a conflict.
+        const automatic = mergeSharedChanges(base, localChanges, sharedData(applySnapshot(storeRef.current, latest.store)));
+        if (automatic.conflicts.length === 0 && automatic.value) {
+          try {
+            const merged = applySnapshot(storeRef.current, automatic.value as unknown as Record<string, unknown>);
+            const saved = await saveItsmWorkspace({ store: sharedData(merged), version: latest.version });
+            version.current = saved.version;
+            const canonical = applySnapshot(storeRef.current, saved.store);
+            storeRef.current = canonical;
+            lastSynced.current = sharedData(canonical);
+            setLocalStore(canonical);
+            blockWrites(false);
+            return;
+          } catch { /* Still refused: fall back to explicit recovery below. */ }
+        }
+        const collisions = mergeSharedChanges(
+          base,
+          localChanges,
+          sharedData(applySnapshot(storeRef.current, latest.store)),
+        ).conflicts;
+        const pending = { draftId: crypto.randomUUID(), base, local: localChanges, remote: latest.store, version: latest.version };
+        pendingConflict.current = pending;
+        const persisted = writeRecoveryDraft(userId, pending);
+        updateRecoveryDraftList([
+          ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
+          pending,
+        ]);
+        activateRecoveryDraft(pending, persisted);
+        const canonical = applySnapshot(storeRef.current, latest.store);
+        storeRef.current = canonical;
+        lastSynced.current = sharedData(canonical);
+        setLocalStore(canonical);
+        setIssue({
+          kind: 'save',
+          message: `Votre modification sur ${changedSectionNames(changed)} a été refusée. Motif : ${serverRefusalReason(error) ?? 'un autre compte avait déjà modifié l’espace partagé.'} L’état distant de version ${latest.version} est maintenant affiché. Votre modification ${persisted ? 'est conservée pour ce compte et ne sera renvoyée que sur demande' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`,
+        });
+      } finally {
+        pendingWrites.current -= 1;
+      }
+    });
+  }, [userId, updateRecoveryDraftList, activateRecoveryDraft]);
+
   const setStore = useCallback<Dispatch<SetStateAction<Store>>>((action) => {
     const previous = storeRef.current;
     const next = typeof action === 'function' ? action(previous) : action;
@@ -411,124 +591,12 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     const after = JSON.stringify(sharedData(next));
     // Auditors (N5) cannot save the workspace: their posts go through a dedicated API command.
     if (status === 'ready' && before !== after && !next.profile.clearance.startsWith('N5')) {
-      const generation = writeGeneration.current;
-      pendingWrites.current += 1;
-      writeQueue.current = writeQueue.current.then(async () => {
-        if (writeBlocked.current || generation !== writeGeneration.current) {
-          pendingWrites.current -= 1;
-          return;
-        }
-        try {
-          // Send the latest local state, not the one captured when the edit was
-          // queued: an earlier save may have replaced client message IDs with the
-          // server's, and replaying the stale IDs would be refused as a rewrite.
-          const sent = sharedData(storeRef.current);
-          if (JSON.stringify(sent) === JSON.stringify(lastSynced.current)) return;
-          const saved = await saveItsmWorkspace({ store: sent, version: version.current });
-          version.current = saved.version;
-          const savedShared = sharedData(applySnapshot(storeRef.current, saved.store));
-          // Keep edits made while this save was in flight; the next queued write sends them.
-          const rebased = rebaseAfterSave(sent, sharedData(storeRef.current), savedShared);
-          const canonical = applySnapshot(storeRef.current, rebased as unknown as Record<string, unknown>);
-          storeRef.current = canonical;
-          lastSynced.current = savedShared;
-          setLocalStore(canonical);
-        } catch (error) {
-          blockWrites(true);
-          writeGeneration.current += 1;
-          const base = lastSynced.current;
-          const localChanges = sharedData(storeRef.current);
-          const changed = changedPaths(base, localChanges);
-          if (!isVersionConflict(error)) {
-            let refreshed = false;
-            try {
-              const latest = await getItsmWorkspace();
-              version.current = latest.version;
-              const canonical = applySnapshot(storeRef.current, latest.store);
-              storeRef.current = canonical;
-              lastSynced.current = sharedData(canonical);
-              setLocalStore(canonical);
-              refreshed = true;
-            } catch { /* Keep writes suspended; the person can resynchronize explicitly. */ }
-            const outcome = saveRefusalOutcome(error, refreshed);
-            if (outcome.resumeWrites) blockWrites(false);
-            setIssue({ kind: 'save', message: outcome.message });
-            return;
-          }
-          let latest = snapshotFromError(error);
-          try {
-            latest ??= await getItsmWorkspace();
-          } catch {
-            const pending = {
-              draftId: crypto.randomUUID(),
-              base,
-              local: localChanges,
-              remote: lastSynced.current as Record<string, unknown>,
-              version: version.current,
-            };
-            pendingConflict.current = pending;
-            const persisted = writeRecoveryDraft(userId, pending);
-            updateRecoveryDraftList([
-              ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
-              pending,
-            ]);
-            activateRecoveryDraft(pending, persisted);
-            setIssue({
-              kind: 'save',
-              message: error instanceof Error
-                ? `${error.message} L’état distant n’a pas pu être chargé. Votre modification ${persisted ? 'est conservée pour ce compte et ne sera renvoyée que sur demande' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`
-                : `Échec de l’enregistrement partagé. Votre modification ${persisted ? 'est conservée pour ce compte' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`,
-            });
-            return;
-          }
-          version.current = latest.version;
-          // Another account or the server (SLA monitor, ephemeral purge) saved
-          // first. When the two sets of changes do not overlap, merge them and
-          // resend once instead of asking the person to resolve a conflict.
-          const automatic = mergeSharedChanges(base, localChanges, sharedData(applySnapshot(storeRef.current, latest.store)));
-          if (automatic.conflicts.length === 0 && automatic.value) {
-            try {
-              const merged = applySnapshot(storeRef.current, automatic.value as unknown as Record<string, unknown>);
-              const saved = await saveItsmWorkspace({ store: sharedData(merged), version: latest.version });
-              version.current = saved.version;
-              const canonical = applySnapshot(storeRef.current, saved.store);
-              storeRef.current = canonical;
-              lastSynced.current = sharedData(canonical);
-              setLocalStore(canonical);
-              blockWrites(false);
-              return;
-            } catch { /* Still refused: fall back to explicit recovery below. */ }
-          }
-          const collisions = mergeSharedChanges(
-            base,
-            localChanges,
-            sharedData(applySnapshot(storeRef.current, latest.store)),
-          ).conflicts;
-          const pending = { draftId: crypto.randomUUID(), base, local: localChanges, remote: latest.store, version: latest.version };
-          pendingConflict.current = pending;
-          const persisted = writeRecoveryDraft(userId, pending);
-          updateRecoveryDraftList([
-            ...pendingConflicts.current.filter((draft) => draft.draftId !== pending.draftId),
-            pending,
-          ]);
-          activateRecoveryDraft(pending, persisted);
-          const canonical = applySnapshot(storeRef.current, latest.store);
-          storeRef.current = canonical;
-          lastSynced.current = sharedData(canonical);
-          setLocalStore(canonical);
-          setIssue({
-            kind: 'save',
-            message: `Votre modification sur ${changedSectionNames(changed)} a été refusée. Motif : ${serverRefusalReason(error) ?? 'un autre compte avait déjà modifié l’espace partagé.'} L’état distant de version ${latest.version} est maintenant affiché. Votre modification ${persisted ? 'est conservée pour ce compte et ne sera renvoyée que sur demande' : 'reste uniquement dans cet onglet, car le stockage local est indisponible'}.`,
-          });
-        } finally {
-          pendingWrites.current -= 1;
-        }
-      });
+      queueSharedWrite();
     }
     if (previous.theme !== next.theme) {
       try { localStorage.setItem(localThemeKey, next.theme); } catch { /* optional local preference */ }
     }
-  }, [status, userId, updateRecoveryDraftList, activateRecoveryDraft]);
+  }, [status, queueSharedWrite]);
 
   const resumeConflict = useCallback(async (choices?: ConflictChoices, reviewedVersion?: number) => {
     const pending = pendingConflict.current;
@@ -661,7 +729,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     if (status !== 'ready') return;
     const poller = createWorkspacePoller({
       currentVersion: () => version.current,
-      busy: () => pendingWrites.current > 0 || writeBlocked.current,
+      busy: () => pendingWrites.current > 0 || writeBlocked.current || offline.current,
       getVersion: getItsmWorkspaceVersion,
       getWorkspace: getItsmWorkspace,
       apply: (latest) => {
@@ -680,6 +748,27 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     });
     return startVisiblePolling(poller, document, window);
   }, [status]);
+
+  // Back online: send what was kept locally, through the normal save path
+  // (which merges with changes made meanwhile by other accounts or the server).
+  useEffect(() => {
+    if (!offlineSince) return;
+    let stopped = false;
+    const probe = async () => {
+      if (stopped || !offline.current) return;
+      try {
+        await getItsmWorkspaceVersion();
+      } catch { return; }
+      if (stopped) return;
+      offline.current = false;
+      setOfflineSince(null);
+      queueSharedWrite();
+    };
+    const timer = window.setInterval(() => { void probe(); }, OFFLINE_RETRY_MS);
+    const onOnline = () => { void probe(); };
+    window.addEventListener('online', onOnline);
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener('online', onOnline); };
+  }, [offlineSince, queueSharedWrite]);
 
   const log = useCallback((action: string, scope: string) => {
     const at = new Date().toISOString();
@@ -710,7 +799,7 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     store, setStore, log, storageIssue, dismissIssue, unreadableRecoveryDraftCount,
     recovery, recoveryDrafts, selectRecoveryDraft,
     resumeConflict, acceptRemoteSnapshot,
-    writesSuspended, resync,
+    writesSuspended, resync, offlineSince,
   }}>{children}</StoreContext.Provider>;
 }
 

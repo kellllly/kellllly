@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Watermark } from '@/components/watermark';
 import { Link, useLocation } from 'wouter';
-import { Activity, AlertTriangle, Bell, BellOff, Check, ClipboardList, Cpu, Landmark, LayoutDashboard, LifeBuoy, LockKeyhole, LogOut, Menu, MessageSquare, Settings, ShieldCheck, X } from 'lucide-react';
+import { Activity, AlertTriangle, Bell, BellOff, Check, ClipboardList, Cpu, Landmark, LayoutDashboard, LifeBuoy, LockKeyhole, LogOut, Menu, MessageSquare, Settings, ShieldCheck, WifiOff, X } from 'lucide-react';
 import { useClerk } from '@clerk/react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNow, useStore } from '@/lib/store';
@@ -9,6 +9,8 @@ import { useDisplayName } from '@/hooks/use-display-name';
 import { deriveNotifications, unreadOf } from '@/lib/domain';
 import { formatWAT } from '@/lib/itsm';
 import { SyncRecoveryActions } from './sync-recovery-actions';
+import { offlineMessage } from '@/lib/offline';
+
 
 const navItems = [
   { href: '/', label: 'Vue générale', icon: LayoutDashboard },
@@ -34,10 +36,11 @@ const initials = (n: string) => n.split(' ').filter(Boolean).map(x => x[0]).join
 
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { store, storageIssue, dismissIssue, unreadableRecoveryDraftCount, recovery, writesSuspended, resync } = useStore();
+  const { store, storageIssue, dismissIssue, unreadableRecoveryDraftCount, recovery, writesSuspended, resync, offlineSince } = useStore();
   const { name: displayName } = useDisplayName();
   const { signOut } = useClerk();
   const [mobileNav, setMobileNav] = useState(false);
+  const now = useNow(15_000);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
   const isDashboard = location === '/' || location === '/user-portal';
   const unread = useMemo(() => store.conversations.reduce((n, c) => n + unreadOf(c), 0), [store.conversations]);
@@ -79,6 +82,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <AlertTriangle size={15} className="mt-0.5 shrink-0" />
         <p><strong>Reprise locale illisible :</strong> {unreadableRecoveryDraftCount === 1 ? 'Un brouillon ne peut pas être relu' : `${unreadableRecoveryDraftCount} brouillons ne peuvent pas être relus`} (JSON ou structure invalide). Le contenu brut est conservé dans ce navigateur et n’a pas été chargé. Évitez de réinitialiser le stockage local avant sa récupération.</p>
       </div>}
+      {offlineSince && <div role="status" data-testid="banner-offline" className="flex items-start gap-3 border-b border-[#d8b875]/70 bg-[#f4ecd9] px-4 py-3 text-[11px] leading-relaxed text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa] md:px-8"><WifiOff size={15} className="mt-0.5 shrink-0" /><p>{offlineMessage(offlineSince, now)}</p></div>}
       {storageIssue && <div role="alert" data-testid="alert-storage" className="flex items-start gap-3 border-b border-[#d39b90] bg-[#f5e2df] px-4 py-3 text-[11px] leading-relaxed text-[#7d3a31] dark:bg-[#4c302d] dark:text-[#f0c1b9] md:px-8">
         <AlertTriangle size={15} className="mt-0.5 shrink-0" />
         <div className="flex-1">

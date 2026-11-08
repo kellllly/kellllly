@@ -64,9 +64,11 @@ pas le compteur à zéro.
 - Réplication, supervision, basculement Nkok/Libreville et sauvegardes 3-2-1-1-0.
 - Garantie de disponibilité de 99,99 %, RTO < 15 min, RPO = 0 et performances
   annoncées dans le cahier. Ces valeurs restent des cibles à démontrer.
-- Fonctionnement hors ligne et garanties de disponibilité/restauration. Les
-  changements ITSM nécessitent l’API; seuls des préférences locales et brouillons
-  temporaires restent dans le navigateur ou en mémoire.
+- Garanties de disponibilité et de restauration. Le mode hors ligne du pilote
+  est limité au navigateur : pendant une coupure, les saisies restent dans ce
+  navigateur (stockage local non chiffré) et sont envoyées au retour du réseau ;
+  il n’y a ni base locale chiffrée ni consultation hors ligne d’un historique
+  qui n’a pas encore été chargé.
 - Homologation, conformité ISO/GAFI/Egmont, audits indépendants, campagne de
   qualification, clients natifs et déploiement souverain.
 
