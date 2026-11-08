@@ -137,6 +137,27 @@ export const GetItsmPeopleResponse = zod.object({
 
 
 /**
+ * For N1 to N3 accounts. Returns other N1 to N3 accounts whose name matches the search, with name and role only (no e-mail). The search runs on names, never on e-mail addresses.
+ * @summary Colleagues who can join a bilateral channel
+ */
+export const getItsmContactsQueryQMax = 80;
+
+
+
+export const GetItsmContactsQueryParams = zod.object({
+  "q": zod.coerce.string().max(getItsmContactsQueryQMax).optional().describe('Part of a name (at most 80 characters)')
+})
+
+export const GetItsmContactsResponse = zod.object({
+  "contacts": zod.array(zod.object({
+  "userId": zod.string(),
+  "name": zod.string(),
+  "role": zod.enum(['N1', 'N2', 'N3'])
+}))
+})
+
+
+/**
  * @summary Export filtered audit events as CSV
  */
 export const ExportItsmAuditQueryParams = zod.object({

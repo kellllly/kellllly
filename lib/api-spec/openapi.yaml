@@ -186,6 +186,33 @@ paths:
           description: A role assignment is required or the role lacks permission
         "503":
           description: Account directory is temporarily unavailable
+  /itsm/contacts:
+    get:
+      operationId: getItsmContacts
+      tags: [itsm]
+      summary: Colleagues who can join a bilateral channel
+      description: For N1 to N3 accounts. Returns other N1 to N3 accounts whose name matches the search, with name and role only (no e-mail). The search runs on names, never on e-mail addresses.
+      parameters:
+        - in: query
+          name: q
+          required: false
+          description: Part of a name (at most 80 characters)
+          schema: { type: string, maxLength: 80 }
+      responses:
+        "200":
+          description: Matching colleagues, at most 20
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmContacts"
+        "400":
+          description: Invalid search
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 to N3 accounts can open a bilateral channel
+        "503":
+          description: Account directory is temporarily unavailable
   /itsm/audit/export:
     get:
       operationId: exportItsmAudit
@@ -519,6 +546,21 @@ components:
           items:
             $ref: "#/components/schemas/ItsmPerson"
       required: [people]
+    ItsmContact:
+      type: object
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [N1, N2, N3] }
+      required: [userId, name, role]
+    ItsmContacts:
+      type: object
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItsmContact"
+      required: [contacts]
     ItsmAuditIntegrity:
       type: object
       properties:

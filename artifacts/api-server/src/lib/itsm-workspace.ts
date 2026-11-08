@@ -651,6 +651,8 @@ const MAX_INVESTIGATION_MEMBERS = 50;
  * N1 only, open to N2 analysts named as members, never to N3, N4 or N5.
  */
 export const TEMPORARY_CONVERSATION_KIND = "Temporaire";
+/** Bilateral channel between exactly two N1–N3 agents, visible to them only. */
+export const DIRECT_CONVERSATION_KIND = "Direct";
 export const MIN_TEMPORARY_HOURS = 1;
 export const MAX_TEMPORARY_HOURS = 30 * 24;
 
@@ -674,6 +676,8 @@ export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, c
     return actor.role !== "N5" || !isClosedConversation(conversation, now);
   }
   if (actor.role === "N5") return false;
+  // Bilateral channels: only the two agents, not even the Direction (N1).
+  if (conversation.kind === DIRECT_CONVERSATION_KIND) return isMember(actor, conversation);
   if (conversation.kind !== INVESTIGATION_CONVERSATION_KIND) return true;
   if (actor.role === "N1") return true;
   return actor.role === "N2" && isMember(actor, conversation);
@@ -1012,19 +1016,36 @@ export function applyWorkspaceUpdate(
           ? "Seul un compte N1 peut ouvrir un canal temporaire."
           : "Seul un compte N1 peut ouvrir un salon d’enquête.");
       }
+      const direct = proposed.kind === DIRECT_CONVERSATION_KIND;
+      let directMembers: string[] = [];
+      if (direct) {
+        if (!["N1", "N2", "N3"].includes(actor.role)) {
+          throw new ItsmAuthorizationError("Seuls les comptes N1 à N3 peuvent ouvrir un canal bilatéral.");
+        }
+        const others = [...new Set((Array.isArray(proposed.memberIds) ? proposed.memberIds : [])
+          .filter((member): member is string => typeof member === "string" && /^user_[A-Za-z0-9]{1,64}$/.test(member) && member !== actor.id))];
+        if (others.length !== 1) throw new Error("Un canal bilatéral réunit exactement deux agents.");
+        directMembers = [actor.id, others[0]!];
+        const pair = [...directMembers].sort().join(",");
+        if (oldConversations.some((conversation) => conversation.kind === DIRECT_CONVERSATION_KIND
+          && Array.isArray(conversation.memberIds) && [...conversation.memberIds].sort().join(",") === pair)) {
+          throw new Error("Un canal bilatéral existe déjà avec cet agent.");
+        }
+      }
       const hours = Math.round(Math.min(MAX_TEMPORARY_HOURS, Math.max(MIN_TEMPORARY_HOURS, Number(proposed.durationHours) || 24)));
       conversations.push({
         id,
         title: proposed.title,
         kind: typeof proposed.kind === "string" ? proposed.kind : "Équipe",
-        classification: investigation ? "Restreint" : typeof proposed.classification === "string" ? proposed.classification : "Interne",
+        classification: investigation ? "Restreint" : direct ? "Confidentiel" : typeof proposed.classification === "string" ? proposed.classification : "Interne",
         ...(investigation ? {
           memberIds: [...new Set([actor.id, ...(Array.isArray(proposed.memberIds) ? proposed.memberIds : [])
             .filter((member): member is string => typeof member === "string" && /^user_[A-Za-z0-9]{1,64}$/.test(member))])]
             .slice(0, MAX_INVESTIGATION_MEMBERS),
         } : {}),
+        ...(direct ? { memberIds: directMembers } : {}),
         ...(temporary ? { expiresAt: new Date(now.getTime() + hours * 3_600_000).toISOString() } : {}),
-        participants: proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
+        participants: direct ? directMembers : proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
         readCount: Math.max(0, Math.min(records(proposed.messages).length, Number(proposed.readCount) || 0)),
         messages: records(proposed.messages).map((message) => ({
         ...messageExpiry(message, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now),

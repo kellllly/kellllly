@@ -13,6 +13,7 @@ import {
   PostItsmTemporaryMessageBody,
   PostItsmTemporaryMessageResponse,
   GetItsmPeopleResponse,
+  GetItsmContactsResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
   ImportItsmExamplesBody,
@@ -50,7 +51,7 @@ import {
 import type { SlaBreach, SlaEscalation } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
 import { createActorCache } from "../lib/itsm-actor-cache";
-import { createPeopleDirectory, MAX_PEOPLE_PER_REQUEST, parsePeopleIds } from "../lib/itsm-people";
+import { CONTACT_SEARCH_MAX_LENGTH, contactsFromClerkUsers, createPeopleDirectory, MAX_PEOPLE_PER_REQUEST, parsePeopleIds } from "../lib/itsm-people";
 import {
   publishItsmRoleDirectoryEvent,
   subscribeToItsmRoleDirectoryEvents,
@@ -602,6 +603,37 @@ router.get("/itsm/people", requireAuth, async (req, res): Promise<void> => {
   } catch (error) {
     req.log.error({ err: error }, "Could not resolve ITSM people names");
     res.status(503).json({ error: "Impossible de charger les noms des comptes." });
+  }
+});
+
+// Pilot-sized account list (Clerk returns at most 500 per page), cached for a
+// minute so typing a name does not call Clerk on every keystroke.
+let contactUsersCache: { users: Parameters<typeof contactsFromClerkUsers>[0]; expiresAt: number } | null = null;
+const loadContactUsers = async () => {
+  if (contactUsersCache && contactUsersCache.expiresAt > Date.now()) return contactUsersCache.users;
+  const users = (await clerkClient.users.getUserList({ limit: 500 })).data;
+  contactUsersCache = { users, expiresAt: Date.now() + 60_000 };
+  return users;
+};
+
+router.get("/itsm/contacts", requireAuth, async (req, res): Promise<void> => {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  if (!["N1", "N2", "N3"].includes(actor.role)) {
+    res.status(403).json({ error: "Les canaux bilatéraux sont réservés aux comptes N1 à N3." });
+    return;
+  }
+  const q = req.query.q ?? "";
+  if (typeof q !== "string" || q.length > CONTACT_SEARCH_MAX_LENGTH) {
+    res.status(400).json({ error: "Recherche invalide." });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json(GetItsmContactsResponse.parse({ contacts: contactsFromClerkUsers(await loadContactUsers(), actor.id, q) }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not load ITSM contacts");
+    res.status(503).json({ error: "Impossible de charger la liste des collègues." });
   }
 });
 

@@ -120,6 +120,25 @@ export interface ItsmPeople {
   people: ItsmPerson[];
 }
 
+export type ItsmContactRole = typeof ItsmContactRole[keyof typeof ItsmContactRole];
+
+
+export const ItsmContactRole = {
+  N1: 'N1',
+  N2: 'N2',
+  N3: 'N3',
+} as const;
+
+export interface ItsmContact {
+  userId: string;
+  name: string;
+  role: ItsmContactRole;
+}
+
+export interface ItsmContacts {
+  contacts: ItsmContact[];
+}
+
 export type ItsmAuditIntegrityStatus = typeof ItsmAuditIntegrityStatus[keyof typeof ItsmAuditIntegrityStatus];
 
 
@@ -349,6 +368,14 @@ export type GetItsmPeopleParams = {
    * @maxLength 7000
    */
   ids: string;
+};
+
+export type GetItsmContactsParams = {
+  /**
+   * Part of a name (at most 80 characters)
+   * @maxLength 80
+   */
+  q?: string;
 };
 
 export type ExportItsmAuditParams = {

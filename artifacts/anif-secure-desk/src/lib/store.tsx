@@ -145,7 +145,9 @@ function applySnapshot(previous: Store, remote: Record<string, unknown>): Store 
   const next = migrate(remote);
   return {
     ...next,
-    profile: next.profile,
+    // Shared data (sent and rebased after a save) has no profile: keep the
+    // account's own, otherwise migrate() falls back to the demo profile (N2).
+    profile: remote.profile && typeof remote.profile === 'object' ? next.profile : previous.profile,
     theme: previous.theme,
     drafts: previous.drafts,
     notifRead: previous.notifRead,

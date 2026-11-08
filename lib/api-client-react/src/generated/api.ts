@@ -28,10 +28,12 @@ import type {
   DevelopmentRoleArchiveEnvelope,
   DevelopmentRoleArchiveReceipt,
   ExportItsmAuditParams,
+  GetItsmContactsParams,
   GetItsmPeopleParams,
   GetItsmUserDirectoryParams,
   HealthStatus,
   ItsmAuditIntegrity,
+  ItsmContacts,
   ItsmImportInput,
   ItsmPeople,
   ItsmRoleArchiveCheckFailureResponse,
@@ -845,6 +847,115 @@ export function useGetItsmPeople<TData = Awaited<ReturnType<typeof getItsmPeople
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetItsmPeopleQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmContactsUrl = (params?: GetItsmContactsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/itsm/contacts?${stringifiedParams}` : `/api/itsm/contacts`
+}
+
+/**
+ * For N1 to N3 accounts. Returns other N1 to N3 accounts whose name matches the search, with name and role only (no e-mail). The search runs on names, never on e-mail addresses.
+ * @summary Colleagues who can join a bilateral channel
+ */
+export const getItsmContacts = async (params?: GetItsmContactsParams, options?: Parameters<typeof customFetch>[1]): Promise<ItsmContacts> => {
+
+  return customFetch<ItsmContacts>(getGetItsmContactsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmContactsQueryKey = (params?: GetItsmContactsParams,) => {
+    return [
+    `/api/itsm/contacts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetItsmContactsQueryOptions = <TData = Awaited<ReturnType<typeof getItsmContacts>>, TError = ErrorType<void>>(params?: GetItsmContactsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmContactsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmContacts>>> = ({ signal }) => getItsmContacts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmContactsQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmContacts>>>
+export type GetItsmContactsQueryError = ErrorType<void>
+
+
+export function useGetItsmContacts<TData = Awaited<ReturnType<typeof getItsmContacts>>, TError = ErrorType<void>>(
+ params: undefined |  GetItsmContactsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmContacts>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmContacts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmContacts<TData = Awaited<ReturnType<typeof getItsmContacts>>, TError = ErrorType<void>>(
+ params?: GetItsmContactsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmContacts>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmContacts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmContacts<TData = Awaited<ReturnType<typeof getItsmContacts>>, TError = ErrorType<void>>(
+ params?: GetItsmContactsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Colleagues who can join a bilateral channel
+ */
+
+export function useGetItsmContacts<TData = Awaited<ReturnType<typeof getItsmContacts>>, TError = ErrorType<void>>(
+ params?: GetItsmContactsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmContacts>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmContactsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

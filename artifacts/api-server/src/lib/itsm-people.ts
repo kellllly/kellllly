@@ -61,3 +61,31 @@ export function createPeopleDirectory(
     return ids.map((id) => cache.get(id)!.person);
   };
 }
+
+export const MAX_CONTACT_RESULTS = 20;
+export const CONTACT_SEARCH_MAX_LENGTH = 80;
+const CONTACT_ROLES = new Set(["N1", "N2", "N3"]);
+
+export type ItsmContact = ItsmPerson & { role: "N1" | "N2" | "N3" };
+type ClerkContactUser = ClerkNamedUser & { publicMetadata?: { itsmRole?: unknown } | null };
+
+const fold = (value: string) => value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/**
+ * Colleagues who can join a bilateral channel: other N1–N3 accounts, matched
+ * on their name only. Searching on e-mail addresses would let any agent test
+ * whether an address has an account, so it is not offered.
+ */
+export function contactsFromClerkUsers(users: readonly ClerkContactUser[], actorId: string, query: string): ItsmContact[] {
+  const terms = fold(query.trim()).split(/\s+/u).filter(Boolean);
+  const contacts: ItsmContact[] = [];
+  for (const user of users) {
+    const role = user.publicMetadata?.itsmRole;
+    if (user.id === actorId || typeof role !== "string" || !CONTACT_ROLES.has(role)) continue;
+    const person = personFromClerkUser(user);
+    if (person.name === unnamedAccountLabel(user.id)) continue;
+    const name = fold(person.name);
+    if (terms.every((term) => name.includes(term))) contacts.push({ ...person, role: role as ItsmContact["role"] });
+  }
+  return contacts.sort((left, right) => left.name.localeCompare(right.name, "fr")).slice(0, MAX_CONTACT_RESULTS);
+}
