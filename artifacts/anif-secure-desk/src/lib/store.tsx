@@ -479,6 +479,23 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
             return;
           }
           version.current = latest.version;
+          // Another account or the server (SLA monitor, ephemeral purge) saved
+          // first. When the two sets of changes do not overlap, merge them and
+          // resend once instead of asking the person to resolve a conflict.
+          const automatic = mergeSharedChanges(base, localChanges, sharedData(applySnapshot(storeRef.current, latest.store)));
+          if (automatic.conflicts.length === 0 && automatic.value) {
+            try {
+              const merged = applySnapshot(storeRef.current, automatic.value as unknown as Record<string, unknown>);
+              const saved = await saveItsmWorkspace({ store: sharedData(merged), version: latest.version });
+              version.current = saved.version;
+              const canonical = applySnapshot(storeRef.current, saved.store);
+              storeRef.current = canonical;
+              lastSynced.current = sharedData(canonical);
+              setLocalStore(canonical);
+              blockWrites(false);
+              return;
+            } catch { /* Still refused: fall back to explicit recovery below. */ }
+          }
           const collisions = mergeSharedChanges(
             base,
             localChanges,
