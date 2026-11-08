@@ -10,6 +10,8 @@ import {
   GetItsmWorkspaceResponse,
   GetItsmWorkspaceVersionResponse,
   GetItsmSessionMarkerResponse,
+  PostItsmTemporaryMessageBody,
+  PostItsmTemporaryMessageResponse,
   GetItsmPeopleResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
@@ -43,6 +45,7 @@ import {
   sealItsmWorkspaceAudit,
   recordItsmSlaBreaches,
   purgeExpiredMessages,
+  postTemporaryChannelMessage,
 } from "../lib/itsm-workspace";
 import type { SlaBreach, SlaEscalation } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
@@ -526,6 +529,40 @@ router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
  * first X-Forwarded-For entry is used behind the hosting proxy; it is an aid to
  * attribution on screen, not an access control.
  */
+/**
+ * Message in a temporary channel. Members who cannot save the workspace
+ * (auditors, N5) post through this command; the server checks membership and
+ * the channel's end date, then journals the post.
+ */
+router.post("/itsm/conversations/:conversationId/messages", requireAuth, async (req, res): Promise<void> => {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  const parsed = PostItsmTemporaryMessageBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Message invalide." });
+    return;
+  }
+  const conversationId = String(req.params.conversationId ?? "");
+  try {
+    const version = await withAdminChangeLock(async (store, saveStore) => {
+      await saveStore(postTemporaryChannelMessage(store, conversationId, parsed.data.body, actor));
+      return true;
+    });
+    res.status(201).json(PostItsmTemporaryMessageResponse.parse({ posted: version }));
+  } catch (error) {
+    if (error instanceof ItsmAuthorizationError) {
+      res.status(403).json({ error: error.message });
+      return;
+    }
+    if (error instanceof Error && /clos|vide ou trop long/.test(error.message)) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "Could not post a temporary channel message");
+    res.status(503).json({ error: "Impossible d’enregistrer le message. Réessayez plus tard." });
+  }
+});
+
 router.get("/itsm/session", requireAuth, async (req, res): Promise<void> => {
   const actor = await actorFor(req, res);
   if (!actorOrReply(req, res, actor)) return;

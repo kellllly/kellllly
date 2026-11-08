@@ -650,11 +650,69 @@ const MAX_INVESTIGATION_MEMBERS = 50;
  * Investigation rooms (cahier des charges, matrice d’habilitation) : created by
  * N1 only, open to N2 analysts named as members, never to N3, N4 or N5.
  */
-export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, conversation: JsonRecord): boolean {
-  if (actor.role === "N4" || actor.role === "N5") return false;
+export const TEMPORARY_CONVERSATION_KIND = "Temporaire";
+export const MIN_TEMPORARY_HOURS = 1;
+export const MAX_TEMPORARY_HOURS = 30 * 24;
+
+const isMember = (actor: Pick<WorkspaceActor, "id">, conversation: JsonRecord) =>
+  Array.isArray(conversation.memberIds) && conversation.memberIds.includes(actor.id);
+
+/** A temporary channel is closed once its end date has passed. */
+export function isClosedConversation(conversation: JsonRecord, now = new Date()): boolean {
+  if (conversation.kind !== TEMPORARY_CONVERSATION_KIND || typeof conversation.expiresAt !== "string") return false;
+  const end = Date.parse(conversation.expiresAt);
+  return Number.isFinite(end) && end <= now.getTime();
+}
+
+export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, conversation: JsonRecord, now = new Date()): boolean {
+  if (actor.role === "N4") return false;
+  // Temporary channels (cahier des charges, niveau 5) : ad-hoc, time-limited,
+  // opened by N1 to named members; external auditors lose access at the end date.
+  if (conversation.kind === TEMPORARY_CONVERSATION_KIND) {
+    if (actor.role === "N1") return true;
+    if (!isMember(actor, conversation)) return false;
+    return actor.role !== "N5" || !isClosedConversation(conversation, now);
+  }
+  if (actor.role === "N5") return false;
   if (conversation.kind !== INVESTIGATION_CONVERSATION_KIND) return true;
   if (actor.role === "N1") return true;
-  return actor.role === "N2" && Array.isArray(conversation.memberIds) && conversation.memberIds.includes(actor.id);
+  return actor.role === "N2" && isMember(actor, conversation);
+}
+
+/**
+ * Message from a member of a temporary channel. Auditors (N5) cannot save the
+ * workspace, so they post through this narrow command only.
+ */
+export function postTemporaryChannelMessage(
+  current: JsonRecord,
+  conversationId: string,
+  body: unknown,
+  actor: WorkspaceActor,
+  now = new Date(),
+): JsonRecord {
+  const conversations = records(current.conversations);
+  const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+  const conversation = conversations[index];
+  if (!conversation || conversation.kind !== TEMPORARY_CONVERSATION_KIND || !canSeeConversation(actor, conversation, now)) {
+    throw new ItsmAuthorizationError("Ce canal temporaire n’est pas accessible à ce compte.");
+  }
+  if (isClosedConversation(conversation, now)) throw new Error("Ce canal temporaire est clos.");
+  if (typeof body !== "string" || !body.trim() || body.length > 5000) throw new Error("Le message est vide ou trop long.");
+  const message = { id: randomUUID(), author: actor.id, body: body.trim(), at: newStamp(now), time: shortTime(now) };
+  const next = structuredClone(current);
+  const nextConversations = records(next.conversations);
+  nextConversations[index] = { ...conversation, messages: [...records(conversation.messages), message] };
+  next.conversations = nextConversations;
+  next.audit = retainItsmAuditEvents([{
+    id: randomUUID(),
+    action: `Message publié dans le canal temporaire ${conversationId}`,
+    actor: actor.id,
+    scope: "Messagerie · canal temporaire",
+    conversationId,
+    at: newStamp(now),
+    time: shortTime(now),
+  }, ...records(next.audit)]);
+  return next;
 }
 
 /**
@@ -687,13 +745,13 @@ export function applyWorkspaceUpdate(
     const submittedConversations = records(normalized.conversations);
     if (submittedConversations.some((conversation) => {
       const stored = oldConversations.find((item) => item.id === conversation.id);
-      return stored ? !canSeeConversation(actor, stored) : false;
+      return stored ? !canSeeConversation(actor, stored, now) : false;
     })) {
       throw new ItsmAuthorizationError("Ce salon d’enquête n’est pas accessible à ce compte.");
     }
     const merged = [...submittedConversations];
     oldConversations.forEach((conversation, index) => {
-      if (!canSeeConversation(actor, conversation)) merged.splice(Math.min(index, merged.length), 0, conversation);
+      if (!canSeeConversation(actor, conversation, now)) merged.splice(Math.min(index, merged.length), 0, conversation);
     });
     normalized.conversations = merged;
   }
@@ -947,10 +1005,14 @@ export function applyWorkspaceUpdate(
       if (typeof proposed.title !== "string" || !proposed.title.trim() || !Array.isArray(proposed.participants)) {
         throw new Error("Conversation invalide.");
       }
-      const investigation = proposed.kind === INVESTIGATION_CONVERSATION_KIND;
+      const temporary = proposed.kind === TEMPORARY_CONVERSATION_KIND;
+      const investigation = proposed.kind === INVESTIGATION_CONVERSATION_KIND || temporary;
       if (investigation && actor.role !== "N1") {
-        throw new ItsmAuthorizationError("Seul un compte N1 peut ouvrir un salon d’enquête.");
+        throw new ItsmAuthorizationError(temporary
+          ? "Seul un compte N1 peut ouvrir un canal temporaire."
+          : "Seul un compte N1 peut ouvrir un salon d’enquête.");
       }
+      const hours = Math.round(Math.min(MAX_TEMPORARY_HOURS, Math.max(MIN_TEMPORARY_HOURS, Number(proposed.durationHours) || 24)));
       conversations.push({
         id,
         title: proposed.title,
@@ -961,6 +1023,7 @@ export function applyWorkspaceUpdate(
             .filter((member): member is string => typeof member === "string" && /^user_[A-Za-z0-9]{1,64}$/.test(member))])]
             .slice(0, MAX_INVESTIGATION_MEMBERS),
         } : {}),
+        ...(temporary ? { expiresAt: new Date(now.getTime() + hours * 3_600_000).toISOString() } : {}),
         participants: proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
         readCount: Math.max(0, Math.min(records(proposed.messages).length, Number(proposed.readCount) || 0)),
         messages: records(proposed.messages).map((message) => ({
@@ -979,6 +1042,9 @@ export function applyWorkspaceUpdate(
     if (incomingMessages.length < oldMessages.length
       || oldMessages.some((message, index) => message.id !== incomingMessages[index]?.id || message.body !== incomingMessages[index]?.body)) {
       throw new Error("L’historique de messagerie ne peut pas être réécrit.");
+    }
+    if (incomingMessages.length > oldMessages.length && isClosedConversation(old, now)) {
+      throw new Error("Ce canal temporaire est clos : il n’accepte plus de messages.");
     }
     const messages = [
       ...oldMessages,
@@ -1152,7 +1218,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
   return {
     ...visibleStore,
     tickets: hiddenCollections ? [] : scopedTickets,
-    conversations: actor.role === "N4" || hiddenCollections ? [] : records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
+    conversations: actor.role === "N4" ? [] : records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
     })),

@@ -165,6 +165,18 @@ export interface ItsmAuditIntegrity {
   checkedAt: string;
 }
 
+export interface ItsmTemporaryMessage {
+  /**
+     * @minLength 1
+     * @maxLength 5000
+     */
+  body: string;
+}
+
+export interface ItsmTemporaryMessagePosted {
+  posted: boolean;
+}
+
 export interface ItsmSessionMarker {
   accountId: string;
   ip: string;

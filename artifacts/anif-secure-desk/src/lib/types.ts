@@ -21,6 +21,8 @@ export type Conversation = {
   readCount: number; messages: Message[];
   /** Salon d’enquête : comptes invités (N1 créateur + N2), seuls autorisés avec les N1. */
   memberIds?: string[];
+  /** Canal temporaire : durée demandée à la création, date de clôture fixée par le serveur. */
+  durationHours?: number; expiresAt?: string;
 };
 export type TicketUpdate = { author: string; body: string; time: string; at?: string };
 export type CabDecision = { decision: 'Approuvé' | 'Rejeté'; by: string; at: string; reason: string };

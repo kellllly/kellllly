@@ -34,6 +34,7 @@ Les deux documents portent le même titre : *Plateforme unifiée de messagerie c
 | **Capture de l’environnement d’exécution** (version, poste, mémoire, latence) | Absente | Jointe automatiquement au ticket converti. |
 | **Bot SI** : arbre de diagnostic, tests d’intégrité préliminaires, fiches en libre-service | Absent | « Assistant SI » dans le canal support : arbre fixe, tests réels de liaison et de session, fiches KEDB proposées. |
 | **Fil de discussion privatif alimenté par l’état du ticket** | Seule la création du ticket était annoncée dans le fil | Chaque changement d’état est publié dans la discussion liée. |
+| **Canaux d’échanges ad hoc limités dans le temps** pour les auditeurs (N5) et experts externes, avec bannière d’avertissement | Le N5 n’avait aucun accès à la messagerie | Un N1 ouvre un « canal temporaire » (1 h à 30 jours) et choisit les membres. Le N5 ne voit que ses canaux ouverts et peut y écrire ; une bannière prévient chaque membre ; le canal passe en lecture seule à l’échéance. |
 | **Journalisation et scellement** (arbres de Merkle, RFC 3161, WORM, SIEM) | Journal sans protection d’intégrité | Chaîne d’empreintes SHA-256 vérifiable (déjà livrée avant ce cahier). Le WORM, l’horodatage qualifié et le SIEM restent à réaliser. |
 | **Dépassements SLA tracés** | Visibles seulement à l’écran | Journalisés par le serveur (déjà livré). |
 

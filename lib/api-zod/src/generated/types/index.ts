@@ -39,6 +39,8 @@ export * from './itsmSaveInput';
 export * from './itsmSessionMarker';
 export * from './itsmSnapshot';
 export * from './itsmStore';
+export * from './itsmTemporaryMessage';
+export * from './itsmTemporaryMessagePosted';
 export * from './itsmUserDirectoryAccount';
 export * from './itsmUserDirectoryAccountRole';
 export * from './itsmUserDirectoryPage';

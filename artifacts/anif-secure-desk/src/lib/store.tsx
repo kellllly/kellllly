@@ -407,7 +407,8 @@ export function StoreProvider({ children, userId }: { children: ReactNode; userI
     setLocalStore(next);
     const before = JSON.stringify(sharedData(previous));
     const after = JSON.stringify(sharedData(next));
-    if (status === 'ready' && before !== after) {
+    // Auditors (N5) cannot save the workspace: their posts go through a dedicated API command.
+    if (status === 'ready' && before !== after && !next.profile.clearance.startsWith('N5')) {
       const generation = writeGeneration.current;
       pendingWrites.current += 1;
       writeQueue.current = writeQueue.current.then(async () => {

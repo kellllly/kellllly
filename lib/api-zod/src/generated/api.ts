@@ -70,6 +70,30 @@ export const ImportItsmExamplesResponse = zod.object({
 
 
 /**
+ * @summary Post a message in a temporary channel (members only, until its end date)
+ */
+export const postItsmTemporaryMessagePathConversationIdMax = 64;
+
+
+
+export const PostItsmTemporaryMessageParams = zod.object({
+  "conversationId": zod.coerce.string().max(postItsmTemporaryMessagePathConversationIdMax)
+})
+
+export const postItsmTemporaryMessageBodyBodyMax = 5000;
+
+
+
+export const PostItsmTemporaryMessageBody = zod.object({
+  "body": zod.string().min(1).max(postItsmTemporaryMessageBodyBodyMax)
+})
+
+export const PostItsmTemporaryMessageResponse = zod.object({
+  "posted": zod.boolean()
+})
+
+
+/**
  * @summary Account and network address shown in the on-screen watermark
  */
 export const GetItsmSessionMarkerResponse = zod.object({

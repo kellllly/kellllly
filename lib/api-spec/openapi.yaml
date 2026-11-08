@@ -95,6 +95,37 @@ paths:
           description: Authentication required
         "403":
           description: The assigned role cannot import examples
+  /itsm/conversations/{conversationId}/messages:
+    post:
+      operationId: postItsmTemporaryMessage
+      tags: [itsm]
+      summary: Post a message in a temporary channel (members only, until its end date)
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string, maxLength: 64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmTemporaryMessage"
+      responses:
+        "201":
+          description: Message recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmTemporaryMessagePosted"
+        "400":
+          description: Invalid message
+        "401":
+          description: Authentication required
+        "403":
+          description: The channel is not accessible to this account
+        "409":
+          description: The channel is closed
   /itsm/session:
     get:
       operationId: getItsmSessionMarker
@@ -520,6 +551,16 @@ components:
           type: string
           format: date-time
       required: [status, events, verified, pruned, head, firstBreak, checkedAt]
+    ItsmTemporaryMessage:
+      type: object
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
+      required: [body]
+    ItsmTemporaryMessagePosted:
+      type: object
+      properties:
+        posted: { type: boolean }
+      required: [posted]
     ItsmSessionMarker:
       type: object
       properties:
