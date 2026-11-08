@@ -394,6 +394,25 @@ paths:
           description: Event identifier already used for different content
         "503":
           description: Event not confirmed in storage
+  /itsm/roles/reconciliation:
+    get:
+      operationId: getItsmRoleReconciliation
+      tags: [itsm]
+      summary: Accounts whose Clerk role differs from the authorization journal
+      description: For N1 accounts. Compares the current Clerk role and services of every account with the latest role event of the journal. Read-only; regularize with the attestation route after verification.
+      responses:
+        "200":
+          description: Current findings (empty when the journal matches Clerk)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRoleReconciliation"
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 can review the authorization journal
+        "503":
+          description: Clerk or the journal is temporarily unavailable
   /itsm/users/{userId}/role/attest:
     post:
       operationId: attestItsmRole
@@ -561,6 +580,25 @@ components:
           items:
             $ref: "#/components/schemas/ItsmContact"
       required: [contacts]
+    ItsmRoleReconciliationFinding:
+      type: object
+      properties:
+        userId: { type: string }
+        reason: { type: string, enum: [missing_audit, role_mismatch, scope_mismatch] }
+        clerkRole: { type: string }
+        clerkServiceIds: { type: array, items: { type: string } }
+        auditRole: { type: [string, "null"] }
+        auditServiceIds: { type: array, items: { type: string } }
+      required: [userId, reason, clerkRole, clerkServiceIds, auditRole, auditServiceIds]
+    ItsmRoleReconciliation:
+      type: object
+      properties:
+        checkedAt: { type: string, format: date-time }
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItsmRoleReconciliationFinding"
+      required: [checkedAt, findings]
     ItsmAuditIntegrity:
       type: object
       properties:

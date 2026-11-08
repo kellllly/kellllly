@@ -9,7 +9,9 @@ import {
   getItsmWorkspace,
   getItsmUserDirectory,
   getGetItsmUserDirectoryQueryKey,
+  getItsmRoleReconciliation,
 } from '@workspace/api-client-react';
+import { usePeople } from '@/hooks/use-people';
 import { useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
@@ -114,6 +116,19 @@ export default function SettingsPage() {
     return () => source.close();
   }, [currentUser?.id, directoryAccessDeniedFor, isRoleAdmin, queryClient]);
   const selectedAccount = directory.data?.accounts.find(account => account.userId === targetUserId);
+  // Accounts whose Clerk role differs from the authorization journal (N1 only).
+  const reconciliation = useQuery({
+    queryKey: ['itsm-role-reconciliation'],
+    queryFn: ({ signal }) => getItsmRoleReconciliation({ signal }),
+    enabled: isRoleAdmin,
+  });
+  const { person } = usePeople(reconciliation.data?.findings.map(finding => finding.userId) ?? []);
+  const reviewFinding = (userId: string) => {
+    setDirectorySearch(userId);
+    setDirectoryPage(0);
+    setTargetUserId(userId);
+    setRoleError(''); setRoleMessage(''); setAttestationError(''); setAttestationMessage('');
+  };
   const availableServiceIds = new Set(pilotServices.map(service => service.id));
   const unavailableAccountServiceIds = selectedAccount?.unavailableServiceIds ?? [];
 
@@ -218,6 +233,7 @@ export default function SettingsPage() {
       setAttestationMessage(
         `Attestation actuelle du rôle ${result.role} enregistrée pour le compte ${result.userId}.`,
       );
+      void reconciliation.refetch();
     } catch (error) {
       setAttestationError(roleRequestError(error, 'attestation'));
       void queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
@@ -280,6 +296,17 @@ export default function SettingsPage() {
               {' — résultat : '}{lastArchiveCheck.status === 'available' ? 'archive accessible.' : 'archive indisponible.'}
             </p>}
           </div>
+          {isRoleAdmin && <div data-testid="panel-role-reconciliation" className="mb-5 rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2"><div className="text-[11px] font-semibold">Contrôle des habilitations</div><Button type="button" variant="outline" className="h-8 px-2" disabled={reconciliation.isFetching} onClick={() => void reconciliation.refetch()}><RefreshCw size={13} className={reconciliation.isFetching ? 'animate-spin' : ''} />Vérifier</Button></div>
+            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Comptes dont le rôle ou les services enregistrés dans Clerk ne correspondent pas au dernier changement inscrit au journal (rôle attribué hors de l’application, ou modifié directement dans Clerk). Vérifiez chaque compte auprès de son responsable, puis corrigez son rôle ou attestez l’état actuel.</p>
+            {reconciliation.isLoading ? <p role="status" className="mt-2 text-[11px] text-muted-foreground">Comparaison en cours…</p>
+              : reconciliation.isError ? <p role="alert" className="mt-2 text-[11px] text-destructive">Comparaison indisponible pour le moment.</p>
+              : reconciliation.data?.findings.length ? <ul className="mt-2 divide-y divide-border/70 rounded-md border border-border">{reconciliation.data.findings.map(finding => <li key={finding.userId} data-testid={`row-reconciliation-${finding.userId}`} className="flex flex-wrap items-center gap-2 p-2.5 text-[11px]">
+                  <span className="min-w-0 flex-1"><span className="font-semibold">{person(finding.userId) === finding.userId ? 'Compte sans nom' : person(finding.userId)}</span> <span className="mono text-[9px] text-muted-foreground">{finding.userId}</span><span className="block text-[10px] text-muted-foreground">{finding.reason === 'missing_audit' ? `Rôle ${finding.clerkRole} sans trace au journal` : finding.reason === 'role_mismatch' ? `Clerk : ${finding.clerkRole} · journal : ${finding.auditRole ?? 'aucun'}` : `Services différents : Clerk [${finding.clerkServiceIds.join(', ') || 'aucun'}] · journal [${finding.auditServiceIds.join(', ') || 'aucun'}]`}</span></span>
+                  <Button type="button" variant="outline" className="h-8 px-2" testId={`button-review-${finding.userId}`} onClick={() => reviewFinding(finding.userId)}>Examiner</Button>
+                </li>)}</ul>
+              : <p role="status" data-testid="text-reconciliation-ok" className="mt-2 text-[11px] text-primary">Tous les rôles Clerk correspondent au journal.</p>}
+          </div>}
           <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_1fr]">
             <div className="space-y-3">
               <Field label="Rechercher un compte pilote">

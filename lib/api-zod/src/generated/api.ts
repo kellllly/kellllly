@@ -350,6 +350,23 @@ export const AppendDevelopmentRoleArchiveResponse = zod.object({
 
 
 /**
+ * For N1 accounts. Compares the current Clerk role and services of every account with the latest role event of the journal. Read-only; regularize with the attestation route after verification.
+ * @summary Accounts whose Clerk role differs from the authorization journal
+ */
+export const GetItsmRoleReconciliationResponse = zod.object({
+  "checkedAt": zod.coerce.date(),
+  "findings": zod.array(zod.object({
+  "userId": zod.string(),
+  "reason": zod.enum(['missing_audit', 'role_mismatch', 'scope_mismatch']),
+  "clerkRole": zod.string(),
+  "clerkServiceIds": zod.array(zod.string()),
+  "auditRole": zod.string().nullable(),
+  "auditServiceIds": zod.array(zod.string())
+}))
+})
+
+
+/**
  * @summary Attest the current ITSM role without changing Clerk metadata
  */
 export const attestItsmRolePathUserIdMax = 128;

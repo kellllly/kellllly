@@ -42,6 +42,7 @@ import type {
   ItsmRoleAssignmentInput,
   ItsmRoleAttestation,
   ItsmRoleAttestationInput,
+  ItsmRoleReconciliation,
   ItsmSaveInput,
   ItsmSessionMarker,
   ItsmSnapshot,
@@ -1610,6 +1611,108 @@ export const useAppendDevelopmentRoleArchive = <TError = ErrorType<void>,
       > => {
       return useMutation(getAppendDevelopmentRoleArchiveMutationOptions(options), queryClient);
     }
+
+export const getGetItsmRoleReconciliationUrl = () => {
+
+
+
+
+  return `/api/itsm/roles/reconciliation`
+}
+
+/**
+ * For N1 accounts. Compares the current Clerk role and services of every account with the latest role event of the journal. Read-only; regularize with the attestation route after verification.
+ * @summary Accounts whose Clerk role differs from the authorization journal
+ */
+export const getItsmRoleReconciliation = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmRoleReconciliation> => {
+
+  return customFetch<ItsmRoleReconciliation>(getGetItsmRoleReconciliationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmRoleReconciliationQueryKey = () => {
+    return [
+    `/api/itsm/roles/reconciliation`
+    ] as const;
+    }
+
+
+export const getGetItsmRoleReconciliationQueryOptions = <TData = Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmRoleReconciliationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmRoleReconciliation>>> = ({ signal }) => getItsmRoleReconciliation({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmRoleReconciliationQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmRoleReconciliation>>>
+export type GetItsmRoleReconciliationQueryError = ErrorType<void>
+
+
+export function useGetItsmRoleReconciliation<TData = Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmRoleReconciliation>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmRoleReconciliation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmRoleReconciliation<TData = Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmRoleReconciliation>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmRoleReconciliation>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmRoleReconciliation<TData = Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Accounts whose Clerk role differs from the authorization journal
+ */
+
+export function useGetItsmRoleReconciliation<TData = Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmRoleReconciliation>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmRoleReconciliationQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getAttestItsmRoleUrl = (userId: string,) => {
 

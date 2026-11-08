@@ -14,6 +14,7 @@ import {
   PostItsmTemporaryMessageResponse,
   GetItsmPeopleResponse,
   GetItsmContactsResponse,
+  GetItsmRoleReconciliationResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
   ImportItsmExamplesBody,
@@ -70,6 +71,7 @@ import {
   type ItsmRole,
 } from "../lib/itsm-rbac";
 import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler } from "./itsm-audit-export";
+import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
 
@@ -626,6 +628,12 @@ const loadContactUsers = async () => {
   contactUsersCache = { users, expiresAt: Date.now() + 60_000 };
   return users;
 };
+
+router.get("/itsm/roles/reconciliation", requireAuth, createRoleReconciliationHandler({
+  resolveActor: freshActorFor,
+  scan: scanItsmRoleReconciliation,
+  serialize: (body) => GetItsmRoleReconciliationResponse.parse(body),
+}));
 
 router.get("/itsm/contacts", requireAuth, async (req, res): Promise<void> => {
   const actor = await actorFor(req, res);

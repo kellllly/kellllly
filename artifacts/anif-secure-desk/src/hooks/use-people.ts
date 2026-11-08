@@ -11,10 +11,15 @@ import { displayNameFor } from '@/lib/display-name';
  * authors, requesters and actors. Until the names arrive (or if the lookup
  * fails) the text is shown unchanged, so nothing disappears.
  */
-export function usePeople() {
+export function usePeople(extraIds: readonly string[] = []) {
   const { store } = useStore();
   const { user } = useUser();
-  const ids = useMemo(() => collectUserIds([store.tickets, store.conversations, store.audit, store.kedb]), [store.tickets, store.conversations, store.audit, store.kedb]);
+  const extraKey = extraIds.join(',');
+  const ids = useMemo(
+    () => [...new Set([...collectUserIds([store.tickets, store.conversations, store.audit, store.kedb]), ...extraIds])].sort(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store.tickets, store.conversations, store.audit, store.kedb, extraKey],
+  );
   const others = useMemo(() => ids.filter((id) => id !== user?.id), [ids, user?.id]);
 
   const { data } = useQuery({

@@ -139,6 +139,30 @@ export interface ItsmContacts {
   contacts: ItsmContact[];
 }
 
+export type ItsmRoleReconciliationFindingReason = typeof ItsmRoleReconciliationFindingReason[keyof typeof ItsmRoleReconciliationFindingReason];
+
+
+export const ItsmRoleReconciliationFindingReason = {
+  missing_audit: 'missing_audit',
+  role_mismatch: 'role_mismatch',
+  scope_mismatch: 'scope_mismatch',
+} as const;
+
+export interface ItsmRoleReconciliationFinding {
+  userId: string;
+  reason: ItsmRoleReconciliationFindingReason;
+  clerkRole: string;
+  clerkServiceIds: string[];
+  /** @nullable */
+  auditRole: string | null;
+  auditServiceIds: string[];
+}
+
+export interface ItsmRoleReconciliation {
+  checkedAt: string;
+  findings: ItsmRoleReconciliationFinding[];
+}
+
 export type ItsmAuditIntegrityStatus = typeof ItsmAuditIntegrityStatus[keyof typeof ItsmAuditIntegrityStatus];
 
 
