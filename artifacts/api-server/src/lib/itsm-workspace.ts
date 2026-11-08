@@ -1004,6 +1004,24 @@ export function applyWorkspaceUpdate(
     };
     next.readStates = readStates;
   }
+  // A ticket's status changes feed its linked discussion, so the requester
+  // follows the progress without leaving the messaging (cahier des charges).
+  for (const ticket of nextTickets) {
+    const prior = oldTickets.find((item) => item.id === ticket.id);
+    if (!prior || prior.status === ticket.status || typeof ticket.conversationId !== "string") continue;
+    const index = conversations.findIndex((conversation) => conversation.id === ticket.conversationId);
+    if (index < 0) continue;
+    const thread = conversations[index]!;
+    conversations[index] = { ...thread, messages: [...records(thread.messages), {
+      id: randomUUID(),
+      author: `Suivi ${String(ticket.id)}`,
+      body: `Ticket ${String(ticket.id)} : ${String(prior.status)} → ${String(ticket.status)}.`,
+      time: shortTime(now),
+      at: newStamp(now),
+      system: true,
+      ticketId: ticket.id,
+    }] };
+  }
   next.conversations = conversations;
 
   const oldAudit = records(current.audit);

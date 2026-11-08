@@ -58,3 +58,20 @@ test("an invited analyst can post in the room; an analyst who is not invited can
   assert.equal(room.messages.at(-1)!.author, "user_analyst");
   assert.equal(room.messages.at(-1)!.body, "Analyse du relevé");
 });
+
+test("a ticket status change is posted in its linked discussion", () => {
+  const ssiActor = { id: "user_ssi", role: "N3" as const, serviceIds: [] };
+  const current = {
+    tickets: [{ id: "INC-1", title: "Imprimante", kind: "Incident", category: "Équipement", impact: 2, urgency: 2, priority: "P3", supportLevel: 1, status: "Nouveau", assignee: "Équipe support", requester: "user_a", serviceId: null, assetId: null, openedAt: "2026-11-08T08:00:00.000Z", acknowledgedAt: null, resolvedAt: null, closedAt: null, description: "Panne", cab: null, updates: [], conversationId: "C-SUP" }],
+    services: [], assets: [], kedb: [], notifications: [], audit: [],
+    conversations: [{ id: "C-SUP", title: "Support", kind: "Support", classification: "Interne", participants: [], readCount: 0, messages: [] }],
+  };
+  const submitted = structuredClone(current) as typeof current;
+  submitted.tickets[0]!.status = "Pris en compte";
+  const saved = applyWorkspaceUpdate(current, submitted, ssiActor, new Date("2026-11-08T08:05:00.000Z"));
+  const messages = (saved.conversations as Array<{ messages: Array<Record<string, unknown>> }>)[0]!.messages;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0]!.body, "Ticket INC-1 : Nouveau → Pris en compte.");
+  assert.equal(messages[0]!.system, true);
+  assert.equal((current.conversations[0]!.messages as unknown[]).length, 0, "the stored state is not mutated");
+});
