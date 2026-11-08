@@ -20,6 +20,9 @@ fournie, pas une attestation juridique, réglementaire ou technique.
 | Journalisation, p. 3 | Historique partagé en ajout seul côté serveur, filtrable et exportable en CSV. Chaque événement est scellé par une empreinte SHA-256 chaînée à la précédente (séquence, empreinte précédente, empreinte), vérifiable dans le journal et reprise dans l’export. Cela détecte une modification faite hors de l’application, mais ne vaut ni archive WORM ni horodatage qualifié : un accès en écriture à toute la base permet de recalculer la chaîne, d’où l’intérêt de noter le dernier sceau ailleurs. |
 | Continuité, architecture et recette, p. 10–18 | Référentiel de gouvernance séparant les objectifs futurs des comportements effectivement présents. |
 
+| Messagerie (nouveau cahier, 20 p.) | Salons d’enquête réservés aux N1 et aux N2 invités (N3, N4 et N5 exclus par l’API), messages éphémères de 30 s à 30 jours effacés par le serveur, filigrane dynamique (compte, IP, heure), assistant SI de diagnostic dans le canal support. Voir `docs/comparaison-cahiers-des-charges.md`. |
+| Passerelle messagerie–ticketing (nouveau cahier) | Détection bloquante des données nominatives et financières, environnement d’exécution joint au ticket, changements d’état publiés dans la discussion liée, escalade automatique selon le tableau SLA. |
+
 ## Cibles SLA reprises du cahier
 
 | Priorité | Prise en compte | Résolution |
