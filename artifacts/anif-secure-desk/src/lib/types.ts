@@ -14,6 +14,8 @@ export type Message = {
   isInstruction?: boolean;
   /** Ephemeral message: lifetime chosen by the sender, expiry and erasure set by the server. */
   ttlSeconds?: number; expiresAt?: string; expired?: boolean;
+  /** Simulated attachment: description only (no file content), checked by the API. */
+  attachment?: { name: string; type: string; size: number; sha256: string; warnings: string[]; acknowledged?: boolean };
 };
 export type Conversation = {
   id: string; title: string; kind: string; classification: string; participants: string[];

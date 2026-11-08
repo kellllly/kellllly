@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sanitizeAttachment } from "./itsm-attachments.ts";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
 import { isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
@@ -626,7 +627,9 @@ export const MAX_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const EPHEMERAL_PURGE_AUDIT_TYPE = "itsm.messages.expired";
 
 function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
-  const { ttlSeconds, expiresAt: _clientExpiry, expired: _clientExpired, ...rest } = message;
+  const { ttlSeconds, expiresAt: _clientExpiry, expired: _clientExpired, attachment: rawAttachment, ...base } = message;
+  const attachment = sanitizeAttachment(rawAttachment);
+  const rest = attachment ? { ...base, attachment } : base;
   const ttl = Number(ttlSeconds);
   if (!Number.isFinite(ttl) || ttl <= 0) return rest;
   const seconds = Math.round(Math.min(MAX_MESSAGE_TTL_SECONDS, Math.max(MIN_MESSAGE_TTL_SECONDS, ttl)));

@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { getItsmContacts, getItsmUserDirectory, getItsmWorkspaceVersion, postItsmTemporaryMessage } from '@workspace/api-client-react';
 import { isClosedChannel, TEMPORARY_DURATIONS } from '@/lib/temporary-channel';
 import { channelAccreditation, directPeer } from '@/lib/protected-channel';
+import { checkAttachment, describeFile, formatSize, type AttachmentDescription } from '@/lib/attachments';
 import { findSensitiveData } from '@/lib/sensitive-data';
 import { SupportAssistant } from '@/components/support-assistant';
 import { captureEnvironment, formatEnvironment, type RuntimeEnvironment } from '@/lib/runtime-environment';
 import { Link, useLocation, useSearch } from 'wouter';
-import { ArrowRight, Eye, EyeOff, Headphones, LockKeyhole, Plus, Send, TicketPlus, Timer } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Eye, EyeOff, Headphones, LockKeyhole, Paperclip, Plus, Send, TicketPlus, Timer, X } from 'lucide-react';
 import { MESSAGE_TTL_OPTIONS, isExpiredMessage, remainingLabel } from '@/lib/ephemeral';
 import { formatWAT } from '@/lib/itsm';
 import { useNow, useStore } from '@/lib/store';
@@ -33,6 +34,18 @@ export default function MessagesPage() { const { person } = usePeople();
   const [supportMessageFilter, setSupportMessageFilter] = useState<SupportMessageFilter>('all');
   const [supportMessageKind, setSupportMessageKind] = useState<'report' | 'instruction'>('report');
   const [ttlSeconds, setTtlSeconds] = useState(0);
+  // Pending attachment: description only; warnings must be acknowledged before sending.
+  const [attachment, setAttachment] = useState<(AttachmentDescription & { warnings: string[]; blocked: string | null }) | null>(null);
+  const [attachmentAck, setAttachmentAck] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const pickFile = async (file: File | undefined) => {
+    setAttachmentAck(false);
+    if (!file) { setAttachment(null); return; }
+    const check = checkAttachment(file.name, file.type, file.size);
+    const description = check.blocked ? { name: file.name, type: file.type, size: file.size, sha256: '' } : await describeFile(file);
+    setAttachment({ ...description, ...check });
+  };
+  const attachmentReady = !attachment || (!attachment.blocked && (attachment.warnings.length === 0 || attachmentAck));
   const now = useNow(1000);
   const messageListRef = useRef<HTMLDivElement>(null);
 
@@ -86,7 +99,7 @@ export default function MessagesPage() { const { person } = usePeople();
   const readOnly = closed || announcementReadOnly;
   const [postError, setPostError] = useState('');
   const send = (e: FormEvent) => {
-    e.preventDefault(); if (!draft.trim() || !convo || readOnly) return;
+    e.preventDefault(); if ((!draft.trim() && !attachment) || !convo || readOnly || !attachmentReady) return;
     if (isAuditor) {
       const id = convo.id; const body = draft.trim();
       setPostError('');
@@ -102,13 +115,15 @@ export default function MessagesPage() { const { person } = usePeople();
     setStore(s => {
       const drafts = { ...s.drafts }; delete drafts[id];
       const message: Message = {
-        id: messageId, author: s.profile.name, body: draft.trim(), time: '', at,
+        id: messageId, author: s.profile.name, body: draft.trim() || `Pièce jointe : ${attachment?.name ?? ''}`, time: '', at,
+        ...(attachment ? { attachment: { name: attachment.name, type: attachment.type, size: attachment.size, sha256: attachment.sha256, warnings: attachment.warnings, ...(attachment.warnings.length ? { acknowledged: true } : {}) } } : {}),
         ...(isSupport ? { isInstruction: supportMessageKind === 'instruction' } : {}),
         ...(ttlSeconds > 0 ? { ttlSeconds } : {}),
       };
       return { ...s, drafts, conversations: s.conversations.map(c => (c.id === id ? { ...c, messages: [...c.messages, message] } : c)) };
     });
     setSupportMessageKind('report');
+    setAttachment(null); setAttachmentAck(false); if (fileInput.current) fileInput.current.value = '';
     log(`Message envoyé dans la conversation ${id}`, 'Messagerie');
   };
   const toggleRead = (c: Conversation) => {
@@ -156,7 +171,7 @@ export default function MessagesPage() { const { person } = usePeople();
           const mine = m.author === store.profile.name && !m.system; const t = ticketFor(m); const hit = q && m.body.toLowerCase().includes(q);
           const isSourceMessage = convo.id === active && m.id === focusMessageId;
           if (m.system) return <div key={m.id} data-message-id={m.id} data-testid={`message-${m.id}`} className={`flex min-w-0 justify-center rounded-lg ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><button onClick={() => m.ticketId && setFocusTicket(m.ticketId)} className="max-w-[88%] break-words rounded-full border border-border bg-card px-3.5 py-1.5 text-center text-[10px] text-muted-foreground hover:border-primary/40">{messageTime(m)} {m.body}</button></div>;
-          return <div key={m.id} data-message-id={m.id} className={`flex min-w-0 gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={person(m.author)} /><div className={`min-w-0 max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{person(m.author)}</span><span>{messageTime(m)}</span></div><div className={`break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{isExpiredMessage(m, now) ? <span data-testid={`message-expired-${m.id}`} className="italic text-muted-foreground">Message éphémère expiré — contenu effacé.</span> : m.body}</div>{remainingLabel(m, now) && <div data-testid={`message-ttl-${m.id}`} className={`mt-1 inline-flex items-center gap-1 text-[9px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><Timer size={10} />S’efface dans {remainingLabel(m, now)}</div>}
+          return <div key={m.id} data-message-id={m.id} className={`flex min-w-0 gap-2.5 rounded-lg ${mine ? 'flex-row-reverse' : ''} ${isSourceMessage ? 'ring-2 ring-[#c88e43]/70 ring-offset-4 ring-offset-[#f7f6f1] dark:ring-offset-[#172428]' : ''}`}><Avatar name={person(m.author)} /><div className={`min-w-0 max-w-[78%] ${mine ? 'text-right' : ''}`}><div className={`mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><span className="font-semibold text-foreground">{person(m.author)}</span><span>{messageTime(m)}</span></div><div className={`break-words [overflow-wrap:anywhere] rounded-xl px-3.5 py-2.5 text-left text-[12px] leading-relaxed ${hit ? 'ring-2 ring-[#c88e43]/60' : ''} ${mine ? 'rounded-tr-sm bg-[#dcebe2] text-[#274837] dark:bg-[#285143] dark:text-[#e0f0e4]' : 'rounded-tl-sm border border-border bg-card'}`}>{isExpiredMessage(m, now) ? <span data-testid={`message-expired-${m.id}`} className="italic text-muted-foreground">Message éphémère expiré — contenu effacé.</span> : m.body}</div>{m.attachment && !isExpiredMessage(m, now) && <div data-testid={`message-attachment-${m.id}`} className="mt-1.5 inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-left text-[10px] text-muted-foreground"><Paperclip size={12} className="shrink-0" /><span className="min-w-0 truncate"><span className="font-semibold text-foreground">{m.attachment.name}</span> · {formatSize(m.attachment.size)} · SHA-256 {m.attachment.sha256.slice(0, 12)}…</span>{m.attachment.warnings.length > 0 && <span title={m.attachment.warnings.join(' ')} className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#9a6a1c]"><AlertTriangle size={11} />Format signalé</span>}</div>}{remainingLabel(m, now) && <div data-testid={`message-ttl-${m.id}`} className={`mt-1 inline-flex items-center gap-1 text-[9px] text-muted-foreground ${mine ? 'justify-end' : ''}`}><Timer size={10} />S’efface dans {remainingLabel(m, now)}</div>}
             {convo.kind === 'Support' && <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <Badge tone={m.isInstruction ? 'amber' : 'blue'}>{m.isInstruction ? 'Consigne' : 'Signalement'}</Badge>
               {t ? <button data-testid={`button-linked-${m.id}`} onClick={() => setFocusTicket(t.id)} className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-primary hover:underline"><Badge tone={statusTone(t.status)}>{t.id} · {t.status}</Badge></button> : isConvertibleSupportMessage(m) && <button data-testid={`button-convert-${m.id}`} onClick={() => setConverting({ message: m, conversation: convo })} className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary hover:underline"><TicketPlus size={12} />Convertir en incident</button>}
@@ -169,7 +184,13 @@ export default function MessagesPage() { const { person } = usePeople();
           {closed && <p role="status" data-testid="text-channel-closed" className="mb-2 text-[11px] text-muted-foreground">Ce canal temporaire est clos : il n’accepte plus de messages.</p>}
           {postError && <p role="alert" className="mb-2 text-[11px] text-destructive">{postError}</p>}
           {!isAuditor && <div className="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground"><Timer size={12} /><label htmlFor="select-message-ttl">Durée de vie du message</label><select id="select-message-ttl" data-testid="select-message-ttl" value={ttlSeconds} onChange={e => setTtlSeconds(Number(e.target.value))} className="h-7 rounded-md border border-border bg-card px-2 text-[10px] text-foreground">{MESSAGE_TTL_OPTIONS.map(o => <option key={o.seconds} value={o.seconds}>{o.label}</option>)}</select>{ttlSeconds > 0 && <span>Le texte sera effacé du serveur à expiration.</span>}</div>}
-          <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 focus-within:ring-2 focus-within:ring-primary/25"><textarea data-testid="input-message" disabled={readOnly} rows={2} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} placeholder="Écrire un message…" className="max-h-28 min-h-[42px] flex-1 resize-y bg-transparent px-2 py-1.5 text-[12px] outline-none placeholder:text-muted-foreground" aria-label="Message" /><Button type="submit" testId="button-send" className="px-3 py-2" disabled={!draft.trim() || readOnly}><Send size={14} /><span className="hidden sm:inline">Simuler l’envoi</span></Button></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-muted-foreground"><span>{draft ? 'Brouillon temporaire dans cette session' : 'Entrée pour simuler l’envoi · Maj + Entrée pour une nouvelle ligne'}</span><span>Les conversations fictives sont partagées. Aucun message n’est transmis à un destinataire externe.</span></div></form>
+          {attachment && <div data-testid="panel-attachment" className={`mb-2 rounded-xl border px-3 py-2.5 text-[11px] leading-relaxed ${attachment.blocked ? 'border-[#d39b90] bg-[#f5e2df] text-[#7d3a31] dark:bg-[#4c302d] dark:text-[#f0c1b9]' : attachment.warnings.length ? 'border-[#d8b875] bg-[#f4ecd9] text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]' : 'border-border bg-muted/40'}`}>
+            <div className="flex items-start gap-2"><Paperclip size={13} className="mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><div className="truncate font-semibold">{attachment.name} · {formatSize(attachment.size)}</div>
+              {attachment.blocked ? <p data-testid="attachment-blocked" role="alert">{attachment.blocked} Les exécutables et scripts peuvent prendre le contrôle du poste du destinataire.</p>
+                : attachment.warnings.length ? <div data-testid="attachment-warning" role="alert"><p className="mt-1 font-semibold">Avant d’envoyer ce fichier :</p><ul className="mt-1 list-disc space-y-0.5 pl-4">{attachment.warnings.map(w => <li key={w}>{w}</li>)}</ul><p className="mt-1">Vérifiez sa provenance, préférez un PDF ou un document sans macro, et ne transmettez jamais un fichier reçu d’un expéditeur inconnu. Les pièces d’enquête réelles ne passent pas par ce pilote.</p><label className="mt-1.5 flex items-center gap-2 font-semibold"><input data-testid="checkbox-attachment-ack" type="checkbox" checked={attachmentAck} onChange={e => setAttachmentAck(e.target.checked)} className="accent-primary" />J’ai vérifié ce fichier et je confirme son envoi</label></div>
+                : <p className="text-muted-foreground">Pièce jointe simulée : seuls le nom, le type, la taille et l’empreinte SHA-256 sont transmis, jamais le contenu.</p>}</div>
+              <button type="button" data-testid="button-remove-attachment" aria-label="Retirer la pièce jointe" onClick={() => { void pickFile(undefined); if (fileInput.current) fileInput.current.value = ''; }} className="focus-ring rounded p-1 hover:bg-black/5"><X size={13} /></button></div></div>}
+          <div className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 focus-within:ring-2 focus-within:ring-primary/25">{!isAuditor && <><input ref={fileInput} data-testid="input-attachment" type="file" className="hidden" onChange={e => { void pickFile(e.target.files?.[0]); }} /><button type="button" data-testid="button-attach" aria-label="Joindre un fichier (simulé)" title="Joindre un fichier (seul son descriptif est transmis)" disabled={readOnly} onClick={() => fileInput.current?.click()} className="focus-ring mb-1 rounded-lg p-2 text-muted-foreground hover:bg-muted disabled:opacity-40"><Paperclip size={16} /></button></>}<textarea data-testid="input-message" disabled={readOnly} rows={2} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} placeholder="Écrire un message…" className="max-h-28 min-h-[42px] flex-1 resize-y bg-transparent px-2 py-1.5 text-[12px] outline-none placeholder:text-muted-foreground" aria-label="Message" /><Button type="submit" testId="button-send" className="px-3 py-2" disabled={(!draft.trim() && !attachment) || readOnly || !attachmentReady}><Send size={14} /><span className="hidden sm:inline">Simuler l’envoi</span></Button></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-muted-foreground"><span>{draft ? 'Brouillon temporaire dans cette session' : 'Entrée pour simuler l’envoi · Maj + Entrée pour une nouvelle ligne'}</span><span>Les conversations fictives sont partagées. Aucun message n’est transmis à un destinataire externe.</span></div></form>
       </section> : <div className="grid min-h-[500px] place-items-center text-sm text-muted-foreground">Sélectionnez une conversation.</div>}
 
       <aside className="min-w-0 border-t border-border p-4 lg:col-span-2 2xl:col-span-1 2xl:border-l 2xl:border-t-0" data-testid="panel-linked-tickets">

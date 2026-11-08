@@ -57,8 +57,10 @@ pas le compteur à zéro.
   la confirmation du demandeur et les identités/horodatages des actions.
 - Chiffrement de bout en bout, gestion et révocation des clés, Double Ratchet,
   MLS, SQLCipher et protection matérielle des secrets.
-- Transport de fichiers, sanitarisation EXIF, analyse de pièces jointes et
-  effacement cryptographique sur des terminaux distants.
+- Transport et stockage de fichiers, sanitarisation EXIF, analyse antivirus du
+  contenu et effacement cryptographique sur des terminaux distants. Le pilote ne
+  transmet qu’un descriptif des pièces jointes (nom, type, taille, SHA-256) et
+  contrôle leur format avant l’envoi.
 - Preuves d’audit WORM, SIEM, horodatage RFC 3161 et ancrage externe du sceau. Le pilote fournit
   seulement une chaîne d’empreintes SHA-256 vérifiable (voir Journalisation).
 - Réplication, supervision, basculement Nkok/Libreville et sauvegardes 3-2-1-1-0.
