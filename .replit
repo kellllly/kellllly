@@ -46,6 +46,5 @@ packages = ["freetype", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "mupdf
 [userenv]
 
 [userenv.development]
-ITSM_ROLE_ARCHIVE_MODE = "external"
-ITSM_DEV_ROLE_ARCHIVE_ENABLED = "true"
-ITSM_DEV_ROLE_ARCHIVE_URL = "auto"
+ITSM_ROLE_ARCHIVE_MODE = "development-db"
+ITSM_DEV_ROLE_ARCHIVE_ENABLED = "false"

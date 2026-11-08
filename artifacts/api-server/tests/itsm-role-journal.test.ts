@@ -46,3 +46,18 @@ test("the journal is read once per cache period and reread after invalidation", 
   cache.invalidate(); await cache.latest("user_a");
   assert.equal(loads, 3);
 });
+
+test("in development-db mode the archive check needs no remote receiver", async () => {
+  const { checkItsmRoleArchiveConnection } = await import("../src/lib/itsm-workspace.ts");
+  const previous = { mode: process.env.ITSM_ROLE_ARCHIVE_MODE, env: process.env.NODE_ENV, url: process.env.ITSM_ROLE_ARCHIVE_URL };
+  process.env.ITSM_ROLE_ARCHIVE_MODE = "development-db"; process.env.NODE_ENV = "development"; delete process.env.ITSM_ROLE_ARCHIVE_URL;
+  try {
+    let called = false;
+    await checkItsmRoleArchiveConnection({ fetchImpl: (async () => { called = true; return new Response(null, { status: 500 }); }) as typeof fetch });
+    assert.equal(called, false);
+  } finally {
+    for (const [key, value] of [["ITSM_ROLE_ARCHIVE_MODE", previous.mode], ["NODE_ENV", previous.env], ["ITSM_ROLE_ARCHIVE_URL", previous.url]] as const) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+});

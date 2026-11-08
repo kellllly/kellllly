@@ -381,6 +381,9 @@ export async function checkItsmRoleArchiveConnection(
     timeoutMs?: number;
   } = {},
 ): Promise<void> {
+  // Development-db mode: the archive is written in the same PostgreSQL
+  // transaction as the journal, so there is no remote receiver to reach.
+  if (options.url === undefined && isDevelopmentDatabaseRoleArchiveEnabled()) return;
   const { endpoint, headers } = getItsmRoleArchiveConfig(options);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 5_000);
