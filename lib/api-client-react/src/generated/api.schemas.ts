@@ -165,6 +165,12 @@ export interface ItsmAuditIntegrity {
   checkedAt: string;
 }
 
+export interface ItsmSessionMarker {
+  accountId: string;
+  ip: string;
+  serverTime: string;
+}
+
 export interface ItsmWorkspaceVersion {
   /** @minimum 0 */
   version: number;

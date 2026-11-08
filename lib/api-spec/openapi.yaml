@@ -95,6 +95,22 @@ paths:
           description: Authentication required
         "403":
           description: The assigned role cannot import examples
+  /itsm/session:
+    get:
+      operationId: getItsmSessionMarker
+      tags: [itsm]
+      summary: Account and network address shown in the on-screen watermark
+      responses:
+        "200":
+          description: Watermark details for the authenticated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmSessionMarker"
+        "401":
+          description: Authentication required
+        "403":
+          description: A role assignment is required
   /itsm/version:
     get:
       operationId: getItsmWorkspaceVersion
@@ -504,6 +520,13 @@ components:
           type: string
           format: date-time
       required: [status, events, verified, pruned, head, firstBreak, checkedAt]
+    ItsmSessionMarker:
+      type: object
+      properties:
+        accountId: { type: string }
+        ip: { type: string }
+        serverTime: { type: string, format: date-time }
+      required: [accountId, ip, serverTime]
     ItsmWorkspaceVersion:
       type: object
       properties:

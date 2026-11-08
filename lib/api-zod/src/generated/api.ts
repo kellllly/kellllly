@@ -70,6 +70,16 @@ export const ImportItsmExamplesResponse = zod.object({
 
 
 /**
+ * @summary Account and network address shown in the on-screen watermark
+ */
+export const GetItsmSessionMarkerResponse = zod.object({
+  "accountId": zod.string(),
+  "ip": zod.string(),
+  "serverTime": zod.coerce.date()
+})
+
+
+/**
  * Lightweight polling endpoint. Clients fetch the full workspace only when the version changes.
  * @summary Read only the version of the shared ITSM workspace
  */

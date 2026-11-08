@@ -41,6 +41,7 @@ import type {
   ItsmRoleAttestation,
   ItsmRoleAttestationInput,
   ItsmSaveInput,
+  ItsmSessionMarker,
   ItsmSnapshot,
   ItsmUserDirectoryPage,
   ItsmWorkspaceConflict,
@@ -452,6 +453,107 @@ export const useImportItsmExamples = <TError = ErrorType<void>,
       > => {
       return useMutation(getImportItsmExamplesMutationOptions(options), queryClient);
     }
+
+export const getGetItsmSessionMarkerUrl = () => {
+
+
+
+
+  return `/api/itsm/session`
+}
+
+/**
+ * @summary Account and network address shown in the on-screen watermark
+ */
+export const getItsmSessionMarker = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmSessionMarker> => {
+
+  return customFetch<ItsmSessionMarker>(getGetItsmSessionMarkerUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmSessionMarkerQueryKey = () => {
+    return [
+    `/api/itsm/session`
+    ] as const;
+    }
+
+
+export const getGetItsmSessionMarkerQueryOptions = <TData = Awaited<ReturnType<typeof getItsmSessionMarker>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmSessionMarkerQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmSessionMarker>>> = ({ signal }) => getItsmSessionMarker({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmSessionMarkerQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmSessionMarker>>>
+export type GetItsmSessionMarkerQueryError = ErrorType<void>
+
+
+export function useGetItsmSessionMarker<TData = Awaited<ReturnType<typeof getItsmSessionMarker>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmSessionMarker>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmSessionMarker>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmSessionMarker<TData = Awaited<ReturnType<typeof getItsmSessionMarker>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmSessionMarker>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmSessionMarker>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmSessionMarker<TData = Awaited<ReturnType<typeof getItsmSessionMarker>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Account and network address shown in the on-screen watermark
+ */
+
+export function useGetItsmSessionMarker<TData = Awaited<ReturnType<typeof getItsmSessionMarker>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmSessionMarker>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmSessionMarkerQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetItsmWorkspaceVersionUrl = () => {
 

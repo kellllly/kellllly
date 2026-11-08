@@ -19,3 +19,10 @@ test('the identifier remains the last resort', () => {
   assert.equal(displayNameFor(null, id), id);
   assert.equal(displayNameFor({ firstName: '  ', lastName: null }, id), id);
 });
+
+test('the watermark names the account, its address and the time to the second', async () => {
+  const { watermarkText } = await import('../src/lib/watermark.ts');
+  const text = watermarkText('Awa Mba', 'user_2abcdefghijklmnop', '41.158.1.2', Date.parse('2026-11-08T09:05:07.000Z'));
+  assert.equal(text, 'Awa Mba · …ijklmnop · IP 41.158.1.2 · 08/11/2026 10:05:07');
+  assert.equal(watermarkText('Awa', 'user_1', null, Date.parse('2026-11-08T09:05:07.000Z')), 'Awa · user_1 · 08/11/2026 10:05:07');
+});

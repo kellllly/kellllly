@@ -36,6 +36,7 @@ export * from './itsmRoleAttestationInput';
 export * from './itsmRoleAttestationInputRole';
 export * from './itsmRoleAttestationRole';
 export * from './itsmSaveInput';
+export * from './itsmSessionMarker';
 export * from './itsmSnapshot';
 export * from './itsmStore';
 export * from './itsmUserDirectoryAccount';

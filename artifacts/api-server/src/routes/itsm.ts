@@ -9,6 +9,7 @@ import {
   AttestItsmRoleResponse,
   GetItsmWorkspaceResponse,
   GetItsmWorkspaceVersionResponse,
+  GetItsmSessionMarkerResponse,
   GetItsmPeopleResponse,
   GetItsmUserDirectoryQueryParams,
   GetItsmUserDirectoryResponse,
@@ -518,6 +519,20 @@ router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
     version: row?.version ?? 0,
   });
   res.json(response);
+});
+
+/**
+ * Watermark details: account id and the address the request came from. The
+ * first X-Forwarded-For entry is used behind the hosting proxy; it is an aid to
+ * attribution on screen, not an access control.
+ */
+router.get("/itsm/session", requireAuth, async (req, res): Promise<void> => {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+  const ip = (forwarded || req.socket.remoteAddress || "inconnue").replace(/^::ffff:/, "").slice(0, 64);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(GetItsmSessionMarkerResponse.parse({ accountId: actor.id, ip, serverTime: new Date().toISOString() }));
 });
 
 // Polling endpoint: reads only the version column, so idle tabs do not pull

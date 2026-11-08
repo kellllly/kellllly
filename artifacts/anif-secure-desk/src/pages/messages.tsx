@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getItsmUserDirectory } from '@workspace/api-client-react';
+import { getItsmUserDirectory, getItsmWorkspaceVersion } from '@workspace/api-client-react';
+import { findSensitiveData } from '@/lib/sensitive-data';
+import { SupportAssistant } from '@/components/support-assistant';
+import { captureEnvironment, formatEnvironment, type RuntimeEnvironment } from '@/lib/runtime-environment';
 import { Link, useLocation, useSearch } from 'wouter';
 import { ArrowRight, Eye, EyeOff, Headphones, LockKeyhole, Plus, Send, TicketPlus, Timer } from 'lucide-react';
 import { MESSAGE_TTL_OPTIONS, isExpiredMessage, remainingLabel } from '@/lib/ephemeral';
@@ -110,6 +113,7 @@ export default function MessagesPage() { const { person } = usePeople();
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-4 sm:px-5">{convo.kind === 'Support' ? <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#213b42] text-[#bfe0cf]"><Headphones size={15} /></div> : <Avatar name={person(convo.participants[1] || convo.title)} />}<div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold">{convo.title}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{convo.participants.map(person).join(' · ')}</div></div><Badge tone={convo.classification === 'Restreint' ? 'amber' : 'green'}>{convo.classification}</Badge><button data-testid="button-toggle-read" onClick={() => toggleRead(convo)} className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted" title="Basculer lu / non lu">{unreadOf(convo) > 0 ? <><Eye size={13} />Marquer lu</> : <><EyeOff size={13} />Marquer non lu</>}</button></div>
         {convo.kind === 'Enquête' && <div role="note" data-testid="banner-investigation" className="flex items-center gap-2 border-b border-[#d8b875]/70 bg-[#f4ecd9] px-5 py-2.5 text-[10px] leading-relaxed text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]"><LockKeyhole size={13} className="shrink-0" /><span><strong>Salon d’enquête restreint.</strong> Visible uniquement par la Direction (N1) et les analystes invités : {(convo.memberIds ?? []).map(person).join(', ') || '—'}. Les comptes SSI, services d’appui et auditeurs n’y ont pas accès. Ce pilote n’applique pas de chiffrement de bout en bout.</span></div>}
         {convo.kind === 'Support' && <div className="border-b border-border bg-[#e1eaf0]/60 px-5 py-2.5 text-[10px] leading-relaxed text-[#3b6177] dark:bg-[#263c4a]/50 dark:text-[#a8c8d8]">Canal support : seuls ses messages peuvent être convertis en incident, après relecture manuelle d’un résumé technique. Aucune anonymisation automatique n’est effectuée.</div>}
+        {convo.kind === 'Support' && <SupportAssistant onReport={text => { setSupportMessageKind('report'); setDraft(text); }} />}
         {convo.kind === 'Support' && <div className="flex flex-wrap items-center gap-2 border-b border-border px-5 py-2.5" role="group" aria-label="Filtrer l’historique du canal support">
           <span className="mr-1 text-[10px] font-semibold text-muted-foreground">Afficher :</span>
           {([
@@ -209,8 +213,12 @@ function ConvertDialog({ message, onClose, onConvert }: { message: Message; onCl
   const [summary, setSummary] = useState(`Signalement du canal support (${messageTime(message)}).\nSymptôme technique : ${message.body}\nPérimètre observé : à préciser.`);
   const [impact, setImpact] = useState<Level>(2); const [urgency, setUrgency] = useState<Level>(2); const [serviceId, setServiceId] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [environment, setEnvironment] = useState<RuntimeEnvironment | null>(null);
+  useEffect(() => { void captureEnvironment(() => getItsmWorkspaceVersion()).then(setEnvironment); }, []);
+  const findings = findSensitiveData(title, summary);
+  const blocked = findings.length > 0;
   return <Modal wide title="Convertir en incident" description="Relisez et modifiez le résumé technique. Aucune anonymisation automatique : retirez vous-même toute donnée personnelle, d’enquête ou sensible." onClose={onClose}>
-    <form onSubmit={e => { e.preventDefault(); if (confirmed && title.trim() && summary.trim()) onConvert(title.trim(), summary.trim(), impact, urgency, serviceId); }} className="space-y-3">
+    <form onSubmit={e => { e.preventDefault(); if (confirmed && !blocked && title.trim() && summary.trim()) onConvert(title.trim(), environment ? `${summary.trim()}\n\n${formatEnvironment(environment)}` : summary.trim(), impact, urgency, serviceId); }} className="space-y-3">
       <div data-testid="conversion-source-message" className="rounded-lg border border-primary/30 bg-muted/50 p-3">
         <div className="eyebrow">MESSAGE SOURCE · {message.id}</div>
         <div className="mt-1 text-[10px] font-semibold text-muted-foreground">{person(message.author)} · {messageTime(message)}</div>
@@ -219,9 +227,11 @@ function ConvertDialog({ message, onClose, onConvert }: { message: Message; onCl
       <Field label="Sujet de l’incident"><input data-testid="input-convert-title" required value={title} onChange={e => setTitle(e.target.value)} className={inputCls} /></Field>
       <Field label="Résumé technique relu"><textarea data-testid="input-convert-summary" required rows={5} value={summary} onChange={e => setSummary(e.target.value)} className={textareaCls} /></Field>
       <div className="grid gap-3 sm:grid-cols-3"><Field label="Impact"><select value={impact} onChange={e => setImpact(Number(e.target.value) as Level)} className={inputCls}>{([1, 2, 3] as Level[]).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}</select></Field><Field label="Urgence"><select value={urgency} onChange={e => setUrgency(Number(e.target.value) as Level)} className={inputCls}>{([1, 2, 3] as Level[]).map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}</select></Field><Field label="Service"><select value={serviceId} onChange={e => setServiceId(e.target.value)} className={inputCls}><option value="">Aucun</option>{store.services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field></div>
+      {blocked && <div role="alert" data-testid="alert-sensitive-data" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-[11px] text-destructive"><div className="font-semibold">Données nominatives ou financières détectées : retirez-les avant de créer l’incident.</div><ul className="mt-1 list-disc pl-5">{findings.map((f, i) => <li key={i}>{f.kind} ({f.sample})</li>)}</ul><p className="mt-1 text-[10px]">Détection automatique indicative : elle ne remplace pas votre relecture.</p></div>}
+      <div data-testid="conversion-environment" className="rounded-lg border border-border bg-muted/40 p-3 text-[10px] leading-relaxed text-muted-foreground"><div className="eyebrow mb-1">ENVIRONNEMENT D’EXÉCUTION JOINT AU TICKET</div>{environment ? <pre className="whitespace-pre-wrap font-sans">{formatEnvironment(environment).split('\n').slice(1).join('\n')}</pre> : 'Relevé en cours…'}</div>
       <PriorityPreview impact={impact} urgency={urgency} />
       <label className="flex items-start gap-2.5 rounded-lg border border-[#d8b875]/70 bg-[#f4ecd9] p-3 text-[11px] text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]"><input data-testid="checkbox-no-sensitive" type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5" /><span>J’ai relu ce résumé et je confirme qu’il ne contient aucune donnée personnelle réelle, information d’enquête ou information classifiée.</span></label>
-      <div data-dialog-sticky-actions className="sticky bottom-[-1.25rem] z-10 -mx-5 -mb-5 flex flex-wrap justify-end gap-2 border-t border-border bg-card px-5 pb-5 pt-3"><Button variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" disabled={!confirmed} testId="button-submit-convert"><TicketPlus size={14} />Créer l’incident</Button></div>
+      <div data-dialog-sticky-actions className="sticky bottom-[-1.25rem] z-10 -mx-5 -mb-5 flex flex-wrap justify-end gap-2 border-t border-border bg-card px-5 pb-5 pt-3"><Button variant="outline" onClick={onClose}>Annuler</Button><Button type="submit" disabled={!confirmed || blocked} testId="button-submit-convert"><TicketPlus size={14} />Créer l’incident</Button></div>
     </form>
   </Modal>;
 }
