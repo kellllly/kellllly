@@ -44,6 +44,7 @@ import {
   type ItsmRoleSnapshot,
   type ItsmRoleChangeArchiveEvent,
   sealItsmWorkspaceAudit,
+  ensureSupportServiceChannels,
   recordItsmSlaBreaches,
   purgeExpiredMessages,
   postTemporaryChannelMessage,
@@ -123,6 +124,16 @@ export async function sealStoredAuditJournal(): Promise<boolean> {
     const sealed = sealItsmWorkspaceAudit(store);
     if (!sealed) return false;
     await saveStore(sealed);
+    return true;
+  });
+}
+
+/** Opens the announcements channel and the support services room if missing. */
+export async function ensureSupportServiceChannelsNow(): Promise<boolean> {
+  return withAdminChangeLock(async (store, saveStore) => {
+    const next = ensureSupportServiceChannels(store);
+    if (!next) return false;
+    await saveStore(next);
     return true;
   });
 }

@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { createItsmRoleReconciliationMonitor } from "./lib/itsm-workspace";
 import { createItsmRoleArchiveHealthMonitor } from "./lib/itsm-role-archive-monitor";
 import { notifyItsmRoleArchiveAlert } from "./lib/itsm-role-archive-slack-alerts";
-import { checkItsmRoleArchiveAvailability, purgeExpiredMessagesNow, recordSlaBreachesNow, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
+import { checkItsmRoleArchiveAvailability, purgeExpiredMessagesNow, recordSlaBreachesNow, scanItsmRoleReconciliation, sealStoredAuditJournal, ensureSupportServiceChannelsNow } from "./routes/itsm";
 import { createSlaBreachMonitor } from "./lib/itsm-sla";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
@@ -29,6 +29,11 @@ async function start(): Promise<void> {
   } catch (err) {
     // Not fatal: the journal is also sealed at the next workspace save.
     logger.error({ err, component: "itsm_audit_chain" }, "Could not seal the existing activity journal");
+  }
+  try {
+    if (await ensureSupportServiceChannelsNow()) logger.info({ component: "itsm_support_channels" }, "Announcements channel and support services room opened");
+  } catch (err) {
+    logger.error({ err, component: "itsm_support_channels" }, "Could not open the support services channels");
   }
   app.listen(port, (err) => {
     if (err) {

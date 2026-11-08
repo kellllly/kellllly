@@ -71,6 +71,29 @@ function retainItsmAuditEvents(events: unknown): JsonRecord[] {
  * Seal a stored journal that has events without a seal (journal written before
  * the hash chain existed). Returns null when there is nothing to seal.
  */
+/**
+ * Opens the general announcements channel and the support services room once,
+ * so N4 accounts have their two spaces from the start. Only for a workspace that
+ * already has conversations: a fresh one keeps the browser's demonstration seed.
+ */
+export const SUPPORT_SERVICE_CHANNELS = [
+  { id: "C-ANN", title: "Annonces générales", kind: "Annonce", body: "Canal d’annonces de la Direction : notes de service, fermetures, rappels de sécurité. Publication réservée aux comptes N1." },
+  { id: "C-ADM", title: "Services d’appui — coordination", kind: "Administratif", body: "Salon administratif ouvert aux services d’appui (secrétariat, ressources humaines, comptabilité, logistique) et aux autres services. Aucun contenu d’enquête." },
+] as const;
+
+export function ensureSupportServiceChannels(store: JsonRecord, now = new Date()): JsonRecord | null {
+  if (!Array.isArray(store.conversations)) return null;
+  const existing = new Set(records(store.conversations).map((conversation) => String(conversation.id)));
+  const missing = SUPPORT_SERVICE_CHANNELS.filter((channel) => !existing.has(channel.id));
+  if (!missing.length) return null;
+  const created = missing.map((channel) => ({
+    id: channel.id, title: channel.title, kind: channel.kind, classification: "Interne",
+    participants: [channel.kind === "Annonce" ? "Direction" : "Services d’appui"], readCount: 0,
+    messages: [{ id: randomUUID(), author: "Direction", body: channel.body, system: true, at: newStamp(now), time: shortTime(now) }],
+  }));
+  return { ...store, conversations: [...created, ...records(store.conversations)] };
+}
+
 export function sealItsmWorkspaceAudit(store: JsonRecord): JsonRecord | null {
   const audit = records(store.audit);
   if (!audit.some((event) => !isPrunedAuditEvent(event) && typeof event.hash !== "string")) return null;
@@ -653,6 +676,14 @@ const MAX_INVESTIGATION_MEMBERS = 50;
 export const TEMPORARY_CONVERSATION_KIND = "Temporaire";
 /** Bilateral channel between exactly two N1–N3 agents, visible to them only. */
 export const DIRECT_CONVERSATION_KIND = "Direct";
+/**
+ * Support services (N4, cahier des charges) : administrative collaborative
+ * rooms and general announcements only, never the investigation flows.
+ * Announcements are published by the Direction (N1) and read by N1–N4.
+ */
+export const ANNOUNCEMENT_CONVERSATION_KIND = "Annonce";
+export const ADMINISTRATIVE_CONVERSATION_KIND = "Administratif";
+const SUPPORT_SERVICE_KINDS = new Set([ANNOUNCEMENT_CONVERSATION_KIND, ADMINISTRATIVE_CONVERSATION_KIND]);
 export const MIN_TEMPORARY_HOURS = 1;
 export const MAX_TEMPORARY_HOURS = 30 * 24;
 
@@ -667,7 +698,7 @@ export function isClosedConversation(conversation: JsonRecord, now = new Date())
 }
 
 export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, conversation: JsonRecord, now = new Date()): boolean {
-  if (actor.role === "N4") return false;
+  if (actor.role === "N4") return SUPPORT_SERVICE_KINDS.has(String(conversation.kind));
   // Temporary channels (cahier des charges, niveau 5) : ad-hoc, time-limited,
   // opened by N1 to named members; external auditors lose access at the end date.
   if (conversation.kind === TEMPORARY_CONVERSATION_KIND) {
@@ -735,23 +766,19 @@ export function applyWorkspaceUpdate(
   const oldTickets = records(current.tickets);
   const oldConversations = records(current.conversations);
   if (actor.role === "N4") {
-    if (records(normalized.conversations).length > 0) {
-      throw new ItsmAuthorizationError("Les conversations ne font pas partie du périmètre N4.");
-    }
-    normalized.conversations = current.conversations ?? [];
     const submittedTicketIds = new Set(records(normalized.tickets).map((ticket) => String(ticket.id)));
     const hiddenTickets = oldTickets.filter((ticket) =>
       !actor.serviceIds.includes(String(ticket.serviceId ?? "")) && !submittedTicketIds.has(String(ticket.id)));
     normalized.tickets = [...records(normalized.tickets), ...hiddenTickets];
   }
-  if (actor.role !== "N4") {
+  {
     // Rooms this account cannot see are not sent to it: keep them in place.
     const submittedConversations = records(normalized.conversations);
     if (submittedConversations.some((conversation) => {
       const stored = oldConversations.find((item) => item.id === conversation.id);
       return stored ? !canSeeConversation(actor, stored, now) : false;
     })) {
-      throw new ItsmAuthorizationError("Ce salon d’enquête n’est pas accessible à ce compte.");
+      throw new ItsmAuthorizationError("Cette conversation n’est pas accessible à ce compte.");
     }
     const merged = [...submittedConversations];
     oldConversations.forEach((conversation, index) => {
@@ -761,7 +788,9 @@ export function applyWorkspaceUpdate(
   }
   const currentConversationContent = records(current.conversations).map(({ readCount: _readCount, ...conversation }) => conversation);
   const submittedConversationContent = records(normalized.conversations).map(({ readCount: _readCount, ...conversation }) => conversation);
-  if (!jsonEqual(currentConversationContent, submittedConversationContent)) {
+  if (!jsonEqual(currentConversationContent, submittedConversationContent) && actor.role !== "N4") {
+    // N4 only ever receives and submits its administrative rooms and announcements;
+    // the rules on those two kinds are enforced conversation by conversation below.
     requirePermission(actor, "manageConversations");
   }
   const currentAuditById = new Map(records(current.audit).map((event) => [String(event.id), event]));
@@ -1016,6 +1045,12 @@ export function applyWorkspaceUpdate(
           ? "Seul un compte N1 peut ouvrir un canal temporaire."
           : "Seul un compte N1 peut ouvrir un salon d’enquête.");
       }
+      if (proposed.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
+        throw new ItsmAuthorizationError("Seule la Direction (N1) ouvre un canal d’annonces.");
+      }
+      if (actor.role === "N4" && proposed.kind !== ADMINISTRATIVE_CONVERSATION_KIND) {
+        throw new ItsmAuthorizationError("Un compte N4 ne peut ouvrir qu’un salon administratif.");
+      }
       const direct = proposed.kind === DIRECT_CONVERSATION_KIND;
       let directMembers: string[] = [];
       if (direct) {
@@ -1063,6 +1098,9 @@ export function applyWorkspaceUpdate(
     if (incomingMessages.length < oldMessages.length
       || oldMessages.some((message, index) => message.id !== incomingMessages[index]?.id || message.body !== incomingMessages[index]?.body)) {
       throw new Error("L’historique de messagerie ne peut pas être réécrit.");
+    }
+    if (incomingMessages.length > oldMessages.length && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
+      throw new ItsmAuthorizationError("Seule la Direction (N1) publie dans les annonces.");
     }
     if (incomingMessages.length > oldMessages.length && isClosedConversation(old, now)) {
       throw new Error("Ce canal temporaire est clos : il n’accepte plus de messages.");
@@ -1239,7 +1277,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
   return {
     ...visibleStore,
     tickets: hiddenCollections ? [] : scopedTickets,
-    conversations: actor.role === "N4" ? [] : records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
+    conversations: records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
     })),

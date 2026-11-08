@@ -52,7 +52,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <nav className="space-y-1">
         {navItems.filter(({ href }) => roleCode === 'N5'
           ? ['/', '/messages', '/services', '/audit', '/governance'].includes(href)
-          : roleCode === 'N4' ? href !== '/messages' : true
+          : true
         ).map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileNav(false)} className={`nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${location === href ? 'bg-[#2b4d4d] font-semibold text-[#eff8f2]' : 'text-[#c3cdd0] hover:bg-[#243e43] hover:text-white'}`} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/messages' && unread > 0 && <span data-testid="badge-unread-nav" className="ml-auto rounded-full bg-[#d5a45d] px-1.5 py-0.5 text-[10px] font-semibold text-[#24313b]">{unread}</span>}</Link>)}
       </nav>
       <div className="eyebrow mb-2 mt-8 px-3 text-[#9aabb6]">Configuration</div>
