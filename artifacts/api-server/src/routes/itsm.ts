@@ -23,7 +23,8 @@ import {
   SaveItsmWorkspaceResponse,
 } from "@workspace/api-zod";
 import { db, itsmWorkspaceTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { createRoleJournalCache, decideJournaledRole } from "../lib/itsm-role-journal";
 import { Router, type IRouter, type Request, type RequestHandler, type Response } from "express";
 import { logger } from "../lib/logger";
 import { reportItsmRoleArchiveUnavailable } from "../lib/itsm-role-archive-monitor";
@@ -101,6 +102,7 @@ export async function withAdminChangeLock<T>(
   ) => Promise<T>,
   workspaceId = WORKSPACE_ID,
 ): Promise<T> {
+  // Drop the cached role journal once the transaction is committed, too.
   return db.transaction(async (tx) => {
     await tx.insert(itsmWorkspaceTable).values({
       id: workspaceId, version: 0, store: {}, importedUsers: [],
@@ -115,9 +117,10 @@ export async function withAdminChangeLock<T>(
         updatedAt: new Date(),
       }).where(eq(itsmWorkspaceTable.id, workspaceId)).returning();
       if (!updated) throw new Error("Impossible d’enregistrer le journal d’habilitation.");
+      roleJournal.invalidate();
     };
     return operation(row.store, saveStore);
-  });
+  }).finally(() => roleJournal.invalidate());
 }
 
 /** Seal a journal written before the hash chain existed, without waiting for a save. */
@@ -190,7 +193,11 @@ async function activeN1Ids(): Promise<string[]> {
   for (;;) {
     const page = await clerkClient.users.getUserList({ limit, offset });
     for (const user of page.data) {
-      if (user.publicMetadata.itsmRole === "N1") ids.add(user.id);
+      // An N1 counts only if the journal says so (a Clerk-only N1 must not
+      // let the real last N1 be revoked).
+      const latest = await roleJournal.latest(user.id);
+      const decision = decideJournaledRole({ role: user.publicMetadata.itsmRole, serviceIds: user.publicMetadata.itsmServiceIds }, latest);
+      if (decision.kind === "granted" && decision.role === "N1") ids.add(user.id);
     }
     offset += page.data.length;
     if (offset >= page.totalCount || page.data.length === 0) break;
@@ -360,6 +367,17 @@ const bootstrapItsmAdmin = createItsmBootstrapAdmin({
 type ClerkUser = Awaited<ReturnType<typeof clerkClient.users.getUser>>;
 const actorUsers = createActorCache<ClerkUser>();
 
+// Role events of the journal only (not the whole workspace), cached a few seconds.
+const roleJournal = createRoleJournalCache(async () => {
+  const result = await db.execute(sql`
+    select coalesce(jsonb_agg(event), '[]'::jsonb) as events
+    from ${itsmWorkspaceTable}, jsonb_array_elements(coalesce(${itsmWorkspaceTable.store}->'audit', '[]'::jsonb)) as event
+    where ${itsmWorkspaceTable.id} = ${WORKSPACE_ID} and event->>'type' like 'itsm.role.%'`);
+  const rows = (result as unknown as { rows?: Array<{ events?: unknown }> }).rows ?? [];
+  return rows[0]?.events ?? [];
+});
+const reportedJournalGaps = new Set<string>();
+
 /** Clerk metadata write that also drops the cached role of that account. */
 async function updateUserMetadataAndForget(userId: string, metadata: Parameters<typeof clerkClient.users.updateUserMetadata>[1]) {
   actorUsers.invalidate(userId);
@@ -399,15 +417,51 @@ async function actorFor(req: Request, res: Response, options: { fresh?: boolean 
     )) {
       user = await bootstrapItsmAdmin(userId, process.env.ITSM_BOOTSTRAP_ADMIN_EMAILS);
     }
-    const role = user.publicMetadata.itsmRole;
-    if (!isItsmRole(role)) {
+    const clerkRole = user.publicMetadata.itsmRole;
+    const clerkServiceIds = Array.isArray(user.publicMetadata.itsmServiceIds)
+      ? user.publicMetadata.itsmServiceIds.filter((id): id is string => typeof id === "string")
+      : [];
+    // The journal decides (lib/itsm-role-journal.ts): Clerk metadata can be edited
+    // outside the application, so a Clerk-only role grants nothing.
+    let latest = await roleJournal.latest(userId);
+    if (!latest && clerkRole === "N1" && isBootstrapAdmin(
+      user.primaryEmailAddress?.emailAddress,
+      user.primaryEmailAddress?.verification?.status,
+      false,
+      process.env.ITSM_BOOTSTRAP_ADMIN_EMAILS,
+    )) {
+      // Configured bootstrap administrator from before the journal was enforced:
+      // record its current N1 role once, so the pilot cannot lock out every N1.
+      await withAdminChangeLock(async (store, saveStore) => {
+        await saveStore(recordItsmRoleAttestation(store, {
+          actorId: "system:bootstrap-attestation",
+          targetUserId: userId,
+          role: "N1",
+          serviceIds: [],
+          scope: "Administrateur d’amorçage configuré, attesté à la première connexion après contrôle par le journal",
+        }));
+      });
+      roleJournal.invalidate();
+      latest = await roleJournal.latest(userId);
+      logger.warn({ alert: "itsm_role_bootstrap_attested", userId }, "ITSM_ROLE_BOOTSTRAP_ATTESTED");
+    }
+    const decision = decideJournaledRole({ role: clerkRole, serviceIds: clerkServiceIds }, latest);
+    if (decision.kind === "unjournaled" && isItsmRole(clerkRole)) {
+      res.status(403).json({ error: "Ce rôle n’est pas inscrit au journal des habilitations. Un compte N1 doit le vérifier et l’attester (Préférences, Contrôle des habilitations) avant tout accès." });
+      return null;
+    }
+    if (decision.kind !== "granted" || !isItsmRole(decision.role)) {
       res.status(403).json({ error: "Aucun rôle ITSM n’est attribué à ce compte. Contactez l’administrateur du pilote." });
       return null;
     }
-    const serviceIds = Array.isArray(user.publicMetadata.itsmServiceIds)
-      ? user.publicMetadata.itsmServiceIds.filter((id): id is string => typeof id === "string")
-      : [];
-    return { id: userId, role, serviceIds };
+    if (decision.clerkDiffers && !reportedJournalGaps.has(userId)) {
+      reportedJournalGaps.add(userId);
+      logger.warn({
+        alert: "itsm_role_journal_mismatch", userId,
+        clerkRole: clerkRole ?? null, clerkServiceIds, journalRole: decision.role, journalServiceIds: decision.serviceIds,
+      }, "ITSM_ROLE_JOURNAL_MISMATCH: Clerk metadata ignored, journal role applied");
+    }
+    return { id: userId, role: decision.role, serviceIds: decision.serviceIds };
   } catch (error) {
     req.log.error({ err: error, userId }, "Could not load Clerk ITSM role");
     res.setHeader("Retry-After", "5");
@@ -945,8 +999,11 @@ function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
         return { status: 404, error: "Compte Clerk introuvable." } as const;
       }
       const activeAdmins = await dependencies.activeN1Ids();
-      if (!canChangeItsmRole(actor, targetUserId, target.publicMetadata.itsmRole, role, activeAdmins)) {
-        const lastAdmin = target.publicMetadata.itsmRole === "N1"
+      // activeAdmins comes from the journal: a target that is N1 there stays protected
+      // as the last N1 even if its Clerk metadata was edited down.
+      const targetGuardRole = activeAdmins.includes(targetUserId) ? "N1" : target.publicMetadata.itsmRole;
+      if (!canChangeItsmRole(actor, targetUserId, targetGuardRole, role, activeAdmins)) {
+        const lastAdmin = targetGuardRole === "N1"
           && role !== "N1"
           && !activeAdmins.some((id) => id !== targetUserId);
         return {
