@@ -845,9 +845,13 @@ test("authenticated ticket conversion is audited once, persists, and appears in 
   assert.equal(result.tickets[0].conversationId, conversation.id);
   assert.equal(result.tickets[0].sourceMessageId, message.id);
   assert.deepEqual(result.conversations[0].messages[0], message);
+  // The browser's notice is dropped; the server writes its own, under its own author.
   assert.equal(result.conversations[0].messages.length, 2);
-  assert.equal(result.conversations[0].messages[1].author, "user-a");
+  assert.equal(result.conversations[0].messages[1].author, `Suivi ${result.tickets[0].id}`);
+  assert.equal(result.conversations[0].messages[1].system, true);
+  assert.equal(result.conversations[0].messages[1].ticketId, result.tickets[0].id);
   assert.notEqual(result.conversations[0].messages[1].id, clientMessage.id);
+  assert.notEqual(result.conversations[0].messages[1].body, clientMessage.body);
   assert.equal(result.conversations[0].messages[1].at, at.toISOString());
   assert.equal(result.audit.length, 1);
   assert.equal(result.audit[0].type, ITSM_TICKET_CONVERSION_AUDIT_TYPE);
@@ -1050,9 +1054,14 @@ test("concurrent authorized conversions of one Support message accept one save a
         event.type === ITSM_TICKET_CONVERSION_AUDIT_TYPE && event.sourceMessageId === message.id,
     ).length, 1);
     assert.deepEqual(
-      persisted.conversations[0].messages,
-      [message],
+      persisted.conversations[0].messages[0],
+      message,
       "both attempts must leave the original Support message unchanged",
+    );
+    assert.deepEqual(
+      persisted.conversations[0].messages.slice(1).map((item: Record<string, unknown>) => [item.system, item.ticketId]),
+      [[true, persisted.tickets.find((ticket: Record<string, unknown>) => ticket.sourceMessageId === message.id)!.id]],
+      "only the winning conversion is announced, once, by the server",
     );
   } finally {
     if (server) {

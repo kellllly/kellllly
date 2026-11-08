@@ -637,6 +637,26 @@ function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
 }
 
 /**
+ * The only fields a browser may set on a new message; author, identifier and
+ * times are the server's. System notices (ticket follow-up) are written by the
+ * server only: a client copy of one is dropped, so nobody can post an official-
+ * looking notice without an author.
+ */
+function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set()): JsonRecord {
+  if (typeof message.body !== "string" || !message.body.trim() || message.body.length > 5000) {
+    throw new Error("Le message simulé est vide ou trop long.");
+  }
+  const allowed: JsonRecord = { body: message.body };
+  if (typeof message.isInstruction === "boolean") allowed.isInstruction = message.isInstruction;
+  if (message.ttlSeconds !== undefined) allowed.ttlSeconds = message.ttlSeconds;
+  if (message.attachment !== undefined) allowed.attachment = message.attachment;
+  // A ticket comment mirrored in its discussion may point to that ticket only.
+  if (typeof message.ticketId === "string" && linkedTicketIds.has(message.ticketId)) allowed.ticketId = message.ticketId;
+  return { ...messageExpiry(allowed, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now) };
+}
+const isClientSystemNotice = (message: JsonRecord) => message.system === true;
+
+/**
  * Erase the text of expired ephemeral messages. The message keeps its place
  * (id, author, times) so ticket links and read counts stay coherent; its body
  * is replaced by an empty string and marked expired. One journal event per run.
@@ -1024,6 +1044,8 @@ export function applyWorkspaceUpdate(
   next.tickets = nextTickets;
 
   const proposedConversations = records(normalized.conversations);
+  const ticketsLinkedTo = (conversationId: string) => new Set(nextTickets
+    .filter((ticket) => ticket.conversationId === conversationId).map((ticket) => String(ticket.id)));
   const oldConversationIds = new Set(oldConversations.map((conversation) => String(conversation.id)));
   const proposedConversationIds = new Set(proposedConversations.map((conversation) => String(conversation.id)));
   if (proposedConversations.some((conversation) => !String(conversation.id ?? ""))
@@ -1085,9 +1107,8 @@ export function applyWorkspaceUpdate(
         ...(temporary ? { expiresAt: new Date(now.getTime() + hours * 3_600_000).toISOString() } : {}),
         participants: direct ? directMembers : proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
         readCount: Math.max(0, Math.min(records(proposed.messages).length, Number(proposed.readCount) || 0)),
-        messages: records(proposed.messages).map((message) => ({
-        ...messageExpiry(message, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now),
-        })),
+        messages: records(proposed.messages).filter((message) => !isClientSystemNotice(message))
+          .map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id))),
       });
       continue;
     }
@@ -1102,26 +1123,16 @@ export function applyWorkspaceUpdate(
       || oldMessages.some((message, index) => message.id !== incomingMessages[index]?.id || message.body !== incomingMessages[index]?.body)) {
       throw new Error("L’historique de messagerie ne peut pas être réécrit.");
     }
-    if (incomingMessages.length > oldMessages.length && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
+    const appended = incomingMessages.slice(oldMessages.length).filter((message) => !isClientSystemNotice(message));
+    if (appended.length > 0 && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
       throw new ItsmAuthorizationError("Seule la Direction (N1) publie dans les annonces.");
     }
-    if (incomingMessages.length > oldMessages.length && isClosedConversation(old, now)) {
+    if (appended.length > 0 && isClosedConversation(old, now)) {
       throw new Error("Ce canal temporaire est clos : il n’accepte plus de messages.");
     }
     const messages = [
       ...oldMessages,
-      ...incomingMessages.slice(oldMessages.length).map((message) => {
-        if (typeof message.body !== "string" || !message.body.trim() || message.body.length > 5000) {
-          throw new Error("Le message simulé est vide ou trop long.");
-        }
-        return {
-          ...messageExpiry(message, now),
-          id: randomUUID(),
-          author: actor.id,
-          at: newStamp(now),
-          time: shortTime(now),
-        };
-      }),
+      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id))),
     ];
     conversations.push({ ...old, messages });
     const readStates = isRecord(next.readStates) ? next.readStates : {};
@@ -1131,6 +1142,24 @@ export function applyWorkspaceUpdate(
       [id]: Math.max(0, Math.min(messages.length, Number(proposed.readCount) || 0)),
     };
     next.readStates = readStates;
+  }
+  // A new incident converted from a support message is announced in that
+  // channel by the server (the browser's own notice is dropped above).
+  for (const ticket of nextTickets) {
+    if (oldTickets.some((item) => item.id === ticket.id)) continue;
+    if (typeof ticket.conversationId !== "string" || typeof ticket.sourceMessageId !== "string" || !ticket.sourceMessageId) continue;
+    const index = conversations.findIndex((conversation) => conversation.id === ticket.conversationId);
+    if (index < 0) continue;
+    const thread = conversations[index]!;
+    conversations[index] = { ...thread, messages: [...records(thread.messages), {
+      id: randomUUID(),
+      author: `Suivi ${String(ticket.id)}`,
+      body: `Incident ${String(ticket.id)} ouvert en ${String(ticket.priority ?? "")} à partir d’un message du canal.`,
+      time: shortTime(now),
+      at: newStamp(now),
+      system: true,
+      ticketId: ticket.id,
+    }] };
   }
   // A ticket's status changes feed its linked discussion, so the requester
   // follows the progress without leaving the messaging (cahier des charges).
