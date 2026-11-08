@@ -12,6 +12,8 @@ export type Message = {
   system?: boolean; ticketId?: string;
   /** False marks a support report; true prevents conversion into an incident. */
   isInstruction?: boolean;
+  /** Ephemeral message: lifetime chosen by the sender, expiry and erasure set by the server. */
+  ttlSeconds?: number; expiresAt?: string; expired?: boolean;
 };
 export type Conversation = {
   id: string; title: string; kind: string; classification: string; participants: string[];

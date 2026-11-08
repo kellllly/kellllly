@@ -41,6 +41,7 @@ import {
   type ItsmRoleChangeArchiveEvent,
   sealItsmWorkspaceAudit,
   recordItsmSlaBreaches,
+  purgeExpiredMessages,
 } from "../lib/itsm-workspace";
 import type { SlaBreach, SlaEscalation } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
@@ -127,6 +128,15 @@ export async function recordSlaBreachesNow(): Promise<{ breaches: SlaBreach[]; e
     const { store: next, breaches, escalations } = recordItsmSlaBreaches(store);
     if (breaches.length || escalations.length) await saveStore(next);
     return { breaches, escalations };
+  });
+}
+
+/** Erase expired ephemeral messages; writes only when one has expired. */
+export async function purgeExpiredMessagesNow(): Promise<number> {
+  return withAdminChangeLock(async (store, saveStore) => {
+    const { store: next, count } = purgeExpiredMessages(store);
+    if (count) await saveStore(next);
+    return count;
   });
 }
 

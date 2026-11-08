@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { createItsmRoleReconciliationMonitor } from "./lib/itsm-workspace";
 import { createItsmRoleArchiveHealthMonitor } from "./lib/itsm-role-archive-monitor";
 import { notifyItsmRoleArchiveAlert } from "./lib/itsm-role-archive-slack-alerts";
-import { checkItsmRoleArchiveAvailability, recordSlaBreachesNow, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
+import { checkItsmRoleArchiveAvailability, purgeExpiredMessagesNow, recordSlaBreachesNow, scanItsmRoleReconciliation, sealStoredAuditJournal } from "./routes/itsm";
 import { createSlaBreachMonitor } from "./lib/itsm-sla";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
@@ -42,6 +42,11 @@ async function start(): Promise<void> {
       notify: notifyItsmRoleArchiveAlert,
     }).start();
     createSlaBreachMonitor({ recordNow: recordSlaBreachesNow, logger }).start();
+    const purgeEphemeral = () => void purgeExpiredMessagesNow()
+      .then((count) => { if (count) logger.info({ component: "itsm_ephemeral_messages", count }, "Expired ephemeral messages erased"); })
+      .catch((err) => logger.error({ err, component: "itsm_ephemeral_messages" }, "Could not erase expired messages"));
+    setInterval(purgeEphemeral, 15_000).unref();
+    purgeEphemeral();
     createItsmRoleReconciliationMonitor({
       scan: scanItsmRoleReconciliation,
       logger,

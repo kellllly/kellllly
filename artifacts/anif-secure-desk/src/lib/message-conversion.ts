@@ -2,7 +2,7 @@ import { formatWAT, priorityFor } from './itsm';
 import type { Level, Message, SupportMessageFilter, Ticket } from './types';
 
 export function isConvertibleSupportMessage(message: Message): boolean {
-  return !message.system && !message.isInstruction;
+  return !message.system && !message.isInstruction && !message.expired;
 }
 
 export function filterSupportMessages(messages: Message[], filter: SupportMessageFilter): Message[] {

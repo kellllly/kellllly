@@ -597,6 +597,52 @@ function importMerge(current: JsonRecord, source: JsonRecord, actor: WorkspaceAc
   return merged;
 }
 
+/** Ephemeral messages (cahier des charges, messagerie) : 30 s to 30 days. */
+export const MIN_MESSAGE_TTL_SECONDS = 30;
+export const MAX_MESSAGE_TTL_SECONDS = 30 * 24 * 60 * 60;
+const EPHEMERAL_PURGE_AUDIT_TYPE = "itsm.messages.expired";
+
+function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
+  const { ttlSeconds, expiresAt: _clientExpiry, expired: _clientExpired, ...rest } = message;
+  const ttl = Number(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 0) return rest;
+  const seconds = Math.round(Math.min(MAX_MESSAGE_TTL_SECONDS, Math.max(MIN_MESSAGE_TTL_SECONDS, ttl)));
+  return { ...rest, ttlSeconds: seconds, expiresAt: new Date(now.getTime() + seconds * 1000).toISOString() };
+}
+
+/**
+ * Erase the text of expired ephemeral messages. The message keeps its place
+ * (id, author, times) so ticket links and read counts stay coherent; its body
+ * is replaced by an empty string and marked expired. One journal event per run.
+ */
+export function purgeExpiredMessages(store: JsonRecord, now = new Date()): { store: JsonRecord; count: number } {
+  let count = 0;
+  const conversations = records(store.conversations).map((conversation) => {
+    let changed = false;
+    const messages = records(conversation.messages).map((message) => {
+      if (message.expired === true || typeof message.expiresAt !== "string") return message;
+      const expiry = Date.parse(message.expiresAt);
+      if (!Number.isFinite(expiry) || expiry > now.getTime()) return message;
+      count += 1;
+      changed = true;
+      return { id: message.id, author: message.author, at: message.at, time: message.time, ttlSeconds: message.ttlSeconds, expiresAt: message.expiresAt, expired: true, body: "" };
+    });
+    return changed ? { ...conversation, messages } : conversation;
+  });
+  if (count === 0) return { store, count };
+  const event = {
+    id: randomUUID(),
+    type: EPHEMERAL_PURGE_AUDIT_TYPE,
+    action: `${count} message(s) éphémère(s) effacé(s) à expiration`,
+    actor: "system:ephemeral-purge",
+    scope: "Messagerie",
+    count,
+    at: newStamp(now),
+    time: shortTime(now),
+  };
+  return { store: { ...store, conversations, audit: retainItsmAuditEvents([event, ...records(store.audit)]) }, count };
+}
+
 export const INVESTIGATION_CONVERSATION_KIND = "Enquête";
 const MAX_INVESTIGATION_MEMBERS = 50;
 
@@ -918,7 +964,7 @@ export function applyWorkspaceUpdate(
         participants: proposed.participants.filter((participant): participant is string => typeof participant === "string").slice(0, 20),
         readCount: Math.max(0, Math.min(records(proposed.messages).length, Number(proposed.readCount) || 0)),
         messages: records(proposed.messages).map((message) => ({
-        ...message, id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now),
+        ...messageExpiry(message, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now),
         })),
       });
       continue;
@@ -941,7 +987,7 @@ export function applyWorkspaceUpdate(
           throw new Error("Le message simulé est vide ou trop long.");
         }
         return {
-          ...message,
+          ...messageExpiry(message, now),
           id: randomUUID(),
           author: actor.id,
           at: newStamp(now),
