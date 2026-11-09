@@ -71,7 +71,7 @@ import {
   requirePermission,
   type ItsmRole,
 } from "../lib/itsm-rbac";
-import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler } from "./itsm-audit-export";
+import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler, createItsmAuditProofHandler } from "./itsm-audit-export";
 import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
@@ -930,6 +930,11 @@ const loadStoredAuditEvents = async () => {
 };
 
 router.get("/itsm/audit/integrity", requireAuth, createItsmAuditIntegrityHandler({
+  resolveActor: actorFor,
+  loadAuditEvents: loadStoredAuditEvents,
+}));
+
+router.get("/itsm/audit/proof", requireAuth, createItsmAuditProofHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));

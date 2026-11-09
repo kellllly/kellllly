@@ -5,6 +5,7 @@ import {
 } from "../lib/itsm-rbac.ts";
 import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
 import { isPrunedAuditEvent, verifyAuditChain } from "../lib/itsm-audit-chain.ts";
+import { isSeal, merkleInclusionProof, merkleRoot } from "../lib/itsm-audit-merkle.ts";
 
 type AuditExportDependencies = {
   resolveActor: (req: Request, res: Response) => Promise<WorkspaceActor | null>;
@@ -167,7 +168,90 @@ export function createItsmAuditIntegrityHandler({
     if (report.status === "broken") {
       req.log?.error({ alert: "itsm_audit_chain_broken", firstBreak: report.firstBreak }, "ITSM audit hash chain is broken");
     }
+    const seals = report.status === "intact" ? orderedSeals(events) : [];
     res.setHeader("Cache-Control", "no-store");
-    res.json({ ...report, checkedAt: now().toISOString() });
+    res.json({
+      ...report,
+      merkle: seals.length ? { root: merkleRoot(seals), size: seals.length } : null,
+      checkedAt: now().toISOString(),
+    });
+  };
+}
+
+/** Seals of the journal in sequence order (the Merkle leaves). */
+function orderedSeals(events: readonly unknown[]): string[] {
+  return events
+    .filter((event): event is Record<string, unknown> => Boolean(event && typeof event === "object" && !Array.isArray(event)))
+    .sort((left, right) => Number(left.seq) - Number(right.seq))
+    .map((event) => event.hash)
+    .filter(isSeal);
+}
+
+/**
+ * Inclusion proof of one journal event in the Merkle tree of the first
+ * `treeSize` events (default: the whole journal). An auditor who kept the root
+ * and size of an earlier checkpoint asks for that size and checks the proof
+ * against the root they kept. Same audience as the export (N1, N3, N5);
+ * returns seals only, never event content.
+ */
+export function createItsmAuditProofHandler({
+  resolveActor,
+  loadAuditEvents,
+}: Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents">): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await resolveActor(req, res);
+    if (!actor || res.headersSent) return;
+    try {
+      requirePermission(actor, "exportAudit");
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+    const reference = String(req.query.event ?? "").trim();
+    const rawSize = req.query.treeSize === undefined ? "" : String(req.query.treeSize);
+    if (!reference || reference.length > 120 || (rawSize && !/^[1-9]\d{0,8}$/u.test(rawSize))) {
+      res.status(400).json({ error: "Indiquez l’identifiant ou le numéro de séquence d’un événement, et une taille d’arbre entière." });
+      return;
+    }
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for an inclusion proof");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    const report = verifyAuditChain(events);
+    if (report.status !== "intact") {
+      res.status(409).json({ error: "La chaîne du journal n’est pas intacte : aucune preuve ne peut être établie." });
+      return;
+    }
+    const seals = orderedSeals(events);
+    const records = events.filter((event): event is Record<string, unknown> => Boolean(event && typeof event === "object"));
+    const target = /^\d+$/u.test(reference)
+      ? records.find((event) => event.seq === Number(reference))
+      : records.find((event) => event.id === reference);
+    if (!target) {
+      res.status(404).json({ error: "Aucun événement scellé ne porte cet identifiant ou ce numéro." });
+      return;
+    }
+    const seq = target.seq as number;
+    const treeSize = rawSize ? Number(rawSize) : seals.length;
+    if (treeSize > seals.length || seq > treeSize) {
+      res.status(400).json({ error: `La taille d’arbre doit être comprise entre ${seq} et ${seals.length}.` });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      eventId: typeof target.id === "string" ? target.id : null,
+      seq,
+      seal: target.hash,
+      treeSize,
+      root: merkleRoot(seals, treeSize),
+      proof: merkleInclusionProof(seals, seq - 1, treeSize),
+    });
   };
 }

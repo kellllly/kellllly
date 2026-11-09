@@ -182,6 +182,7 @@ export const getItsmAuditIntegrityResponsePrunedMin = 0;
 
 
 
+
 export const GetItsmAuditIntegrityResponse = zod.object({
   "status": zod.enum(['intact', 'broken', 'empty', 'unsealed']),
   "events": zod.number().int().min(getItsmAuditIntegrityResponseEventsMin),
@@ -196,7 +197,38 @@ export const GetItsmAuditIntegrityResponse = zod.object({
   "eventId": zod.string().nullable(),
   "reason": zod.string()
 }).nullable(),
+  "merkle": zod.object({
+  "root": zod.string(),
+  "size": zod.number().int().min(1)
+}).nullable().describe('Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact'),
   "checkedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Merkle inclusion proof of one journal event
+ */
+export const getItsmAuditProofQueryEventMax = 120;
+
+
+
+
+export const GetItsmAuditProofQueryParams = zod.object({
+  "event": zod.coerce.string().min(1).max(getItsmAuditProofQueryEventMax).describe('Event identifier or sequence number'),
+  "treeSize": zod.coerce.number().int().min(1).optional().describe('Size of the checkpoint tree (default the whole journal)')
+})
+
+
+
+
+
+export const GetItsmAuditProofResponse = zod.object({
+  "eventId": zod.string().nullable(),
+  "seq": zod.number().int().min(1),
+  "seal": zod.string(),
+  "treeSize": zod.number().int().min(1),
+  "root": zod.string(),
+  "proof": zod.array(zod.string())
 })
 
 

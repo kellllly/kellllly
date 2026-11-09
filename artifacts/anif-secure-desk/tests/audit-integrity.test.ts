@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { describeAuditIntegrity } from '../src/lib/audit-integrity.ts';
 
-const base = { events: 3, verified: 3, pruned: 0, head: null, firstBreak: null, checkedAt: '2026-11-07T12:00:00.000Z' };
+const base = { events: 3, verified: 3, pruned: 0, head: null, firstBreak: null, merkle: null, checkedAt: '2026-11-07T12:00:00.000Z' };
 
 test('an intact chain shows the count and the seal to keep', () => {
   const view = describeAuditIntegrity({ ...base, status: 'intact', head: { seq: 3, hash: 'ab'.repeat(32) } });

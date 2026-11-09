@@ -193,6 +193,16 @@ export type ItsmAuditIntegrityFirstBreak = {
   reason: string;
 } | null;
 
+/**
+ * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+ * @nullable
+ */
+export type ItsmAuditIntegrityMerkle = {
+  root: string;
+  /** @minimum 1 */
+  size: number;
+} | null;
+
 export interface ItsmAuditIntegrity {
   status: ItsmAuditIntegrityStatus;
   /** @minimum 0 */
@@ -205,7 +215,24 @@ export interface ItsmAuditIntegrity {
   head: ItsmAuditIntegrityHead;
   /** @nullable */
   firstBreak: ItsmAuditIntegrityFirstBreak;
+  /**
+     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+     * @nullable
+     */
+  merkle: ItsmAuditIntegrityMerkle;
   checkedAt: string;
+}
+
+export interface ItsmAuditProof {
+  /** @nullable */
+  eventId: string | null;
+  /** @minimum 1 */
+  seq: number;
+  seal: string;
+  /** @minimum 1 */
+  treeSize: number;
+  root: string;
+  proof: string[];
 }
 
 export interface ItsmTemporaryMessage {
@@ -407,6 +434,20 @@ export type ExportItsmAuditParams = {
   scope?: string;
   from?: string;
   to?: string;
+};
+
+export type GetItsmAuditProofParams = {
+  /**
+   * Event identifier or sequence number
+   * @minLength 1
+   * @maxLength 120
+   */
+  event: string;
+  /**
+   * Size of the checkpoint tree (default the whole journal)
+   * @minimum 1
+   */
+  treeSize?: number;
 };
 
 export type GetItsmUserDirectoryParams = {

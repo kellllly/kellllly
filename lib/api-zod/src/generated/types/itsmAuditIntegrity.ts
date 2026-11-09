@@ -7,6 +7,7 @@
  */
 import type { ItsmAuditIntegrityFirstBreak } from './itsmAuditIntegrityFirstBreak';
 import type { ItsmAuditIntegrityHead } from './itsmAuditIntegrityHead';
+import type { ItsmAuditIntegrityMerkle } from './itsmAuditIntegrityMerkle';
 import type { ItsmAuditIntegrityStatus } from './itsmAuditIntegrityStatus';
 
 export interface ItsmAuditIntegrity {
@@ -21,5 +22,10 @@ export interface ItsmAuditIntegrity {
   head: ItsmAuditIntegrityHead;
   /** @nullable */
   firstBreak: ItsmAuditIntegrityFirstBreak;
+  /**
+     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+     * @nullable
+     */
+  merkle: ItsmAuditIntegrityMerkle;
   checkedAt: Date;
 }

@@ -259,6 +259,40 @@ paths:
           description: The assigned role cannot export the audit log
         "503":
           description: The journal could not be read
+  /itsm/audit/proof:
+    get:
+      operationId: getItsmAuditProof
+      tags: [itsm]
+      summary: Merkle inclusion proof of one journal event
+      parameters:
+        - in: query
+          name: event
+          required: true
+          description: Event identifier or sequence number
+          schema: { type: string, minLength: 1, maxLength: 120 }
+        - in: query
+          name: treeSize
+          description: Size of the checkpoint tree (default the whole journal)
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Inclusion proof against the root of the requested tree
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmAuditProof"
+        "400":
+          description: Invalid event reference or tree size
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+        "404":
+          description: No sealed event with this reference
+        "409":
+          description: The journal chain is not intact
+        "503":
+          description: The journal could not be read
   /itsm/users:
     get:
       operationId: getItsmUserDirectory
@@ -627,10 +661,29 @@ components:
             eventId: { type: [string, "null"] }
             reason: { type: string }
           required: [seq, eventId, reason]
+        merkle:
+          type: [object, "null"]
+          description: Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+          properties:
+            root: { type: string }
+            size: { type: integer, minimum: 1 }
+          required: [root, size]
         checkedAt:
           type: string
           format: date-time
-      required: [status, events, verified, pruned, head, firstBreak, checkedAt]
+      required: [status, events, verified, pruned, head, firstBreak, merkle, checkedAt]
+    ItsmAuditProof:
+      type: object
+      properties:
+        eventId: { type: [string, "null"] }
+        seq: { type: integer, minimum: 1 }
+        seal: { type: string }
+        treeSize: { type: integer, minimum: 1 }
+        root: { type: string }
+        proof:
+          type: array
+          items: { type: string }
+      required: [eventId, seq, seal, treeSize, root, proof]
     ItsmTemporaryMessage:
       type: object
       properties:

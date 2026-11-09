@@ -28,11 +28,13 @@ import type {
   DevelopmentRoleArchiveEnvelope,
   DevelopmentRoleArchiveReceipt,
   ExportItsmAuditParams,
+  GetItsmAuditProofParams,
   GetItsmContactsParams,
   GetItsmPeopleParams,
   GetItsmUserDirectoryParams,
   HealthStatus,
   ItsmAuditIntegrity,
+  ItsmAuditProof,
   ItsmContacts,
   ItsmImportInput,
   ItsmPeople,
@@ -1166,6 +1168,114 @@ export function useGetItsmAuditIntegrity<TData = Awaited<ReturnType<typeof getIt
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetItsmAuditIntegrityQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmAuditProofUrl = (params: GetItsmAuditProofParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/itsm/audit/proof?${stringifiedParams}` : `/api/itsm/audit/proof`
+}
+
+/**
+ * @summary Merkle inclusion proof of one journal event
+ */
+export const getItsmAuditProof = async (params: GetItsmAuditProofParams, options?: Parameters<typeof customFetch>[1]): Promise<ItsmAuditProof> => {
+
+  return customFetch<ItsmAuditProof>(getGetItsmAuditProofUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmAuditProofQueryKey = (params?: GetItsmAuditProofParams,) => {
+    return [
+    `/api/itsm/audit/proof`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetItsmAuditProofQueryOptions = <TData = Awaited<ReturnType<typeof getItsmAuditProof>>, TError = ErrorType<void>>(params: GetItsmAuditProofParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmAuditProofQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmAuditProof>>> = ({ signal }) => getItsmAuditProof(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmAuditProofQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmAuditProof>>>
+export type GetItsmAuditProofQueryError = ErrorType<void>
+
+
+export function useGetItsmAuditProof<TData = Awaited<ReturnType<typeof getItsmAuditProof>>, TError = ErrorType<void>>(
+ params: GetItsmAuditProofParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditProof>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditProof>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditProof<TData = Awaited<ReturnType<typeof getItsmAuditProof>>, TError = ErrorType<void>>(
+ params: GetItsmAuditProofParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditProof>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditProof>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditProof<TData = Awaited<ReturnType<typeof getItsmAuditProof>>, TError = ErrorType<void>>(
+ params: GetItsmAuditProofParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Merkle inclusion proof of one journal event
+ */
+
+export function useGetItsmAuditProof<TData = Awaited<ReturnType<typeof getItsmAuditProof>>, TError = ErrorType<void>>(
+ params: GetItsmAuditProofParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditProof>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmAuditProofQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
