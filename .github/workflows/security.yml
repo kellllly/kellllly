@@ -1,0 +1,68 @@
+name: Sécurité
+
+# Contrôles bloquants demandés par le cahier des charges : analyse des
+# dépendances (SCA) et du code (SAST), seuil CVSS 4,0.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    # Chaque lundi : une faille publiée entre deux commits est aussi détectée.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  sca:
+    name: Dépendances (SCA, CVSS ≥ 4,0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The pnpm version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # "moderate" is npm's band for CVSS 4.0–6.9: every advisory at or above 4.0 fails the job.
+      - name: Audit des dépendances
+        run: pnpm audit --audit-level moderate
+
+  sast:
+    name: Code (SAST CodeQL, sévérité ≥ 4,0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - "**/node_modules/**"
+              - "**/dist/**"
+              - "lib/api-client-react/src/generated/**"
+              - "lib/api-zod/src/generated/**"
+              - "artifacts/mockup-sandbox/**"
+      # Results stay in the job (no code scanning upload needed); the gate below decides.
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+          upload: never
+          output: sarif-results
+      - name: Seuil de sévérité
+        run: |
+          status=0
+          for file in sarif-results/*.sarif; do sh scripts/sast-gate.sh "$file" 4.0 || status=1; done
+          exit $status
+      - name: Conserver le rapport SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: sarif-results
+          retention-days: 30

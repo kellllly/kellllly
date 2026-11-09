@@ -26,7 +26,7 @@ export const getItsmWorkspaceResponseVersionMin = 0;
 
 export const GetItsmWorkspaceResponse = zod.object({
   "store": zod.record(zod.string(), zod.unknown()).describe('ITSM pilot state; server-owned identity and timestamps are canonicalized on save.'),
-  "version": zod.number().int().min(getItsmWorkspaceResponseVersionMin)
+  "version": zod.int().min(getItsmWorkspaceResponseVersionMin)
 })
 
 
@@ -39,7 +39,7 @@ export const saveItsmWorkspaceBodyVersionMin = 0;
 
 export const SaveItsmWorkspaceBody = zod.object({
   "store": zod.record(zod.string(), zod.unknown()).describe('ITSM pilot state; server-owned identity and timestamps are canonicalized on save.'),
-  "version": zod.number().int().min(saveItsmWorkspaceBodyVersionMin)
+  "version": zod.int().min(saveItsmWorkspaceBodyVersionMin)
 })
 
 export const saveItsmWorkspaceResponseVersionMin = 0;
@@ -48,7 +48,7 @@ export const saveItsmWorkspaceResponseVersionMin = 0;
 
 export const SaveItsmWorkspaceResponse = zod.object({
   "store": zod.record(zod.string(), zod.unknown()).describe('ITSM pilot state; server-owned identity and timestamps are canonicalized on save.'),
-  "version": zod.number().int().min(saveItsmWorkspaceResponseVersionMin)
+  "version": zod.int().min(saveItsmWorkspaceResponseVersionMin)
 })
 
 
@@ -65,7 +65,7 @@ export const importItsmExamplesResponseVersionMin = 0;
 
 export const ImportItsmExamplesResponse = zod.object({
   "store": zod.record(zod.string(), zod.unknown()).describe('ITSM pilot state; server-owned identity and timestamps are canonicalized on save.'),
-  "version": zod.number().int().min(importItsmExamplesResponseVersionMin)
+  "version": zod.int().min(importItsmExamplesResponseVersionMin)
 })
 
 
@@ -112,7 +112,7 @@ export const getItsmWorkspaceVersionResponseVersionMin = 0;
 
 
 export const GetItsmWorkspaceVersionResponse = zod.object({
-  "version": zod.number().int().min(getItsmWorkspaceVersionResponseVersionMin)
+  "version": zod.int().min(getItsmWorkspaceVersionResponseVersionMin)
 })
 
 
@@ -185,21 +185,21 @@ export const getItsmAuditIntegrityResponsePrunedMin = 0;
 
 export const GetItsmAuditIntegrityResponse = zod.object({
   "status": zod.enum(['intact', 'broken', 'empty', 'unsealed']),
-  "events": zod.number().int().min(getItsmAuditIntegrityResponseEventsMin),
-  "verified": zod.number().int().min(getItsmAuditIntegrityResponseVerifiedMin),
-  "pruned": zod.number().int().min(getItsmAuditIntegrityResponsePrunedMin),
+  "events": zod.int().min(getItsmAuditIntegrityResponseEventsMin),
+  "verified": zod.int().min(getItsmAuditIntegrityResponseVerifiedMin),
+  "pruned": zod.int().min(getItsmAuditIntegrityResponsePrunedMin),
   "head": zod.object({
-  "seq": zod.number().int().min(1),
+  "seq": zod.int().min(1),
   "hash": zod.string()
 }).nullable(),
   "firstBreak": zod.object({
-  "seq": zod.number().int().nullable(),
+  "seq": zod.int().nullable(),
   "eventId": zod.string().nullable(),
   "reason": zod.string()
 }).nullable(),
   "merkle": zod.object({
   "root": zod.string(),
-  "size": zod.number().int().min(1)
+  "size": zod.int().min(1)
 }).nullable().describe('Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact'),
   "checkedAt": zod.coerce.date()
 })
@@ -224,9 +224,9 @@ export const GetItsmAuditProofQueryParams = zod.object({
 
 export const GetItsmAuditProofResponse = zod.object({
   "eventId": zod.string().nullable(),
-  "seq": zod.number().int().min(1),
+  "seq": zod.int().min(1),
   "seal": zod.string(),
-  "treeSize": zod.number().int().min(1),
+  "treeSize": zod.int().min(1),
   "root": zod.string(),
   "proof": zod.array(zod.string())
 })
@@ -286,9 +286,9 @@ export const GetItsmUserDirectoryResponse = zod.object({
   "serviceIds": zod.array(zod.string()),
   "unavailableServiceIds": zod.array(zod.string()).describe('Service identifiers assigned to this account but absent from the current pilot catalog')
 })),
-  "totalCount": zod.number().int().min(getItsmUserDirectoryResponseTotalCountMin),
-  "limit": zod.number().int().min(1).max(getItsmUserDirectoryResponseLimitMax),
-  "offset": zod.number().int().min(getItsmUserDirectoryResponseOffsetMin)
+  "totalCount": zod.int().min(getItsmUserDirectoryResponseTotalCountMin),
+  "limit": zod.int().min(1).max(getItsmUserDirectoryResponseLimitMax),
+  "offset": zod.int().min(getItsmUserDirectoryResponseOffsetMin)
 })
 
 
