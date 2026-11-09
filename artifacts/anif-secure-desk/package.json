@@ -8,7 +8,8 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/*.test.*"
+    "test": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/*.test.*",
+    "test:coverage": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-exclude='../api-server/**' --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=85 --test tests/*.test.*"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

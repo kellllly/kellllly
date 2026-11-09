@@ -36,7 +36,7 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["express", "pino", "pino-http", "@clerk/express", "pg"],
+      external: ["express", "express-rate-limit", "pino", "pino-http", "@clerk/express", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });

@@ -92,7 +92,7 @@ test("stale workspace PUT returns a valid current snapshot and conflict identifi
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+      external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });
@@ -164,7 +164,7 @@ test("role assignment HTTP response follows the generated schema without externa
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+      external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });

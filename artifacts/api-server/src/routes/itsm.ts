@@ -71,6 +71,7 @@ import {
   requirePermission,
   type ItsmRole,
 } from "../lib/itsm-rbac";
+import { createAuditRateLimit } from "../lib/itsm-rate-limit";
 import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler, createItsmAuditProofHandler, createItsmAuditSiemHandler } from "./itsm-audit-export";
 import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
@@ -929,22 +930,25 @@ const loadStoredAuditEvents = async () => {
   return Array.isArray(row?.store?.audit) ? row.store.audit : [];
 };
 
-router.get("/itsm/audit/integrity", requireAuth, createItsmAuditIntegrityHandler({
+// 30 calls a minute per account across the journal routes (see lib/itsm-rate-limit.ts).
+const auditRateLimit = createAuditRateLimit({ accountOf: (req) => getAuth(req).userId });
+
+router.get("/itsm/audit/integrity", requireAuth, auditRateLimit, createItsmAuditIntegrityHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));
 
-router.get("/itsm/audit/proof", requireAuth, createItsmAuditProofHandler({
+router.get("/itsm/audit/proof", requireAuth, auditRateLimit, createItsmAuditProofHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));
 
-router.get("/itsm/audit/siem", requireAuth, createItsmAuditSiemHandler({
+router.get("/itsm/audit/siem", requireAuth, auditRateLimit, createItsmAuditSiemHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));
 
-router.get("/itsm/audit/export", requireAuth, createItsmAuditExportHandler({
+router.get("/itsm/audit/export", requireAuth, auditRateLimit, createItsmAuditExportHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
   resolveNames: async (ids) => {

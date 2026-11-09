@@ -298,7 +298,7 @@ test("the mounted audit export route rejects requests without a Clerk session", 
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+      external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });
@@ -461,7 +461,7 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
     bundle: true,
     platform: "node",
     format: "esm",
-    external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+    external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
     sourcemap: false,
     logLevel: "silent",
   });
@@ -690,7 +690,7 @@ test("the HTTP role route protects the last N1 and permits removal after an acti
     bundle: true,
     platform: "node",
     format: "esm",
-    external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+    external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
     sourcemap: false,
     logLevel: "silent",
   });
@@ -811,7 +811,7 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
     bundle: true,
     platform: "node",
     format: "esm",
-    external: ["@clerk/express", "express", "pino", "pino-http", "pg"],
+    external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
     sourcemap: false,
     logLevel: "silent",
   });

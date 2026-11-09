@@ -48,11 +48,14 @@ jobs:
               - "lib/api-client-react/src/generated/**"
               - "lib/api-zod/src/generated/**"
               - "artifacts/mockup-sandbox/**"
+              # Test servers are throwaway express apps, not the application.
+              - "**/tests/**"
       # Results stay in the job (no code scanning upload needed); the gate below decides.
       - uses: github/codeql-action/analyze@v3
         with:
           category: "/language:javascript-typescript"
           upload: never
+          upload-database: false
           output: sarif-results
       - name: Seuil de sévérité
         run: |

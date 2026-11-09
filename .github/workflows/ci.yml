@@ -39,10 +39,12 @@ jobs:
         run: pnpm run typecheck
       - name: Schéma de base de données
         run: pnpm --filter @workspace/db run push
-      - name: Tests frontend
-        run: pnpm --filter @workspace/anif-secure-desk run test
-      - name: Tests API
-        run: pnpm --filter @workspace/api-server run test
+      # Coverage gates (lines >= 90 %, branches >= 80 %, functions >= 85 %) on the
+      # modules the tests import directly; see docs/comparaison-cahiers-des-charges.md.
+      - name: Tests frontend et couverture
+        run: pnpm --filter @workspace/anif-secure-desk run test:coverage
+      - name: Tests API et couverture
+        run: pnpm --filter @workspace/api-server run test:coverage
       - name: Build
         env:
           PORT: "5173"
