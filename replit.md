@@ -24,6 +24,7 @@ Prototype francophone de démonstration réunissant collaboration interne et ges
 
 - `artifacts/anif-secure-desk/` — application web
 - `artifacts/api-server/` — API Express partagée, authentification Clerk et routes ITSM
+- `prototypes/anif-aistudio/` — prototype Google AI Studio corrigé, référence visuelle de la refonte (hors workspace pnpm, non déployé ; voir son README)
 - `.local/conversation-workspace/files/` — fichiers transmis lors de la préparation du projet
 
 ## Architecture decisions
