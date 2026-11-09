@@ -36,6 +36,8 @@ import type {
   HealthStatus,
   ItsmAuditIntegrity,
   ItsmAuditProof,
+  ItsmAuditTimestampCreated,
+  ItsmAuditTimestamps,
   ItsmContacts,
   ItsmImportInput,
   ItsmPeople,
@@ -1385,6 +1387,282 @@ export function useGetItsmAuditSiemFeed<TData = Awaited<ReturnType<typeof getIts
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetItsmAuditSiemFeedQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmAuditTimestampsUrl = () => {
+
+
+
+
+  return `/api/itsm/audit/timestamps`
+}
+
+/**
+ * @summary RFC 3161 timestamps of the journal, re-verified
+ */
+export const getItsmAuditTimestamps = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmAuditTimestamps> => {
+
+  return customFetch<ItsmAuditTimestamps>(getGetItsmAuditTimestampsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmAuditTimestampsQueryKey = () => {
+    return [
+    `/api/itsm/audit/timestamps`
+    ] as const;
+    }
+
+
+export const getGetItsmAuditTimestampsQueryOptions = <TData = Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmAuditTimestampsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmAuditTimestamps>>> = ({ signal }) => getItsmAuditTimestamps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmAuditTimestampsQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmAuditTimestamps>>>
+export type GetItsmAuditTimestampsQueryError = ErrorType<void>
+
+
+export function useGetItsmAuditTimestamps<TData = Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditTimestamps>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditTimestamps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditTimestamps<TData = Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditTimestamps>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditTimestamps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditTimestamps<TData = Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary RFC 3161 timestamps of the journal, re-verified
+ */
+
+export function useGetItsmAuditTimestamps<TData = Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestamps>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmAuditTimestampsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateItsmAuditTimestampUrl = () => {
+
+
+
+
+  return `/api/itsm/audit/timestamps`
+}
+
+/**
+ * @summary Have the configured timestamp authority sign today's checkpoint
+ */
+export const createItsmAuditTimestamp = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmAuditTimestampCreated> => {
+
+  return customFetch<ItsmAuditTimestampCreated>(getCreateItsmAuditTimestampUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateItsmAuditTimestampMutationKey = () => ['createItsmAuditTimestamp'] as const;
+
+export const getCreateItsmAuditTimestampMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createItsmAuditTimestamp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createItsmAuditTimestamp>>, TError,void, TContext> => {
+
+const mutationKey = getCreateItsmAuditTimestampMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createItsmAuditTimestamp>>, void> = () => {
+
+
+          return  createItsmAuditTimestamp(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateItsmAuditTimestampMutationResult = NonNullable<Awaited<ReturnType<typeof createItsmAuditTimestamp>>>
+
+    export type CreateItsmAuditTimestampMutationError = ErrorType<void>
+
+
+    /**
+ * @summary Have the configured timestamp authority sign today's checkpoint
+ */
+export const useCreateItsmAuditTimestamp = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createItsmAuditTimestamp>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createItsmAuditTimestamp>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateItsmAuditTimestampMutationOptions(options), queryClient);
+    }
+
+export const getGetItsmAuditTimestampTokenUrl = (id: string,) => {
+
+
+
+
+  return `/api/itsm/audit/timestamps/${id}/token`
+}
+
+/**
+ * @summary Download a stored RFC 3161 token (DER)
+ */
+export const getItsmAuditTimestampToken = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetItsmAuditTimestampTokenUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmAuditTimestampTokenQueryKey = (id: string,) => {
+    return [
+    `/api/itsm/audit/timestamps/${id}/token`
+    ] as const;
+    }
+
+
+export const getGetItsmAuditTimestampTokenQueryOptions = <TData = Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError = ErrorType<void>>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmAuditTimestampTokenQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>> = ({ signal }) => getItsmAuditTimestampToken(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmAuditTimestampTokenQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>>
+export type GetItsmAuditTimestampTokenQueryError = ErrorType<void>
+
+
+export function useGetItsmAuditTimestampToken<TData = Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError = ErrorType<void>>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditTimestampToken>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditTimestampToken>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditTimestampToken<TData = Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditTimestampToken>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditTimestampToken>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditTimestampToken<TData = Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Download a stored RFC 3161 token (DER)
+ */
+
+export function useGetItsmAuditTimestampToken<TData = Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditTimestampToken>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmAuditTimestampTokenQueryOptions(id,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

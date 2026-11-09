@@ -25,7 +25,7 @@ test("directory event stream is N1-only, sends minimal role updates, and closes 
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["@clerk/express", "express", "express-rate-limit", "pino", "pino-http", "pg"],
+      external: ["@clerk/express", "express", "express-rate-limit", "pkijs", "asn1js", "pino", "pino-http", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });

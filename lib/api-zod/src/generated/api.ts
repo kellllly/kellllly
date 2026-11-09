@@ -252,6 +252,63 @@ export const GetItsmAuditSiemFeedResponse = zod.unknown()
 
 
 /**
+ * @summary RFC 3161 timestamps of the journal, re-verified
+ */
+export const getItsmAuditTimestampsResponseTrustedRootsMin = 0;
+
+
+
+export const GetItsmAuditTimestampsResponse = zod.object({
+  "configured": zod.boolean(),
+  "trustedRoots": zod.int().min(getItsmAuditTimestampsResponseTrustedRootsMin),
+  "timestamps": zod.array(zod.object({
+  "id": zod.string(),
+  "at": zod.string().nullable(),
+  "actor": zod.string().nullable(),
+  "size": zod.int(),
+  "root": zod.string(),
+  "statement": zod.string().describe('Text whose SHA-256 the authority signed'),
+  "tsaUrl": zod.string().nullable(),
+  "genTime": zod.string().nullable(),
+  "serial": zod.string().nullable(),
+  "policy": zod.string().nullable(),
+  "tsaSubject": zod.string().nullable(),
+  "valid": zod.boolean().describe('Authority signature, imprint and timestamping certificate checked'),
+  "chainVerified": zod.boolean().describe('Authority certificate chains to a configured trusted root'),
+  "journalUnchanged": zod.boolean().describe('Today\'s first size events still give the timestamped root'),
+  "problem": zod.string().nullable()
+}))
+})
+
+
+/**
+ * @summary Have the configured timestamp authority sign today's checkpoint
+ */
+export const CreateItsmAuditTimestampResponse = zod.object({
+  "size": zod.int(),
+  "root": zod.string(),
+  "genTime": zod.string().nullable(),
+  "serial": zod.string().nullable(),
+  "tsaSubject": zod.string().nullable(),
+  "chainVerified": zod.boolean()
+})
+
+
+/**
+ * @summary Download a stored RFC 3161 token (DER)
+ */
+export const getItsmAuditTimestampTokenPathIdMax = 64;
+
+
+
+export const GetItsmAuditTimestampTokenParams = zod.object({
+  "id": zod.coerce.string().max(getItsmAuditTimestampTokenPathIdMax)
+})
+
+export const GetItsmAuditTimestampTokenResponse = zod.unknown()
+
+
+/**
  * @summary List pilot accounts for N1 role management
  */
 export const getItsmUserDirectoryQueryQMax = 120;

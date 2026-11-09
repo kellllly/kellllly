@@ -330,6 +330,71 @@ paths:
           description: The assigned role cannot export the audit log
         "503":
           description: The journal could not be read
+  /itsm/audit/timestamps:
+    get:
+      operationId: getItsmAuditTimestamps
+      tags: [itsm]
+      summary: RFC 3161 timestamps of the journal, re-verified
+      responses:
+        "200":
+          description: Timestamps, newest first (20 at most)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmAuditTimestamps"
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+        "429":
+          description: Too many journal requests
+        "503":
+          description: The journal could not be read
+    post:
+      operationId: createItsmAuditTimestamp
+      tags: [itsm]
+      summary: Have the configured timestamp authority sign today's checkpoint
+      responses:
+        "201":
+          description: Timestamp journaled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmAuditTimestampCreated"
+        "401":
+          description: Authentication required
+        "403":
+          description: Only N1 and N3 can request a timestamp
+        "409":
+          description: The chain is not intact or changed meanwhile
+        "429":
+          description: Too many journal requests
+        "502":
+          description: The authority did not answer or its token was rejected
+        "503":
+          description: No authority configured, or the journal could not be read
+  /itsm/audit/timestamps/{id}/token:
+    get:
+      operationId: getItsmAuditTimestampToken
+      tags: [itsm]
+      summary: Download a stored RFC 3161 token (DER)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: TimeStampResp, to check with openssl ts -verify
+          content:
+            application/timestamp-reply:
+              schema: { type: string, format: binary }
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+        "404":
+          description: No timestamp with this identifier
   /itsm/users:
     get:
       operationId: getItsmUserDirectory
@@ -709,6 +774,45 @@ components:
           type: string
           format: date-time
       required: [status, events, verified, pruned, head, firstBreak, merkle, checkedAt]
+    ItsmAuditTimestamp:
+      type: object
+      properties:
+        id: { type: string }
+        at: { type: [string, "null"] }
+        actor: { type: [string, "null"] }
+        size: { type: integer }
+        root: { type: string }
+        statement: { type: string, description: "Text whose SHA-256 the authority signed" }
+        tsaUrl: { type: [string, "null"] }
+        genTime: { type: [string, "null"] }
+        serial: { type: [string, "null"] }
+        policy: { type: [string, "null"] }
+        tsaSubject: { type: [string, "null"] }
+        valid: { type: boolean, description: "Authority signature, imprint and timestamping certificate checked" }
+        chainVerified: { type: boolean, description: "Authority certificate chains to a configured trusted root" }
+        journalUnchanged: { type: boolean, description: "Today's first size events still give the timestamped root" }
+        problem: { type: [string, "null"] }
+      required: [id, at, actor, size, root, statement, tsaUrl, genTime, serial, policy, tsaSubject, valid, chainVerified, journalUnchanged, problem]
+    ItsmAuditTimestamps:
+      type: object
+      properties:
+        configured: { type: boolean }
+        trustedRoots: { type: integer, minimum: 0 }
+        timestamps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItsmAuditTimestamp"
+      required: [configured, trustedRoots, timestamps]
+    ItsmAuditTimestampCreated:
+      type: object
+      properties:
+        size: { type: integer }
+        root: { type: string }
+        genTime: { type: [string, "null"] }
+        serial: { type: [string, "null"] }
+        tsaSubject: { type: [string, "null"] }
+        chainVerified: { type: boolean }
+      required: [size, root, genTime, serial, tsaSubject, chainVerified]
     ItsmAuditProof:
       type: object
       properties:

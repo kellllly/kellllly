@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Request, RequestHandler, Response } from "express";
 import {
   ItsmAuthorizationError,
@@ -7,6 +8,16 @@ import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
 import { isPrunedAuditEvent, verifyAuditChain } from "../lib/itsm-audit-chain.ts";
 import { isSeal, merkleInclusionProof, merkleRoot } from "../lib/itsm-audit-merkle.ts";
 import { siemPage } from "../lib/itsm-audit-siem.ts";
+import {
+  buildTimestampRequest,
+  checkpointStatement,
+  ITSM_AUDIT_TIMESTAMP_TYPE,
+  requestNonce,
+  requestTimestamp,
+  verifyTimestamp,
+  type TimestampVerification,
+} from "../lib/itsm-audit-timestamp.ts";
+import type { Certificate } from "pkijs";
 
 type AuditExportDependencies = {
   resolveActor: (req: Request, res: Response) => Promise<WorkspaceActor | null>;
@@ -180,7 +191,7 @@ export function createItsmAuditIntegrityHandler({
 }
 
 /** Seals of the journal in sequence order (the Merkle leaves). */
-function orderedSeals(events: readonly unknown[]): string[] {
+export function orderedSeals(events: readonly unknown[]): string[] {
   return events
     .filter((event): event is Record<string, unknown> => Boolean(event && typeof event === "object" && !Array.isArray(event)))
     .sort((left, right) => Number(left.seq) - Number(right.seq))
@@ -304,5 +315,163 @@ export function createItsmAuditSiemHandler({
     res.setHeader("X-ANIF-Journal-Head", String(page.head));
     res.setHeader("X-ANIF-Chain-Status", chain.status);
     res.send(page.lines.length ? `${page.lines.join("\n")}\n` : "");
+  };
+}
+
+type TimestampDependencies = Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents"> & {
+  tsaUrl?: string;
+  trustedCerts?: Certificate[];
+  fetchImpl?: typeof fetch;
+  /** Inside the workspace lock: journal the token if the first `size` seals still give `root`. */
+  appendTimestamp?: (entry: {
+    actorId: string; size: number; root: string; token: string; verification: TimestampVerification;
+  }) => Promise<"saved" | "changed">;
+};
+
+const timestampEvents = (events: readonly unknown[]) => events
+  .filter((event): event is Record<string, unknown> => Boolean(event && typeof event === "object")
+    && (event as Record<string, unknown>).type === ITSM_AUDIT_TIMESTAMP_TYPE);
+
+async function permitted(req: Request, res: Response, resolveActor: AuditExportDependencies["resolveActor"], permission: "exportAudit" | "timestampAudit") {
+  const actor = await resolveActor(req, res);
+  if (!actor || res.headersSent) return null;
+  try {
+    requirePermission(actor, permission);
+  } catch (error) {
+    if (error instanceof ItsmAuthorizationError) {
+      res.status(403).json({ error: error.message });
+      return null;
+    }
+    throw error;
+  }
+  return actor;
+}
+
+/**
+ * RFC 3161 timestamps of the journal, re-verified at each call: TSA signature,
+ * imprint of the checkpoint statement, and whether the first `size` events of
+ * today's journal still give the root that was timestamped. N1, N3, N5.
+ */
+export function createItsmAuditTimestampListHandler({
+  resolveActor, loadAuditEvents, trustedCerts = [], tsaUrl,
+}: TimestampDependencies): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await permitted(req, res, resolveActor, "exportAudit");
+    if (!actor) return;
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for timestamps");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    const seals = verifyAuditChain(events).status === "intact" ? orderedSeals(events) : [];
+    const items = [];
+    for (const event of timestampEvents(events).slice(0, 20)) {
+      const checkpoint = (event.checkpoint ?? {}) as { size?: unknown; root?: unknown };
+      const size = Number(checkpoint.size);
+      const root = String(checkpoint.root ?? "");
+      const tsa = (event.tsa ?? {}) as Record<string, unknown>;
+      const statement = checkpointStatement(size, root);
+      const verification = typeof event.token === "string"
+        ? await verifyTimestamp(Buffer.from(event.token, "base64"), Buffer.from(statement), { trustedCerts })
+        : { valid: false, chainVerified: false, genTime: null, serial: null, policy: null, tsaSubject: null, problem: "Jeton absent." };
+      const journalUnchanged = Number.isSafeInteger(size) && size >= 1 && size <= seals.length && merkleRoot(seals, size) === root;
+      items.push({
+        id: String(event.id),
+        at: typeof event.at === "string" ? event.at : null,
+        actor: typeof event.actor === "string" ? event.actor : null,
+        size, root, statement,
+        tsaUrl: typeof tsa.url === "string" ? tsa.url : null,
+        genTime: verification.genTime,
+        serial: verification.serial,
+        policy: verification.policy,
+        tsaSubject: verification.tsaSubject,
+        valid: verification.valid,
+        chainVerified: verification.chainVerified,
+        journalUnchanged,
+        problem: verification.problem ?? (journalUnchanged ? null : "Les événements horodatés ne donnent plus la même racine : le journal a été réécrit depuis."),
+      });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ configured: Boolean(tsaUrl), trustedRoots: trustedCerts.length, timestamps: items });
+  };
+}
+
+/** Ask the configured TSA to timestamp today's checkpoint, then journal the token (N1, N3). */
+export function createItsmAuditTimestampHandler({
+  resolveActor, loadAuditEvents, tsaUrl, trustedCerts = [], fetchImpl = fetch, appendTimestamp,
+}: TimestampDependencies): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await permitted(req, res, resolveActor, "timestampAudit");
+    if (!actor) return;
+    if (!tsaUrl || !appendTimestamp) {
+      res.status(503).json({ error: "Aucune autorité d’horodatage n’est configurée (ITSM_TSA_URL)." });
+      return;
+    }
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit before timestamping");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    if (verifyAuditChain(events).status !== "intact") {
+      res.status(409).json({ error: "La chaîne du journal n’est pas intacte : elle ne peut pas être horodatée." });
+      return;
+    }
+    const seals = orderedSeals(events);
+    const size = seals.length;
+    const root = merkleRoot(seals);
+    const statement = Buffer.from(checkpointStatement(size, root));
+    const request = buildTimestampRequest(createHash("sha256").update(statement).digest());
+    let token: Buffer;
+    try {
+      token = await requestTimestamp(tsaUrl, request, fetchImpl);
+    } catch (error) {
+      req.log?.warn({ err: error, alert: "itsm_audit_timestamp_failed" }, "RFC 3161 timestamp authority unavailable");
+      res.status(502).json({ error: "L’autorité d’horodatage n’a pas répondu. Réessayez plus tard." });
+      return;
+    }
+    const verification = await verifyTimestamp(token, statement, { nonce: requestNonce(request), trustedCerts });
+    if (!verification.valid) {
+      req.log?.warn({ alert: "itsm_audit_timestamp_rejected", problem: verification.problem }, "RFC 3161 token rejected");
+      res.status(502).json({ error: `Jeton d’horodatage refusé : ${verification.problem}` });
+      return;
+    }
+    const outcome = await appendTimestamp({ actorId: actor.id, size, root, token: token.toString("base64"), verification });
+    if (outcome === "changed") {
+      res.status(409).json({ error: "Le journal a changé pendant l’horodatage. Relancez la demande." });
+      return;
+    }
+    res.status(201).json({ size, root, genTime: verification.genTime, serial: verification.serial, tsaSubject: verification.tsaSubject, chainVerified: verification.chainVerified });
+  };
+}
+
+/** Download one stored token (DER), to check it with `openssl ts -verify`. N1, N3, N5. */
+export function createItsmAuditTimestampTokenHandler({ resolveActor, loadAuditEvents }: TimestampDependencies): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await permitted(req, res, resolveActor, "exportAudit");
+    if (!actor) return;
+    const id = String(req.params.id ?? "");
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for a timestamp token");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    const event = timestampEvents(events).find((item) => item.id === id);
+    if (!event || typeof event.token !== "string") {
+      res.status(404).json({ error: "Aucun horodatage ne porte cet identifiant." });
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "application/timestamp-reply");
+    res.setHeader("Content-Disposition", `attachment; filename="journal-anif-horodatage-${id.replace(/[^A-Za-z0-9-]/gu, "")}.tsr"`);
+    res.send(Buffer.from(event.token, "base64"));
   };
 }

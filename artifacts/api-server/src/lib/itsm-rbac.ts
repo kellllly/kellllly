@@ -14,6 +14,7 @@ export type ItsmPermission =
   | "confirmClosure"
   | "approveCab"
   | "exportAudit"
+  | "timestampAudit"
   | "assignRole";
 
 export type ItsmActor = {
@@ -107,6 +108,9 @@ export function canPerform(
         || (actor.role === "N3" && Boolean(serviceId && actor.serviceIds.includes(serviceId)));
     case "exportAudit":
       return actor.role === "N1" || actor.role === "N3" || actor.role === "N5";
+    case "timestampAudit":
+      // Asks an external timestamp authority to sign the journal checkpoint.
+      return actor.role === "N1" || actor.role === "N3";
     case "assignRole":
       return actor.role === "N1";
   }

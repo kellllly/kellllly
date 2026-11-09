@@ -45,6 +45,13 @@ export function auditEventHash(event: JsonRecord): string {
 const isSealed = (event: JsonRecord) =>
   Number.isSafeInteger(event.seq) && (event.seq as number) > 0 && typeof event.hash === "string";
 
+/**
+ * Events never reduced to a stub when old ordinary events are pruned:
+ * authorization changes and RFC 3161 timestamps of the journal.
+ */
+export const isKeptWholeAuditType = (type: unknown) =>
+  typeof type === "string" && (type.startsWith("itsm.role.") || type === "itsm.audit.timestamped");
+
 export const isPrunedAuditEvent = (event: unknown) => isRecord(event) && event.pruned === true;
 
 /**
@@ -125,7 +132,7 @@ export function verifyAuditChain(events: unknown): AuditChainReport {
       lastPrunedSeq = seq;
     } else {
       if (auditEventHash(event) !== event.hash) return breakAt(event, "Contenu modifié après scellement", verified, pruned);
-      if (typeof event.type !== "string" || !event.type.startsWith("itsm.role.")) {
+      if (!isKeptWholeAuditType(event.type)) {
         firstFullNonRoleSeq = Math.min(firstFullNonRoleSeq, seq);
       }
       verified += 1;

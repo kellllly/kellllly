@@ -36,6 +36,7 @@ import {
   isDevelopmentDatabaseRoleArchiveEnabled,
   ItsmRoleArchiveUnavailableError,
   recordItsmRoleAttestation,
+  recordItsmAuditTimestamp,
   publishItsmRoleChangeToArchive,
   recordItsmRoleChange,
   saveWorkspaceAtVersion,
@@ -72,7 +73,20 @@ import {
   type ItsmRole,
 } from "../lib/itsm-rbac";
 import { createAuditRateLimit } from "../lib/itsm-rate-limit";
-import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler, createItsmAuditProofHandler, createItsmAuditSiemHandler } from "./itsm-audit-export";
+import {
+  createItsmAuditExportHandler,
+  createItsmAuditIntegrityHandler,
+  createItsmAuditProofHandler,
+  createItsmAuditSiemHandler,
+  createItsmAuditTimestampHandler,
+  createItsmAuditTimestampListHandler,
+  createItsmAuditTimestampTokenHandler,
+  orderedSeals,
+} from "./itsm-audit-export";
+import { readFileSync } from "node:fs";
+import { verifyAuditChain } from "../lib/itsm-audit-chain";
+import { merkleRoot } from "../lib/itsm-audit-merkle";
+import { parseCertificates } from "../lib/itsm-audit-timestamp";
 import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
@@ -947,6 +961,40 @@ router.get("/itsm/audit/siem", requireAuth, auditRateLimit, createItsmAuditSiemH
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));
+
+// RFC 3161: ITSM_TSA_URL is the timestamp authority; ITSM_TSA_TRUSTED_CERTS (PEM) or
+// ITSM_TSA_TRUSTED_CERTS_FILE gives the roots its certificate must chain to.
+const tsaTrustedCerts = (() => {
+  try {
+    const file = process.env.ITSM_TSA_TRUSTED_CERTS_FILE;
+    return parseCertificates(process.env.ITSM_TSA_TRUSTED_CERTS ?? (file ? readFileSync(file, "utf8") : undefined));
+  } catch (error) {
+    logger.error({ err: error, alert: "itsm_tsa_trusted_certs_unreadable" }, "ITSM_TSA_TRUSTED_CERTS could not be read");
+    return [];
+  }
+})();
+const timestampDependencies = {
+  resolveActor: actorFor,
+  loadAuditEvents: loadStoredAuditEvents,
+  tsaUrl: process.env.ITSM_TSA_URL || undefined,
+  trustedCerts: tsaTrustedCerts,
+  appendTimestamp: (entry: { actorId: string; size: number; root: string; token: string; verification: { genTime: string | null; serial: string | null; policy: string | null; tsaSubject: string | null } }) =>
+    withAdminChangeLock(async (store, saveStore) => {
+      const audit = Array.isArray(store.audit) ? store.audit : [];
+      const seals = verifyAuditChain(audit).status === "intact" ? orderedSeals(audit) : [];
+      if (seals.length < entry.size || merkleRoot(seals, entry.size) !== entry.root) return "changed" as const;
+      await saveStore(recordItsmAuditTimestamp(store, {
+        actorId: entry.actorId, size: entry.size, root: entry.root, tsaUrl: process.env.ITSM_TSA_URL ?? "",
+        token: entry.token, genTime: entry.verification.genTime, serial: entry.verification.serial,
+        policy: entry.verification.policy, tsaSubject: entry.verification.tsaSubject,
+      }));
+      return "saved" as const;
+    }),
+};
+
+router.get("/itsm/audit/timestamps", requireAuth, auditRateLimit, createItsmAuditTimestampListHandler(timestampDependencies));
+router.post("/itsm/audit/timestamps", requireAuth, auditRateLimit, createItsmAuditTimestampHandler(timestampDependencies));
+router.get("/itsm/audit/timestamps/:id/token", requireAuth, auditRateLimit, createItsmAuditTimestampTokenHandler(timestampDependencies));
 
 router.get("/itsm/audit/export", requireAuth, auditRateLimit, createItsmAuditExportHandler({
   resolveActor: actorFor,

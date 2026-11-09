@@ -8,6 +8,7 @@ import { Avatar, Button, SearchBox, Warning } from '@/components/kit';
 import { usePeople } from '@/hooks/use-people';
 import { AuditIntegrityPanel } from '@/components/audit-integrity';
 import { AuditSiemPanel } from '@/components/audit-siem';
+import { AuditTimestampsPanel } from '@/components/audit-timestamps';
 
 const AUDIT_PAGE_SIZE = 50;
 
@@ -118,6 +119,7 @@ export default function AuditPage() {
       <aside className="space-y-4"><div className="panel p-5"><div className="eyebrow">PORTÉE DU JOURNAL</div><div className="mt-2 text-[14px] font-semibold">Trace d’habilitation côté serveur</div><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Le serveur conserve l’administrateur, le compte cible, les rôles avant et après, les périmètres et l’horodatage. Les autres événements du prototype ne constituent pas une archive inviolable ni une preuve de conformité; une chaîne WORM / SIEM reste à réaliser pour la production.</p><div className="mt-4 flex items-center gap-2 rounded-lg bg-[#f4ecd9] p-3 text-[10px] leading-relaxed text-[#654e27] dark:bg-[#413720] dark:text-[#ebd8aa]"><AlertTriangle size={14} className="shrink-0" />La réinitialisation locale ne supprime pas les changements d’habilitation enregistrés côté serveur.</div></div>
         <div className="panel p-5"><div className="eyebrow">EXPORT CSV</div><p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">L’export reprend uniquement les événements filtrés, en UTF-8 avec cellules protégées contre l’interprétation de formules par les tableurs. Il inclut le numéro de séquence et les empreintes de chaque événement.</p></div>
         {canExport && <AuditIntegrityPanel />}
+        {canExport && <AuditTimestampsPanel canRequest={['N1', 'N3'].includes(store.profile.clearance.slice(0, 2))} />}
         {canExport && <AuditSiemPanel />}
         <div className="panel p-5"><div className="eyebrow">SESSION ACTIVE</div><div className="mt-3 flex items-center gap-3"><Avatar name={displayName} /><div><div className="text-[12px] font-semibold">{displayName}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div></div>{['N1', 'N3'].includes(store.profile.clearance.slice(0, 2)) && <Button variant="outline" className="mt-4 w-full" testId="button-add-control" onClick={() => log('Contrôle de session consulté', 'Journal d’activité')}><Activity size={14} />Ajouter un événement de contrôle</Button>}</div></aside>
     </div></div>;

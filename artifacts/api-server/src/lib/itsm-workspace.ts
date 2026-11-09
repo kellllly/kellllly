@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sanitizeAttachment } from "./itsm-attachments.ts";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
-import { isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
+import { isKeptWholeAuditType, isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
 import {
   findNewSlaBreaches, findSlaEscalations, ITSM_SLA_ESCALATION_AUDIT_TYPE, SLA_MONITOR_ACTOR,
   slaBreachAuditEvent, type SlaBreach, type SlaEscalation,
@@ -63,7 +63,7 @@ function retainItsmAuditEvents(events: unknown): JsonRecord[] {
   let retainedNonRoleEvents = 0;
   return sealAuditEvents(records(events)).map((event) => {
     if (isPrunedAuditEvent(event)) return event;
-    if (ITSM_ROLE_AUDIT_TYPES.includes(event.type as typeof ITSM_ROLE_AUDIT_TYPES[number])) return event;
+    if (isKeptWholeAuditType(event.type)) return event;
     retainedNonRoleEvents += 1;
     return retainedNonRoleEvents <= MAX_NON_ROLE_AUDIT_EVENTS ? event : pruneAuditEvent(event);
   });
@@ -505,6 +505,39 @@ export function recordItsmRoleAttestation(
     previousServiceIds: [...details.serviceIds],
     serviceIds: [...details.serviceIds],
     scope: details.scope,
+    at: newStamp(now),
+    time: shortTime(now),
+  };
+  next.audit = retainItsmAuditEvents([event, ...records(next.audit)]);
+  return next;
+}
+
+/** Journal an RFC 3161 timestamp of the Merkle checkpoint of the first `size` events. */
+export function recordItsmAuditTimestamp(
+  current: JsonRecord,
+  details: {
+    actorId: string;
+    size: number;
+    root: string;
+    tsaUrl: string;
+    token: string;
+    genTime: string | null;
+    serial: string | null;
+    policy: string | null;
+    tsaSubject: string | null;
+  },
+  now = new Date(),
+): JsonRecord {
+  const next = structuredClone(current);
+  const event = {
+    id: randomUUID(),
+    type: "itsm.audit.timestamped",
+    action: `Point de contrôle du journal horodaté (RFC 3161, ${details.size} événements)`,
+    actor: details.actorId,
+    scope: "Journal",
+    checkpoint: { size: details.size, root: details.root },
+    tsa: { url: details.tsaUrl, subject: details.tsaSubject, genTime: details.genTime, serial: details.serial, policy: details.policy },
+    token: details.token,
     at: newStamp(now),
     time: shortTime(now),
   };
@@ -1318,7 +1351,9 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
     })),
     services: actor.role === "N5" ? [] : scopedServices,
     assets: actor.role === "N4" ? scopedAssets : hiddenCollections ? [] : records(store.assets),
-    audit: actor.role === "N4" ? [] : records(store.audit).filter((event) => !isPrunedAuditEvent(event)),
+    // The RFC 3161 token (a few kB) is served by GET /itsm/audit/timestamps/:id/token, not with every view.
+    audit: actor.role === "N4" ? [] : records(store.audit).filter((event) => !isPrunedAuditEvent(event))
+      .map(({ token: _token, ...event }) => event),
     kedb: actor.role === "N4"
       ? records(store.kedb).filter((article) => actor.serviceIds.includes(String(article.serviceId ?? "")))
       : records(store.kedb),

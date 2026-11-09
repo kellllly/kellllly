@@ -666,7 +666,7 @@ test("the real workspace save route returns a scoped 409 for a stale N4 save", {
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["express", "express-rate-limit", "pino", "pino-http", "@clerk/express", "pg"],
+      external: ["express", "express-rate-limit", "pkijs", "asn1js", "pino", "pino-http", "@clerk/express", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });
@@ -928,7 +928,7 @@ test("concurrent authorized conversions of one Support message accept one save a
       bundle: true,
       platform: "node",
       format: "esm",
-      external: ["express", "express-rate-limit", "pino", "pino-http", "@clerk/express", "pg"],
+      external: ["express", "express-rate-limit", "pkijs", "asn1js", "pino", "pino-http", "@clerk/express", "pg"],
       sourcemap: false,
       logLevel: "silent",
     });

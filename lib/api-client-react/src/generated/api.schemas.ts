@@ -223,6 +223,55 @@ export interface ItsmAuditIntegrity {
   checkedAt: string;
 }
 
+export interface ItsmAuditTimestamp {
+  id: string;
+  /** @nullable */
+  at: string | null;
+  /** @nullable */
+  actor: string | null;
+  size: number;
+  root: string;
+  /** Text whose SHA-256 the authority signed */
+  statement: string;
+  /** @nullable */
+  tsaUrl: string | null;
+  /** @nullable */
+  genTime: string | null;
+  /** @nullable */
+  serial: string | null;
+  /** @nullable */
+  policy: string | null;
+  /** @nullable */
+  tsaSubject: string | null;
+  /** Authority signature, imprint and timestamping certificate checked */
+  valid: boolean;
+  /** Authority certificate chains to a configured trusted root */
+  chainVerified: boolean;
+  /** Today's first size events still give the timestamped root */
+  journalUnchanged: boolean;
+  /** @nullable */
+  problem: string | null;
+}
+
+export interface ItsmAuditTimestamps {
+  configured: boolean;
+  /** @minimum 0 */
+  trustedRoots: number;
+  timestamps: ItsmAuditTimestamp[];
+}
+
+export interface ItsmAuditTimestampCreated {
+  size: number;
+  root: string;
+  /** @nullable */
+  genTime: string | null;
+  /** @nullable */
+  serial: string | null;
+  /** @nullable */
+  tsaSubject: string | null;
+  chainVerified: boolean;
+}
+
 export interface ItsmAuditProof {
   /** @nullable */
   eventId: string | null;
