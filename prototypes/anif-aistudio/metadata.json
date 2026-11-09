@@ -1,6 +1,0 @@
-{
-  "name": "ANIF Gabon - Plateforme Souveraine E2EE & ITSM",
-  "description": "Plateforme souveraine unifiée de messagerie chiffrée de bout en bout (Zero-Knowledge) et de gestion des services informatiques (ITIL v4) pour l'Agence Nationale d'Investigation Financière de la République Gabonaise.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
