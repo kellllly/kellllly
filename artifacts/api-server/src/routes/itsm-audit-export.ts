@@ -6,6 +6,7 @@ import {
 import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
 import { isPrunedAuditEvent, verifyAuditChain } from "../lib/itsm-audit-chain.ts";
 import { isSeal, merkleInclusionProof, merkleRoot } from "../lib/itsm-audit-merkle.ts";
+import { siemPage } from "../lib/itsm-audit-siem.ts";
 
 type AuditExportDependencies = {
   resolveActor: (req: Request, res: Response) => Promise<WorkspaceActor | null>;
@@ -253,5 +254,55 @@ export function createItsmAuditProofHandler({
       root: merkleRoot(seals, treeSize),
       proof: merkleInclusionProof(seals, seq - 1, treeSize),
     });
+  };
+}
+
+/**
+ * Journal feed for a SIEM collector: NDJSON, one event per line (ECS field
+ * names), oldest first, after the sequence `after`. Headers give the cursor for
+ * the next poll and the chain state, so the collector raises its own alert when
+ * the chain breaks. Same audience as the export (N1, N3, N5).
+ */
+export function createItsmAuditSiemHandler({
+  resolveActor,
+  loadAuditEvents,
+}: Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents">): RequestHandler {
+  return async (req, res): Promise<void> => {
+    const actor = await resolveActor(req, res);
+    if (!actor || res.headersSent) return;
+    try {
+      requirePermission(actor, "exportAudit");
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+    const rawAfter = req.query.after === undefined ? "0" : String(req.query.after);
+    const rawLimit = req.query.limit === undefined ? "500" : String(req.query.limit);
+    if (!/^(0|[1-9]\d{0,8})$/u.test(rawAfter) || !/^[1-9]\d{0,3}$/u.test(rawLimit) || Number(rawLimit) > 1000) {
+      res.status(400).json({ error: "« after » doit être un numéro de séquence (0 au départ) et « limit » un entier de 1 à 1000." });
+      return;
+    }
+    let events: unknown[];
+    try {
+      events = await loadAuditEvents();
+    } catch (error) {
+      req.log?.error({ err: error }, "Failed to load ITSM audit for the SIEM feed");
+      res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
+      return;
+    }
+    const chain = verifyAuditChain(events);
+    if (chain.status === "broken") {
+      req.log?.error({ alert: "itsm_audit_chain_broken", firstBreak: chain.firstBreak }, "ITSM audit hash chain is broken");
+    }
+    const page = siemPage(events, Number(rawAfter), Number(rawLimit));
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("X-ANIF-Next-After", String(page.next));
+    res.setHeader("X-ANIF-Journal-Head", String(page.head));
+    res.setHeader("X-ANIF-Chain-Status", chain.status);
+    res.send(page.lines.length ? `${page.lines.join("\n")}\n` : "");
   };
 }

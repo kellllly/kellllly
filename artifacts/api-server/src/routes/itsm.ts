@@ -71,7 +71,7 @@ import {
   requirePermission,
   type ItsmRole,
 } from "../lib/itsm-rbac";
-import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler, createItsmAuditProofHandler } from "./itsm-audit-export";
+import { createItsmAuditExportHandler, createItsmAuditIntegrityHandler, createItsmAuditProofHandler, createItsmAuditSiemHandler } from "./itsm-audit-export";
 import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
@@ -935,6 +935,11 @@ router.get("/itsm/audit/integrity", requireAuth, createItsmAuditIntegrityHandler
 }));
 
 router.get("/itsm/audit/proof", requireAuth, createItsmAuditProofHandler({
+  resolveActor: actorFor,
+  loadAuditEvents: loadStoredAuditEvents,
+}));
+
+router.get("/itsm/audit/siem", requireAuth, createItsmAuditSiemHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
 }));

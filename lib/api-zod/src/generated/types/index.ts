@@ -15,6 +15,7 @@ export * from './developmentRoleArchiveEnvelopeSource';
 export * from './developmentRoleArchiveReceipt';
 export * from './exportItsmAuditParams';
 export * from './getItsmAuditProofParams';
+export * from './getItsmAuditSiemFeedParams';
 export * from './getItsmContactsParams';
 export * from './getItsmPeopleParams';
 export * from './getItsmUserDirectoryParams';

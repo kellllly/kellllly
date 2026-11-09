@@ -29,6 +29,7 @@ import type {
   DevelopmentRoleArchiveReceipt,
   ExportItsmAuditParams,
   GetItsmAuditProofParams,
+  GetItsmAuditSiemFeedParams,
   GetItsmContactsParams,
   GetItsmPeopleParams,
   GetItsmUserDirectoryParams,
@@ -1276,6 +1277,114 @@ export function useGetItsmAuditProof<TData = Awaited<ReturnType<typeof getItsmAu
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetItsmAuditProofQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetItsmAuditSiemFeedUrl = (params?: GetItsmAuditSiemFeedParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/itsm/audit/siem?${stringifiedParams}` : `/api/itsm/audit/siem`
+}
+
+/**
+ * @summary Journal feed for a SIEM collector (NDJSON, ECS field names)
+ */
+export const getItsmAuditSiemFeed = async (params?: GetItsmAuditSiemFeedParams, options?: Parameters<typeof customFetch>[1]): Promise<Response> => {
+
+  return customFetch<Response>(getGetItsmAuditSiemFeedUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmAuditSiemFeedQueryKey = (params?: GetItsmAuditSiemFeedParams,) => {
+    return [
+    `/api/itsm/audit/siem`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetItsmAuditSiemFeedQueryOptions = <TData = Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError = ErrorType<void>>(params?: GetItsmAuditSiemFeedParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmAuditSiemFeedQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>> = ({ signal }) => getItsmAuditSiemFeed(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmAuditSiemFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>>
+export type GetItsmAuditSiemFeedQueryError = ErrorType<void>
+
+
+export function useGetItsmAuditSiemFeed<TData = Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError = ErrorType<void>>(
+ params: undefined |  GetItsmAuditSiemFeedParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditSiemFeed>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditSiemFeed>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditSiemFeed<TData = Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError = ErrorType<void>>(
+ params?: GetItsmAuditSiemFeedParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmAuditSiemFeed>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmAuditSiemFeed>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmAuditSiemFeed<TData = Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError = ErrorType<void>>(
+ params?: GetItsmAuditSiemFeedParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Journal feed for a SIEM collector (NDJSON, ECS field names)
+ */
+
+export function useGetItsmAuditSiemFeed<TData = Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError = ErrorType<void>>(
+ params?: GetItsmAuditSiemFeedParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmAuditSiemFeed>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmAuditSiemFeedQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

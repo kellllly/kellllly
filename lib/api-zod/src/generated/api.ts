@@ -233,6 +233,25 @@ export const GetItsmAuditProofResponse = zod.object({
 
 
 /**
+ * @summary Journal feed for a SIEM collector (NDJSON, ECS field names)
+ */
+export const getItsmAuditSiemFeedQueryAfterDefault = 0;
+export const getItsmAuditSiemFeedQueryAfterMin = 0;
+
+export const getItsmAuditSiemFeedQueryLimitDefault = 500;
+export const getItsmAuditSiemFeedQueryLimitMax = 1000;
+
+
+
+export const GetItsmAuditSiemFeedQueryParams = zod.object({
+  "after": zod.coerce.number().int().min(getItsmAuditSiemFeedQueryAfterMin).default(getItsmAuditSiemFeedQueryAfterDefault).describe('Last sequence already received (0 to start)'),
+  "limit": zod.coerce.number().int().min(1).max(getItsmAuditSiemFeedQueryLimitMax).default(getItsmAuditSiemFeedQueryLimitDefault)
+})
+
+export const GetItsmAuditSiemFeedResponse = zod.unknown()
+
+
+/**
  * @summary List pilot accounts for N1 role management
  */
 export const getItsmUserDirectoryQueryQMax = 120;

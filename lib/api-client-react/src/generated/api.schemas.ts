@@ -450,6 +450,19 @@ export type GetItsmAuditProofParams = {
   treeSize?: number;
 };
 
+export type GetItsmAuditSiemFeedParams = {
+  /**
+   * Last sequence already received (0 to start)
+   * @minimum 0
+   */
+  after?: number;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: number;
+};
+
 export type GetItsmUserDirectoryParams = {
   /** @maxLength 120 */
   q?: string;

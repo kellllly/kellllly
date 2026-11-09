@@ -293,6 +293,43 @@ paths:
           description: The journal chain is not intact
         "503":
           description: The journal could not be read
+  /itsm/audit/siem:
+    get:
+      operationId: getItsmAuditSiemFeed
+      tags: [itsm]
+      summary: Journal feed for a SIEM collector (NDJSON, ECS field names)
+      parameters:
+        - in: query
+          name: after
+          description: Last sequence already received (0 to start)
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+      responses:
+        "200":
+          description: One event per line, oldest first
+          headers:
+            X-ANIF-Next-After:
+              description: Sequence to pass as after on the next poll
+              schema: { type: integer }
+            X-ANIF-Journal-Head:
+              description: Highest sequence in the journal
+              schema: { type: integer }
+            X-ANIF-Chain-Status:
+              description: Hash-chain state (intact, broken, empty, unsealed)
+              schema: { type: string }
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+        "400":
+          description: Invalid cursor or limit
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot export the audit log
+        "503":
+          description: The journal could not be read
   /itsm/users:
     get:
       operationId: getItsmUserDirectory
