@@ -6,11 +6,36 @@ export type AuditIntegrityView = {
   detail: string;
   /** Seal to note outside the pilot: proves later that nothing before it was rewritten. */
   seal: string | null;
+  /** State of the append-only seal archive kept by PostgreSQL. */
+  archive: string | null;
 };
 
 const plural = (count: number, one: string, many: string) => `${count} ${count > 1 ? many : one}`;
 
+function describeArchive(archive: ItsmAuditIntegrity['archive'] | undefined): string | null {
+  if (!archive) return null;
+  if (archive.status === 'not_installed') return 'Archive des sceaux en ajout seul non installée sur la base : seule la chaîne est vérifiée.';
+  const pending = archive.unarchived > 0 ? ` ${plural(archive.unarchived, 'sceau récent n’est', 'sceaux récents ne sont')} pas encore archivé${archive.unarchived > 1 ? 's' : ''}.` : '';
+  return `${plural(archive.archived, 'sceau archivé', 'sceaux archivés')} par la base en ajout seul, tous retrouvés dans le journal.${pending}`;
+}
+
 export function describeAuditIntegrity(report: ItsmAuditIntegrity): AuditIntegrityView {
+  const view = describeChain(report);
+  if (report.archive?.status === 'diverged' && report.status !== 'broken') {
+    const mismatch = report.archive.firstMismatch;
+    const what = mismatch?.reason === 'missing' ? 'a disparu du journal' : 'a été modifié dans le journal';
+    return {
+      tone: 'red',
+      title: 'Journal différent de son archive',
+      detail: `Le sceau n° ${mismatch?.seq ?? '?'} conservé par la base en ajout seul ${what}. Le journal a pu être réécrit puis rescellé hors de l’application : prévenez l’administrateur.`,
+      seal: null,
+      archive: null,
+    };
+  }
+  return { ...view, archive: report.status === 'broken' ? null : describeArchive(report.archive) };
+}
+
+function describeChain(report: ItsmAuditIntegrity): Omit<AuditIntegrityView, 'archive'> {
   if (report.status === 'empty') {
     return { tone: 'neutral', title: 'Journal vide', detail: 'Aucun événement à vérifier.', seal: null };
   }

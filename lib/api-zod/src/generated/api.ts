@@ -180,6 +180,10 @@ export const getItsmAuditIntegrityResponseVerifiedMin = 0;
 export const getItsmAuditIntegrityResponsePrunedMin = 0;
 
 
+export const getItsmAuditIntegrityResponseArchiveArchivedMin = 0;
+
+export const getItsmAuditIntegrityResponseArchiveUnarchivedMin = 0;
+
 
 
 
@@ -197,10 +201,19 @@ export const GetItsmAuditIntegrityResponse = zod.object({
   "eventId": zod.string().nullable(),
   "reason": zod.string()
 }).nullable(),
+  "archive": zod.object({
+  "status": zod.enum(['consistent', 'diverged', 'not_installed']),
+  "archived": zod.int().min(getItsmAuditIntegrityResponseArchiveArchivedMin),
+  "unarchived": zod.int().min(getItsmAuditIntegrityResponseArchiveUnarchivedMin).describe('Journal seals not archived yet'),
+  "firstMismatch": zod.object({
+  "seq": zod.int(),
+  "reason": zod.enum(['missing', 'changed'])
+}).nullable()
+}).describe('Comparison with the append-only seal archive kept by PostgreSQL triggers'),
   "merkle": zod.object({
   "root": zod.string(),
   "size": zod.int().min(1)
-}).nullable().describe('Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact'),
+}).nullable().describe('Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive'),
   "checkedAt": zod.coerce.date()
 })
 

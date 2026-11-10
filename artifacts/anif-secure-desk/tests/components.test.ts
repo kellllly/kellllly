@@ -42,6 +42,7 @@ const seals = Array.from({ length: 5 }, (_, i) => createHash('sha256').update(`e
 const root5 = merkleRoot(seals);
 const integrity = {
   status: 'intact', events: 5, verified: 5, pruned: 0, head: { seq: 5, hash: seals[4] }, firstBreak: null,
+  archive: { status: 'consistent', archived: 5, unarchived: 0, firstMismatch: null },
   merkle: { root: root5, size: 5 }, checkedAt: '2026-11-10T10:00:00.000Z',
 };
 const proofFor = (seq: number, size = 5, root = merkleRoot(seals, size)) => ({
@@ -55,6 +56,7 @@ test('integrity panel: shows the Merkle checkpoint and proves an event in the br
   await click(byTestId(container, 'button-check-integrity'));
   await settle();
   assert.equal(byTestId(container, 'status-audit-integrity')?.dataset.status, 'intact');
+  assert.equal(byTestId(container, 'text-audit-archive')?.dataset.archive, 'consistent');
   assert.equal(byTestId(container, 'text-audit-checkpoint')?.textContent, `5:${root5}`);
 
   await type(byTestId(container, 'input-proof-event'), '3');

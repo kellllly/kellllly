@@ -22,7 +22,8 @@ import {
   SaveItsmWorkspaceBody,
   SaveItsmWorkspaceResponse,
 } from "@workspace/api-zod";
-import { db, itsmWorkspaceTable } from "@workspace/db";
+import { db, itsmWorkspaceTable, pool } from "@workspace/db";
+import { loadArchivedSeals } from "../lib/itsm-audit-worm";
 import { eq, sql } from "drizzle-orm";
 import { createRoleJournalCache, decideJournaledRole } from "../lib/itsm-role-journal";
 import { Router, type IRouter, type Request, type RequestHandler, type Response } from "express";
@@ -951,6 +952,7 @@ const auditRateLimit = createAuditRateLimit({ accountOf: (req) => getAuth(req).u
 router.get("/itsm/audit/integrity", requireAuth, auditRateLimit, createItsmAuditIntegrityHandler({
   resolveActor: actorFor,
   loadAuditEvents: loadStoredAuditEvents,
+  loadArchivedSeals: () => loadArchivedSeals(pool, WORKSPACE_ID),
 }));
 
 router.get("/itsm/audit/proof", requireAuth, auditRateLimit, createItsmAuditProofHandler({

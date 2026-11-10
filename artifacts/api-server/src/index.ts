@@ -7,6 +7,8 @@ import { checkItsmRoleArchiveAvailability, purgeExpiredMessagesNow, recordSlaBre
 import { createSlaBreachMonitor } from "./lib/itsm-sla";
 import { developmentRoleArchiveEnabled } from "./lib/development-role-archive-config";
 import { initializeDevelopmentRoleArchive } from "./lib/development-role-archive-storage";
+import { installAuditWorm } from "./lib/itsm-audit-worm";
+import { pool } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
 
@@ -29,6 +31,14 @@ async function start(): Promise<void> {
   } catch (err) {
     // Not fatal: the journal is also sealed at the next workspace save.
     logger.error({ err, component: "itsm_audit_chain" }, "Could not seal the existing activity journal");
+  }
+  try {
+    // After sealing: the triggers archive the seals of the journal as it stands.
+    const archived = await installAuditWorm(pool);
+    logger.info({ component: "itsm_audit_worm", archived }, "Append-only seal archive installed");
+  } catch (err) {
+    // Not fatal: the integrity check then reports the archive as not installed or diverged.
+    logger.error({ err, component: "itsm_audit_worm", alert: "itsm_audit_worm_install_failed" }, "Could not install the append-only seal archive");
   }
   try {
     if (await ensureSupportServiceChannelsNow()) logger.info({ component: "itsm_support_channels" }, "Announcements channel and support services room opened");

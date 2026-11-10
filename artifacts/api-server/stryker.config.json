@@ -4,20 +4,31 @@
   "packageManager": "pnpm",
   "testRunner": "command",
   "commandRunner": {
-    "command": "node --experimental-strip-types --no-warnings --test tests/itsm-audit-chain.test.ts tests/itsm-audit-merkle.test.ts tests/itsm-audit-siem.test.ts tests/itsm-step-up.test.ts tests/itsm-rate-limit.test.ts tests/itsm-audit-hardening.test.ts"
+    "command": "node --experimental-strip-types --no-warnings --test tests/itsm-audit-chain.test.ts tests/itsm-audit-merkle.test.ts tests/itsm-audit-siem.test.ts tests/itsm-step-up.test.ts tests/itsm-rate-limit.test.ts tests/itsm-audit-hardening.test.ts tests/itsm-audit-worm.test.ts"
   },
   "mutate": [
     "src/lib/itsm-audit-chain.ts",
     "src/lib/itsm-audit-merkle.ts",
     "src/lib/itsm-audit-siem.ts",
-    "src/lib/itsm-step-up.ts"
+    "src/lib/itsm-step-up.ts",
+    "src/lib/itsm-audit-worm.ts:145-164"
   ],
   "coverageAnalysis": "off",
   "concurrency": 4,
   "timeoutMS": 30000,
-  "reporters": ["clear-text", "progress", "json"],
-  "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
-  "thresholds": { "high": 90, "low": 80, "break": 80 },
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": "always"
 }

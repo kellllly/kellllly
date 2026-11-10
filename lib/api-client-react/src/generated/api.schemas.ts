@@ -193,8 +193,49 @@ export type ItsmAuditIntegrityFirstBreak = {
   reason: string;
 } | null;
 
+export type ItsmAuditIntegrityArchiveStatus = typeof ItsmAuditIntegrityArchiveStatus[keyof typeof ItsmAuditIntegrityArchiveStatus];
+
+
+export const ItsmAuditIntegrityArchiveStatus = {
+  consistent: 'consistent',
+  diverged: 'diverged',
+  not_installed: 'not_installed',
+} as const;
+
+export type ItsmAuditIntegrityArchiveFirstMismatchReason = typeof ItsmAuditIntegrityArchiveFirstMismatchReason[keyof typeof ItsmAuditIntegrityArchiveFirstMismatchReason];
+
+
+export const ItsmAuditIntegrityArchiveFirstMismatchReason = {
+  missing: 'missing',
+  changed: 'changed',
+} as const;
+
 /**
- * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+ * @nullable
+ */
+export type ItsmAuditIntegrityArchiveFirstMismatch = {
+  seq: number;
+  reason: ItsmAuditIntegrityArchiveFirstMismatchReason;
+} | null;
+
+/**
+ * Comparison with the append-only seal archive kept by PostgreSQL triggers
+ */
+export type ItsmAuditIntegrityArchive = {
+  status: ItsmAuditIntegrityArchiveStatus;
+  /** @minimum 0 */
+  archived: number;
+  /**
+     * Journal seals not archived yet
+     * @minimum 0
+     */
+  unarchived: number;
+  /** @nullable */
+  firstMismatch: ItsmAuditIntegrityArchiveFirstMismatch;
+};
+
+/**
+ * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive
  * @nullable
  */
 export type ItsmAuditIntegrityMerkle = {
@@ -215,8 +256,10 @@ export interface ItsmAuditIntegrity {
   head: ItsmAuditIntegrityHead;
   /** @nullable */
   firstBreak: ItsmAuditIntegrityFirstBreak;
+  /** Comparison with the append-only seal archive kept by PostgreSQL triggers */
+  archive: ItsmAuditIntegrityArchive;
   /**
-     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive
      * @nullable
      */
   merkle: ItsmAuditIntegrityMerkle;

@@ -763,9 +763,25 @@ components:
             eventId: { type: [string, "null"] }
             reason: { type: string }
           required: [seq, eventId, reason]
+        archive:
+          type: object
+          description: Comparison with the append-only seal archive kept by PostgreSQL triggers
+          properties:
+            status:
+              type: string
+              enum: [consistent, diverged, not_installed]
+            archived: { type: integer, minimum: 0 }
+            unarchived: { type: integer, minimum: 0, description: "Journal seals not archived yet" }
+            firstMismatch:
+              type: [object, "null"]
+              properties:
+                seq: { type: integer }
+                reason: { type: string, enum: [missing, changed] }
+              required: [seq, reason]
+          required: [status, archived, unarchived, firstMismatch]
         merkle:
           type: [object, "null"]
-          description: Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+          description: Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive
           properties:
             root: { type: string }
             size: { type: integer, minimum: 1 }
@@ -773,7 +789,7 @@ components:
         checkedAt:
           type: string
           format: date-time
-      required: [status, events, verified, pruned, head, firstBreak, merkle, checkedAt]
+      required: [status, events, verified, pruned, head, firstBreak, archive, merkle, checkedAt]
     ItsmAuditTimestamp:
       type: object
       properties:

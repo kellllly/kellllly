@@ -15,6 +15,7 @@ on:
       - "artifacts/api-server/src/lib/itsm-audit-merkle.ts"
       - "artifacts/api-server/src/lib/itsm-audit-siem.ts"
       - "artifacts/api-server/src/lib/itsm-step-up.ts"
+      - "artifacts/api-server/src/lib/itsm-audit-worm.ts"
       - "artifacts/api-server/stryker.config.json"
 
 permissions:

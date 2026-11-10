@@ -19,3 +19,4 @@
 
 export * from "./itsm-workspace";
 export * from "./itsm-development-role-archive";
+export * from "./itsm-audit-seal-archive";

@@ -8,6 +8,7 @@ import type { WorkspaceActor } from "../lib/itsm-workspace.ts";
 import { isPrunedAuditEvent, verifyAuditChain } from "../lib/itsm-audit-chain.ts";
 import { isSeal, merkleInclusionProof, merkleRoot } from "../lib/itsm-audit-merkle.ts";
 import { siemPage } from "../lib/itsm-audit-siem.ts";
+import { compareWithArchive, type ArchivedSeal } from "../lib/itsm-audit-worm.ts";
 import {
   buildTimestampRequest,
   checkpointStatement,
@@ -154,8 +155,13 @@ export function createItsmAuditExportHandler({
 export function createItsmAuditIntegrityHandler({
   resolveActor,
   loadAuditEvents,
+  loadArchivedSeals = async () => null,
   now = () => new Date(),
-}: Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents"> & { now?: () => Date }): RequestHandler {
+}: Pick<AuditExportDependencies, "resolveActor" | "loadAuditEvents"> & {
+  /** Seals kept by the append-only PostgreSQL archive; null when it is not installed. */
+  loadArchivedSeals?: () => Promise<ArchivedSeal[] | null>;
+  now?: () => Date;
+}): RequestHandler {
   return async (req, res): Promise<void> => {
     const actor = await resolveActor(req, res);
     if (!actor || res.headersSent) return;
@@ -169,8 +175,9 @@ export function createItsmAuditIntegrityHandler({
       throw error;
     }
     let events: unknown[];
+    let archived: ArchivedSeal[] | null;
     try {
-      events = await loadAuditEvents();
+      [events, archived] = await Promise.all([loadAuditEvents(), loadArchivedSeals()]);
     } catch (error) {
       req.log?.error({ err: error }, "Failed to load ITSM audit for integrity check");
       res.status(503).json({ error: "Impossible de lire le journal d’activité. Réessayez plus tard." });
@@ -180,10 +187,16 @@ export function createItsmAuditIntegrityHandler({
     if (report.status === "broken") {
       req.log?.error({ alert: "itsm_audit_chain_broken", firstBreak: report.firstBreak }, "ITSM audit hash chain is broken");
     }
-    const seals = report.status === "intact" ? orderedSeals(events) : [];
+    const archive = compareWithArchive(events, archived);
+    if (archive.status === "diverged") {
+      req.log?.error({ alert: "itsm_audit_archive_diverged", firstMismatch: archive.firstMismatch }, "ITSM audit journal differs from its append-only archive");
+    }
+    // A journal that lost or changed an archived seal gives no checkpoint, even with a coherent chain.
+    const seals = report.status === "intact" && archive.status !== "diverged" ? orderedSeals(events) : [];
     res.setHeader("Cache-Control", "no-store");
     res.json({
       ...report,
+      archive,
       merkle: seals.length ? { root: merkleRoot(seals), size: seals.length } : null,
       checkedAt: now().toISOString(),
     });

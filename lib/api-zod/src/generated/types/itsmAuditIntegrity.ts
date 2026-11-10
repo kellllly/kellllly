@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ItsmAuditIntegrityArchive } from './itsmAuditIntegrityArchive';
 import type { ItsmAuditIntegrityFirstBreak } from './itsmAuditIntegrityFirstBreak';
 import type { ItsmAuditIntegrityHead } from './itsmAuditIntegrityHead';
 import type { ItsmAuditIntegrityMerkle } from './itsmAuditIntegrityMerkle';
@@ -22,8 +23,10 @@ export interface ItsmAuditIntegrity {
   head: ItsmAuditIntegrityHead;
   /** @nullable */
   firstBreak: ItsmAuditIntegrityFirstBreak;
+  /** Comparison with the append-only seal archive kept by PostgreSQL triggers */
+  archive: ItsmAuditIntegrityArchive;
   /**
-     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+     * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive
      * @nullable
      */
   merkle: ItsmAuditIntegrityMerkle;

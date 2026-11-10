@@ -7,7 +7,7 @@
  */
 
 /**
- * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact
+ * Merkle checkpoint of the whole journal (RFC 6962), when the chain is intact and matches the archive
  * @nullable
  */
 export type ItsmAuditIntegrityMerkle = {
