@@ -18,6 +18,7 @@ const MATRIX: { cap: string; domain: string; v: [Cap, Cap, Cap, Cap, Cap] }[] = 
   { cap: 'Consulter la base d’erreurs connues', domain: 'Connaissance', v: ['Oui', 'Oui', 'Oui', 'Oui', 'Lecture'] },
   { cap: 'Exporter le journal d’activité', domain: 'Traçabilité', v: ['Oui', 'Non', 'Oui', 'Non', 'Oui'] },
   { cap: 'Administrer rôles et habilitations', domain: 'Gouvernance', v: ['Partiel', 'Non', 'Partiel', 'Non', 'Non'] },
+  { cap: 'Utiliser l’assistant de diagnostic guidé', domain: 'Support', v: ['Oui', 'Oui', 'Oui', 'Partiel', 'Non'] },
 ];
 const tone = (c: Cap) => (c === 'Oui' ? 'green' : c === 'Partiel' ? 'amber' : c === 'Lecture' ? 'blue' : 'neutral');
 
@@ -25,6 +26,8 @@ const CONTROLS: { domain: string; target: string; status: 'À réaliser' | 'À v
   { domain: 'Chiffrement de bout en bout', target: 'E2EE des échanges, cycle de vie des clés (génération, rotation, révocation, séquestre)', status: 'À réaliser', note: 'Aucun chiffrement de bout en bout dans ce pilote; les données fictives sont partagées via le serveur.' },
   { domain: 'Identité forte', target: 'Authentification FIDO2 / clés matérielles, fédération et revue des habilitations', status: 'À réaliser', note: 'Les rôles N1 à N5 sont lus depuis les métadonnées Clerk côté serveur; les premiers N1 proviennent d’une liste d’adresses vérifiées configurée par un administrateur système. Attribuer, retirer ou attester un rôle exige une vérification d’identité Clerk de moins de 10 minutes, et un second facteur si l’option est activée. FIDO2 et la fédération restent à mettre en place.' },
   { domain: 'Journalisation', target: 'Stockage WORM, collecte SIEM, horodatage qualifié', status: 'À réaliser', note: 'Livré : journal scellé (chaîne SHA-256, points de contrôle Merkle vérifiables dans le navigateur), horodatage RFC 3161 par une autorité externe, archive des sceaux en ajout seul protégée par PostgreSQL et flux SIEM au format ECS. Reste : stockage WORM matériel (un administrateur de la base peut lever la protection), raccordement d’un SIEM et autorité qualifiée eIDAS.' },
+  { domain: 'Pièces jointes', target: 'Chiffrement par fichier, nettoyage EXIF, analyse, prévisualisation isolée et rétention maîtrisée', status: 'À réaliser', note: 'Le pilote ne transporte pas de pièces jointes et ne fournit pas de nettoyage ou chiffrement documentaire.' },
+  { domain: 'Sondes opérationnelles', target: 'Contrôles autorisés vers Nkok, annuaire IAM et dépendances réseau', status: 'À réaliser', note: 'Le Bot SI du pilote vérifie seulement /api/healthz et lit le catalogue de démonstration; aucune sonde Nkok ou Keycloak n’est configurée.' },
   { domain: 'Hébergement', target: 'Hébergement souverain Nkok / Libreville, sites actif et secours', status: 'À valider', note: 'Hypothèse d’architecture, aucun site qualifié à ce stade.' },
   { domain: 'Disponibilité', target: 'Objectif 99,99 % annuel', status: 'À valider', note: 'Cible de conception, non mesurée.' },
   { domain: 'Reprise d’activité', target: 'RTO < 15 min · RPO 0', status: 'À valider', note: 'À démontrer par exercices de bascule documentés.' },
@@ -38,7 +41,7 @@ const PHASES = [
   ['M2', 'Architecture cible et choix d’hébergement'],
   ['M3', 'Socle d’identité forte FIDO2'],
   ['M4', 'Messagerie chiffrée et gestion des clés'],
-  ['M5', 'Centre de services ITIL et engagements de service'],
+  ['M5', 'Centre ITIL, Bot SI, sondes autorisées et engagements de service'],
   ['M6', 'Journalisation WORM et raccordement SIEM'],
   ['M7', 'Sauvegardes 3-2-1-1-0 et plan de reprise'],
   ['M8', 'Tests d’intrusion et audit indépendant'],
