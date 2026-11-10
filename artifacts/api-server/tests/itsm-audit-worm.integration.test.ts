@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { sealAuditEvents } from "../src/lib/itsm-audit-chain.ts";
 import { installAuditWorm, loadArchivedSeals } from "../src/lib/itsm-audit-worm.ts";
 
@@ -11,7 +12,7 @@ test("PostgreSQL keeps the journal seals append-only, whatever writes the worksp
   skip: !process.env.DATABASE_URL && "Requires the PostgreSQL integration database",
 }, async (t) => {
   // pg is a dependency of lib/db, not of the API package.
-  const pg = createRequire(import.meta.url)(new URL("../../../lib/db/node_modules/pg", import.meta.url).pathname) as typeof import("pg");
+  const pg = createRequire(import.meta.url)(fileURLToPath(new URL("../../../lib/db/node_modules/pg", import.meta.url))) as typeof import("pg");
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   const workspaceId = `itsm-worm-test-${randomUUID()}`;
   t.after(async () => {

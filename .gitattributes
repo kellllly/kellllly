@@ -1,0 +1,2 @@
+# Empreintes figées par tests/itsm-tsa-trusted-root.test.ts : octets exacts, jamais de conversion CRLF.
+*.pem -text

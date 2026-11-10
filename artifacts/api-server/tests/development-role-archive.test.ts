@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import express from "express";
 import { build } from "esbuild";
@@ -57,7 +57,7 @@ test("archive HTTP protocol authenticates, validates, deduplicates and fails clo
       outfile: bundle, bundle: true, platform: "node", format: "esm",
       external: ["express"], logLevel: "silent",
     });
-    const { createDevelopmentRoleArchiveRouter } = await import(bundle);
+    const { createDevelopmentRoleArchiveRouter } = await import(pathToFileURL(bundle).href);
     const app = express();
     app.use("/archive", createDevelopmentRoleArchiveRouter({
       authorization: "Bearer unit-test-only",

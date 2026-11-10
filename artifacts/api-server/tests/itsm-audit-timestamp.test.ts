@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import express from "express";
 import { sealAuditEvents } from "../src/lib/itsm-audit-chain.ts";
 import {
@@ -213,5 +213,5 @@ test("a relative trusted-roots file is found from the workspace root when the AP
   assert.equal(resolveConfigFile("certs/ca.pem", join(root, "artifacts", "api-server")), join(root, "certs", "ca.pem"));
   writeFileSync(join(root, "artifacts", "api-server", "local.pem"), "x");
   assert.equal(resolveConfigFile("local.pem", join(root, "artifacts", "api-server")), join(root, "artifacts", "api-server", "local.pem"));
-  assert.equal(resolveConfigFile("/abs/ca.pem", root), "/abs/ca.pem");
+  assert.equal(resolveConfigFile("/abs/ca.pem", root), resolve("/abs/ca.pem"));
 });

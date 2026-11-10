@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import express from "express";
 import { build } from "esbuild";
@@ -96,7 +96,7 @@ test("stale workspace PUT returns a valid current snapshot and conflict identifi
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmWorkspaceSaveRouter } = await import(bundlePath);
+    const { createItsmWorkspaceSaveRouter } = await import(pathToFileURL(bundlePath).href);
     const currentStore = { marker: "version-distante" };
     const currentVersion = 8;
     const actor = { id: "pilot-admin", role: "N1" as const, serviceIds: [] };
@@ -172,7 +172,7 @@ test("role assignment HTTP response follows the generated schema without externa
       createItsmRoleArchiveCheckRouter,
       createItsmRoleAssignmentRouter,
       createItsmUserDirectoryRouter,
-    } = await import(bundlePath);
+    } = await import(pathToFileURL(bundlePath).href);
     const app = express();
     app.use(express.json());
     app.use((req: any, _res, next) => {

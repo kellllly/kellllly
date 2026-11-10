@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import express from "express";
 import { clerkMiddleware } from "@clerk/express";
 import { build } from "esbuild";
@@ -302,7 +302,7 @@ test("the mounted audit export route rejects requests without a Clerk session", 
       sourcemap: false,
       logLevel: "silent",
     });
-    const { default: itsmRouter } = await import(bundlePath);
+    const { default: itsmRouter } = await import(pathToFileURL(bundlePath).href);
     const app = express();
     app.use(clerkMiddleware({
       publishableKey: "pk_test_Y2xlcmsuZGV2JA",
@@ -465,7 +465,7 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
     sourcemap: false,
     logLevel: "silent",
   });
-  const { createItsmRoleAssignmentRouter } = await import(bundlePath);
+  const { createItsmRoleAssignmentRouter } = await import(pathToFileURL(bundlePath).href);
   t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
 
   type FailureMode = "clerk-update" | "journal-write" | "journal-write-after-persist" | "journal-verification-failure" | "journal-write-after-persist-verification-failure" | "restore-clerk" | "archive-write";
@@ -695,7 +695,7 @@ test("the HTTP role route protects the last N1 and permits removal after an acti
     sourcemap: false,
     logLevel: "silent",
   });
-  const { createItsmRoleAssignmentRouter } = await import(bundlePath);
+  const { createItsmRoleAssignmentRouter } = await import(pathToFileURL(bundlePath).href);
   t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
 
   const soleAdmin = {
@@ -817,7 +817,7 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
     sourcemap: false,
     logLevel: "silent",
   });
-  const { createItsmRoleAttestationRouter, createItsmBootstrapAdmin } = await import(bundlePath);
+  const { createItsmRoleAttestationRouter, createItsmBootstrapAdmin } = await import(pathToFileURL(bundlePath).href);
   t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
 
   const admin = { id: "admin-n1", publicMetadata: { itsmRole: "N1", itsmServiceIds: [] } };

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import express from "express";
 import { build } from "esbuild";
 
@@ -29,7 +29,7 @@ test("directory event stream is N1-only, sends minimal role updates, and closes 
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmRoleDirectoryEventsRouter, publishItsmRoleDirectoryEvent } = await import(bundlePath);
+    const { createItsmRoleDirectoryEventsRouter, publishItsmRoleDirectoryEvent } = await import(pathToFileURL(bundlePath).href);
     const app = express();
     let sessionRole: "N1" | "N2" = "N1";
     let currentRole: "N1" | "N2" | "N3" | "N4" | "N5" | null = "N1";

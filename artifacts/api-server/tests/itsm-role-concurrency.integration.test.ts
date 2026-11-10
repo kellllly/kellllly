@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import express from "express";
 import pino from "pino";
@@ -40,7 +40,7 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmRoleAssignmentRouter, withAdminChangeLock } = await import(bundlePath);
+    const { createItsmRoleAssignmentRouter, withAdminChangeLock } = await import(pathToFileURL(bundlePath).href);
     const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
     const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });

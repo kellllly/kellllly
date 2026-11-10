@@ -6,7 +6,8 @@ if (!process.env.DATABASE_URL) {
 }
 
 export default defineConfig({
-  schema: path.join(__dirname, "./src/schema/index.ts"),
+  // drizzle-kit lit ce chemin comme un glob : barres obliques inversées de Windows refusées.
+  schema: path.join(__dirname, "./src/schema/index.ts").replaceAll("\\", "/"),
   dialect: "postgresql",
   dbCredentials: {
     url: process.env.DATABASE_URL,

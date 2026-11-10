@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   applyWorkspaceUpdate,
   ITSM_ROLE_CHANGE_AUDIT_TYPE,
@@ -670,7 +670,7 @@ test("the real workspace save route returns a scoped 409 for a stale N4 save", {
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmWorkspaceSaveRouter } = await import(bundlePath);
+    const { createItsmWorkspaceSaveRouter } = await import(pathToFileURL(bundlePath).href);
     const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
     const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -932,7 +932,7 @@ test("concurrent authorized conversions of one Support message accept one save a
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmWorkspaceSaveRouter } = await import(bundlePath);
+    const { createItsmWorkspaceSaveRouter } = await import(pathToFileURL(bundlePath).href);
     const requireFromPackage = createRequire(path.join(packageDir, "src/routes/itsm.ts"));
     const pg = requireFromPackage(path.resolve(packageDir, "../../lib/db/node_modules/pg"));
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
