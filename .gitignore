@@ -62,3 +62,6 @@ Thumbs.db
 # Mutation testing (Stryker) output
 **/reports/mutation
 **/.stryker-tmp
+
+# Component test bundles
+**/.component-build

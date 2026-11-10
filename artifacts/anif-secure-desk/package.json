@@ -9,7 +9,8 @@
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --test tests/*.test.*",
-    "test:coverage": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-exclude='../api-server/**' --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=85 --test tests/*.test.*"
+    "test:coverage": "node --experimental-strip-types --import ./tests/register-ts-loader.mjs --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-exclude='../api-server/**' --test-coverage-exclude='.component-build/**' --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=85 --test tests/*.test.*",
+    "test:coverage:components": "node --experimental-strip-types --enable-source-maps --import ./tests/register-ts-loader.mjs --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-exclude='../api-server/**' --test-coverage-exclude='src/lib/**' --test tests/components.test.ts"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -46,6 +47,7 @@
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -56,9 +58,11 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
+    "esbuild": "0.28.2",
     "fast-check": "^4.10.2",
     "framer-motion": "catalog:",
     "input-otp": "^1.4.2",
+    "jsdom": "^26.1.0",
     "lucide-react": "catalog:",
     "next-themes": "^0.4.6",
     "playwright": "^1.64.1",

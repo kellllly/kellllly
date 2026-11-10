@@ -45,6 +45,9 @@ jobs:
         run: pnpm --filter @workspace/anif-secure-desk run test:coverage
       - name: Tests API et couverture
         run: pnpm --filter @workspace/api-server run test:coverage
+      # Report only (no threshold): journal panels rendered in jsdom, mapped back to src/components.
+      - name: Couverture des écrans testés (rapport)
+        run: pnpm --filter @workspace/anif-secure-desk run test:coverage:components
       - name: Build
         env:
           PORT: "5173"
