@@ -21,3 +21,7 @@ export const attestItsmRole = call('attestItsmRole');
 export const checkItsmRoleArchive = call('checkItsmRoleArchive');
 export const getItsmWorkspace = call('getItsmWorkspace');
 export const getGetItsmUserDirectoryQueryKey = (params?: unknown) => (params ? ['/api/itsm/users', params] : ['/api/itsm/users']);
+export const getItsmContacts = call('getItsmContacts');
+export const getItsmWorkspaceVersion = call('getItsmWorkspaceVersion');
+export const postItsmTemporaryMessage = call('postItsmTemporaryMessage');
+export const getItsmSessionMarker = call('getItsmSessionMarker');

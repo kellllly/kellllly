@@ -10,6 +10,7 @@ const SCREENS = [
   'src/components/audit-integrity.tsx',
   'src/components/audit-siem.tsx',
   'src/components/audit-timestamps.tsx',
+  'src/pages/messages.tsx',
   'src/pages/settings.tsx',
   'src/pages/tickets.tsx',
 ];

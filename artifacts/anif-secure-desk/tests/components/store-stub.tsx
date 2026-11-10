@@ -5,18 +5,20 @@
  */
 import { createContext, createElement, useContext, useState, type ReactNode } from 'react';
 import { baseStore } from '@/lib/seed';
-import type { Store, Ticket } from '@/lib/types';
+import type { Conversation, Store, Ticket } from '@/lib/types';
 
-type Ctx = { store: Store; setStore: (next: Store | ((s: Store) => Store)) => void; log: (action: string, scope: string) => void };
+type Ctx = { store: Store; setStore: (next: Store | ((s: Store) => Store)) => void; log: (action: string, scope: string) => void; resync: () => void };
 const StoreContext = createContext<Ctx | null>(null);
 
 export const current: { store: Store | null } = { store: null };
 export const logs: Array<{ action: string; scope: string }> = [];
+/** Times the screen asked to reload the shared workspace. */
+export const resyncs = { count: 0 };
 /** Clock read by useNow: tests move it to cross SLA thresholds. */
 export const clock = { now: Date.parse('2026-11-10T08:00:00.000Z') };
 
-export function testStore(tickets: Ticket[] = []): Store {
-  return { ...baseStore(), tickets, conversations: [], seeded: true } as Store;
+export function testStore(tickets: Ticket[] = [], conversations: Conversation[] = []): Store {
+  return { ...baseStore(), tickets, conversations, seeded: true } as Store;
 }
 
 export function TestStoreProvider({ initial, children }: { initial: Store; children: ReactNode }) {
@@ -28,7 +30,8 @@ export function TestStoreProvider({ initial, children }: { initial: Store; child
     return value;
   });
   const log = (action: string, scope: string) => { logs.push({ action, scope }); };
-  return createElement(StoreContext.Provider, { value: { store, setStore, log } }, children);
+  const resync = () => { resyncs.count += 1; };
+  return createElement(StoreContext.Provider, { value: { store, setStore, log, resync } }, children);
 }
 
 export function useStore() {

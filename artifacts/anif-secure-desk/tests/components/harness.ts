@@ -56,6 +56,8 @@ export async function loadComponents() {
       },
     }],
     nodePaths: [join(root, 'node_modules')],
+    // Vite's import.meta.env, read by the runtime-environment capture.
+    define: { 'import.meta.env': JSON.stringify({ MODE: 'test', BASE_URL: '/', DEV: false, PROD: false }) },
   });
   return import(pathToFileURL(outfile).href);
 }
