@@ -1,4 +1,6 @@
 import { createHash, randomBytes, webcrypto } from "node:crypto";
+import { existsSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 
@@ -67,6 +69,19 @@ const fail = (problem: string, partial: Partial<TimestampVerification> = {}): Ti
 
 const subjectOf = (certificate: pkijs.Certificate | null | undefined) =>
   certificate?.subject.typesAndValues.map((item) => item.value.valueBlock.value).join(", ") ?? null;
+
+/**
+ * Path of ITSM_TSA_TRUSTED_CERTS_FILE. A relative path is read from the current
+ * directory, else from the workspace root (the folder with pnpm-workspace.yaml):
+ * the API runs from artifacts/api-server while the setting names a root-level file.
+ */
+export function resolveConfigFile(file: string, cwd = process.cwd()): string {
+  if (isAbsolute(file) || existsSync(resolve(cwd, file))) return resolve(cwd, file);
+  for (let dir = resolve(cwd); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return join(dir, file);
+    if (dirname(dir) === dir) return resolve(cwd, file);
+  }
+}
 
 /** Parse PEM certificates (ITSM_TSA_TRUSTED_CERTS). */
 export function parseCertificates(pem: string | undefined): pkijs.Certificate[] {

@@ -6,9 +6,11 @@ lib/api-client-react/src/generated
 lib/api-zod/src/generated
 "
 
-if ! git diff --quiet HEAD -- $generated_paths; then
+# --no-pager: in a terminal (Replit shell, local dev) git would wait for a key and block the typecheck workflow.
+if ! git --no-pager diff --quiet HEAD -- $generated_paths; then
   echo "Generated API files are out of date. Review the diff and commit the regenerated files." >&2
-  git diff HEAD -- $generated_paths
+  git --no-pager diff --stat HEAD -- $generated_paths
+  git --no-pager diff HEAD -- $generated_paths | head -200
   exit 1
 fi
 

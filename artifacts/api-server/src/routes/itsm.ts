@@ -86,7 +86,7 @@ import {
 import { readFileSync } from "node:fs";
 import { verifyAuditChain } from "../lib/itsm-audit-chain";
 import { merkleRoot } from "../lib/itsm-audit-merkle";
-import { parseCertificates } from "../lib/itsm-audit-timestamp";
+import { parseCertificates, resolveConfigFile } from "../lib/itsm-audit-timestamp";
 import { createRoleReconciliationHandler } from "./itsm-role-reconciliation";
 
 import { developmentRoleArchiveEnabled } from "../lib/development-role-archive-config";
@@ -967,7 +967,7 @@ router.get("/itsm/audit/siem", requireAuth, auditRateLimit, createItsmAuditSiemH
 const tsaTrustedCerts = (() => {
   try {
     const file = process.env.ITSM_TSA_TRUSTED_CERTS_FILE;
-    return parseCertificates(process.env.ITSM_TSA_TRUSTED_CERTS ?? (file ? readFileSync(file, "utf8") : undefined));
+    return parseCertificates(process.env.ITSM_TSA_TRUSTED_CERTS ?? (file ? readFileSync(resolveConfigFile(file), "utf8") : undefined));
   } catch (error) {
     logger.error({ err: error, alert: "itsm_tsa_trusted_certs_unreadable" }, "ITSM_TSA_TRUSTED_CERTS could not be read");
     return [];

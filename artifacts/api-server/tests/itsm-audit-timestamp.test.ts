@@ -13,7 +13,7 @@ import { join } from "node:path";
 import express from "express";
 import { sealAuditEvents } from "../src/lib/itsm-audit-chain.ts";
 import {
-  buildTimestampRequest, checkpointDigest, checkpointStatement, parseCertificates, requestNonce, verifyTimestamp,
+  buildTimestampRequest, checkpointDigest, checkpointStatement, parseCertificates, requestNonce, resolveConfigFile, verifyTimestamp,
 } from "../src/lib/itsm-audit-timestamp.ts";
 import { merkleRoot } from "../src/lib/itsm-audit-merkle.ts";
 import { recordItsmAuditTimestamp, userStoreView } from "../src/lib/itsm-workspace.ts";
@@ -203,4 +203,15 @@ test("timestamp events are kept whole when old events are pruned", () => {
   }
   const audit = store.audit as Record<string, unknown>[];
   assert.ok(audit.every((item) => item.type !== "itsm.audit.timestamped" || typeof item.token === "string"));
+});
+
+test("a relative trusted-roots file is found from the workspace root when the API runs in its package", () => {
+  const root = mkdtempSync(join(tmpdir(), "anif-root-"));
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
+  execFileSync("mkdir", ["-p", join(root, "certs"), join(root, "artifacts", "api-server")]);
+  writeFileSync(join(root, "certs", "ca.pem"), "x");
+  assert.equal(resolveConfigFile("certs/ca.pem", join(root, "artifacts", "api-server")), join(root, "certs", "ca.pem"));
+  writeFileSync(join(root, "artifacts", "api-server", "local.pem"), "x");
+  assert.equal(resolveConfigFile("local.pem", join(root, "artifacts", "api-server")), join(root, "artifacts", "api-server", "local.pem"));
+  assert.equal(resolveConfigFile("/abs/ca.pem", root), "/abs/ca.pem");
 });
