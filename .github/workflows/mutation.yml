@@ -1,7 +1,9 @@
 name: Tests de mutation
 
-# Stryker modifie le code des modules de sécurité (chaîne d'empreintes, Merkle,
-# SIEM, réauthentification) et vérifie que les tests échouent. Le job échoue
+# Stryker modifie le code des modules de sécurité et vérifie que les tests échouent :
+# côté API (chaîne d'empreintes, Merkle, SIEM, réauthentification, archive en ajout seul)
+# et côté navigateur (données nominatives, pièces jointes, preuve Merkle, réauthentification,
+# canaux protégés et temporaires, messages éphémères, rôles, résumé de diagnostic). Le job échoue
 # sous 80 % de mutants tués (thresholds.break de stryker.config.json).
 # Stryker est lancé par pnpm dlx : il n'entre pas dans le lockfile du projet.
 
@@ -17,6 +19,16 @@ on:
       - "artifacts/api-server/src/lib/itsm-step-up.ts"
       - "artifacts/api-server/src/lib/itsm-audit-worm.ts"
       - "artifacts/api-server/stryker.config.json"
+      - "artifacts/anif-secure-desk/src/lib/sensitive-data.ts"
+      - "artifacts/anif-secure-desk/src/lib/attachments.ts"
+      - "artifacts/anif-secure-desk/src/lib/audit-merkle.ts"
+      - "artifacts/anif-secure-desk/src/lib/step-up.ts"
+      - "artifacts/anif-secure-desk/src/lib/protected-channel.ts"
+      - "artifacts/anif-secure-desk/src/lib/temporary-channel.ts"
+      - "artifacts/anif-secure-desk/src/lib/ephemeral.ts"
+      - "artifacts/anif-secure-desk/src/lib/role-administration.ts"
+      - "artifacts/anif-secure-desk/src/lib/diagnostic-assistant.ts"
+      - "artifacts/anif-secure-desk/stryker.config.json"
 
 permissions:
   contents: read
@@ -43,4 +55,26 @@ jobs:
         with:
           name: mutation-report
           path: artifacts/api-server/reports/mutation
+          retention-days: 30
+
+  mutation-front:
+    name: Stryker navigateur (score ≥ 80 %)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tests de mutation du navigateur
+        run: pnpm --filter @workspace/anif-secure-desk run test:mutation
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-front
+          path: artifacts/anif-secure-desk/reports/mutation
           retention-days: 30

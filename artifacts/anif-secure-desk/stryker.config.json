@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing of the browser rules that protect data (personal data filter, attachments, Merkle proof check, step-up, protected and temporary channels, ephemeral messages, role administration, diagnostic hand-off). Run: pnpm --filter @workspace/anif-secure-desk run test:mutation inPlace: tests/audit-merkle.test.ts compares against ../../api-server, which a sandbox copy cannot reach.",
+  "packageManager": "pnpm",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --experimental-strip-types --no-warnings --import ./tests/register-ts-loader.mjs --test tests/sensitive-data.test.ts tests/attachments.test.ts tests/audit-merkle.test.ts tests/step-up.test.ts tests/protected-channel.test.ts tests/temporary-channel.test.ts tests/ephemeral.test.ts tests/role-administration.test.ts tests/diagnostic-assistant.test.ts tests/security-rules.test.ts"
+  },
+  "mutate": [
+    "src/lib/sensitive-data.ts",
+    "src/lib/attachments.ts",
+    "src/lib/audit-merkle.ts",
+    "src/lib/step-up.ts",
+    "src/lib/protected-channel.ts",
+    "src/lib/temporary-channel.ts",
+    "src/lib/ephemeral.ts",
+    "src/lib/role-administration.ts",
+    "src/lib/diagnostic-assistant.ts"
+  ],
+  "coverageAnalysis": "off",
+  "concurrency": 4,
+  "timeoutMS": 30000,
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "thresholds": {
+    "high": 90,
+    "low": 80,
+    "break": 80
+  },
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": "always",
+  "inPlace": true
+}
