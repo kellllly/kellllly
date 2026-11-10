@@ -216,6 +216,7 @@ test("role assignment HTTP response follows the generated schema without externa
       },
     }, (_req, _res, next) => next()));
     app.use(createItsmRoleAssignmentRouter({
+      checkStepUp: () => ({ ok: true }),
       resolveActor: async () => ({ id: "admin-1", role: actorRole as "N1" | "N2", serviceIds: [] }),
       getUser: async (userId: string) => ({
         id: userId,

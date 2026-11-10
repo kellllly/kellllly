@@ -69,6 +69,7 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
     app.use(pinoHttp({ logger: pino({ level: "silent" }) }));
     app.use(express.json());
     app.use(createItsmRoleAssignmentRouter({
+      checkStepUp: () => ({ ok: true }),
       resolveActor: async (req, res) => {
         const actorId = req.header("x-test-actor") ?? "";
         const user = users.get(actorId);

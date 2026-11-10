@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUser } from '@clerk/react';
+import { useReverification, useUser } from '@clerk/react';
 import { BadgeCheck, ChevronLeft, ChevronRight, Moon, RefreshCw, Search, ShieldCheck, Sun, UserCog } from 'lucide-react';
 import {
   attestItsmRole,
@@ -15,6 +15,7 @@ import { usePeople } from '@/hooks/use-people';
 import { useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
+import { isStepUpHint, stepUpMessage, withStepUpHint } from '@/lib/step-up';
 import { Button, Field, inputCls, SectionTitle, Warning } from '@/components/kit';
 
 type PilotServiceOption = { id: string; name: string };
@@ -132,6 +133,9 @@ export default function SettingsPage() {
   const availableServiceIds = new Set(pilotServices.map(service => service.id));
   const unavailableAccountServiceIds = selectedAccount?.unavailableServiceIds ?? [];
 
+  // Role changes and attestations need a recent verification: Clerk's dialog opens, then the call is retried.
+  const assignWithStepUp = useReverification(withStepUpHint(assignItsmRole));
+  const attestWithStepUp = useReverification(withStepUpHint(attestItsmRole));
   const assignRole = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRoleMessage('');
@@ -186,10 +190,11 @@ export default function SettingsPage() {
           return;
         }
       }
-      const result = await assignItsmRole(targetUserId.trim(), {
+      const result = await assignWithStepUp(targetUserId.trim(), {
         role: role === 'REVOKE' ? null : role,
         serviceIds: requestedServiceIds,
       });
+      if (isStepUpHint(result)) throw Object.assign(new Error('La vérification d’identité n’a pas abouti : le rôle n’a pas été modifié.'), { status: 403 });
       setRoleMessage(result.role
         ? `Rôle ${result.role} attribué au compte ${result.userId}.`
         : `Accès ITSM retiré pour le compte ${result.userId}.`);
@@ -197,7 +202,7 @@ export default function SettingsPage() {
       setSelectedServiceIds([]);
       await queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
     } catch (error) {
-      const message = roleRequestError(error, 'assignment');
+      const message = stepUpMessage(error) ?? roleRequestError(error, 'assignment');
       setRoleError(message);
       if (typeof error === 'object' && error !== null && 'status' in error && error.status === 400
         && /services? autorisés? sont introuvables/iu.test(error instanceof Error ? error.message : '')) {
@@ -226,16 +231,17 @@ export default function SettingsPage() {
     setAttestationError('');
     setAttestationPending(true);
     try {
-      const result = await attestItsmRole(targetUserId, {
+      const result = await attestWithStepUp(targetUserId, {
         role: selectedAccount.role,
         serviceIds: selectedAccount.serviceIds,
       });
+      if (isStepUpHint(result)) throw new Error('La vérification d’identité n’a pas abouti : l’attestation n’a pas été enregistrée.');
       setAttestationMessage(
         `Attestation actuelle du rôle ${result.role} enregistrée pour le compte ${result.userId}.`,
       );
       void reconciliation.refetch();
     } catch (error) {
-      setAttestationError(roleRequestError(error, 'attestation'));
+      setAttestationError(stepUpMessage(error) ?? roleRequestError(error, 'attestation'));
       void queryClient.invalidateQueries({ queryKey: getGetItsmUserDirectoryQueryKey() });
     } finally {
       setAttestationPending(false);

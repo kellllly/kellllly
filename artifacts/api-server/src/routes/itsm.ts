@@ -73,6 +73,7 @@ import {
   type ItsmRole,
 } from "../lib/itsm-rbac";
 import { createAuditRateLimit } from "../lib/itsm-rate-limit";
+import { evaluateStepUp, requireSecondFactorFromEnv, type StepUpOutcome } from "../lib/itsm-step-up";
 import {
   createItsmAuditExportHandler,
   createItsmAuditIntegrityHandler,
@@ -1022,12 +1023,25 @@ type RoleAssignmentDependencies = {
   archiveRoleChange: (event: ItsmRoleChangeArchiveEvent) => Promise<void>;
   reportArchiveUnavailable: () => void;
   withLock: typeof withAdminChangeLock;
+  /** Recent reverification (and optionally a second factor) for N1 role actions. */
+  checkStepUp: (req: Request) => StepUpOutcome;
 };
+
+const defaultStepUp = (req: Request) => evaluateStepUp(getAuth(req), { requireSecondFactor: requireSecondFactorFromEnv() });
+
+/** Replies 403 and returns false when a sensitive N1 action lacks a recent verification. */
+function stepUpOrReply(req: Request, res: Response, outcome: StepUpOutcome): boolean {
+  if (outcome.ok) return true;
+  req.log?.warn({ alert: "itsm_step_up_required", reason: outcome.reason }, "Sensitive ITSM action needs a recent verification");
+  res.status(403).json(outcome.body);
+  return false;
+}
 
 function createRoleAssignmentHandler(dependencies: RoleAssignmentDependencies) {
   return async (req: Request, res: Response): Promise<void> => {
   const actor = await dependencies.resolveActor(req, res);
   if (!actorOrReply(req, res, actor)) return;
+  if (actor.role === "N1" && !stepUpOrReply(req, res, dependencies.checkStepUp(req))) return;
   const parsedParams = AssignItsmRoleParams.safeParse(req.params);
   const parsedBody = AssignItsmRoleBody.safeParse(req.body);
   if (!parsedParams.success || !parsedBody.success) {
@@ -1271,6 +1285,7 @@ export function createItsmRoleAssignmentRouter(
       notifyItsmRoleArchiveAlert,
     ),
     withLock: withAdminChangeLock,
+    checkStepUp: defaultStepUp,
     ...overrides,
   }));
   return roleRouter;
@@ -1282,6 +1297,7 @@ type RoleAttestationDependencies = {
   archiveRoleChange: (event: ItsmRoleChangeArchiveEvent) => Promise<void>;
   reportArchiveUnavailable: () => void;
   withLock: typeof withAdminChangeLock;
+  checkStepUp: (req: Request) => StepUpOutcome;
 };
 
 function createRoleAttestationHandler(dependencies: RoleAttestationDependencies) {
@@ -1292,6 +1308,7 @@ function createRoleAttestationHandler(dependencies: RoleAttestationDependencies)
       res.status(403).json({ error: "L’attestation des habilitations est réservée aux N1." });
       return;
     }
+    if (!stepUpOrReply(req, res, dependencies.checkStepUp(req))) return;
     const parsedParams = AttestItsmRoleParams.safeParse(req.params);
     const parsedBody = AttestItsmRoleBody.safeParse(req.body);
     if (!parsedParams.success || !parsedBody.success) {
@@ -1382,6 +1399,7 @@ export function createItsmRoleAttestationRouter(
       notifyItsmRoleArchiveAlert,
     ),
     withLock: withAdminChangeLock,
+    checkStepUp: defaultStepUp,
     ...overrides,
   }));
   return attestationRouter;

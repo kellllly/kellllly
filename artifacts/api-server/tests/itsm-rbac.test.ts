@@ -489,6 +489,7 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
       next();
     });
     app.use(createItsmRoleAssignmentRouter({
+      checkStepUp: () => ({ ok: true }),
       resolveActor: async () => ({ id: admin.id, role: "N1", serviceIds: [] }),
       getUser: async (userId) => {
         if (userId === admin.id) return admin;
@@ -729,6 +730,7 @@ test("the HTTP role route protects the last N1 and permits removal after an acti
     next();
   });
   app.use(createItsmRoleAssignmentRouter({
+      checkStepUp: () => ({ ok: true }),
     resolveActor: async () => ({ id: actorId, role: "N1", serviceIds: [] }),
     getUser: async (userId) => {
       const user = users.get(userId);
@@ -833,7 +835,10 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
     };
     next();
   });
+  // Step-up outcome for the N1 attestation (reverification of the session, see lib/itsm-step-up.ts).
+  let stepUp: { ok: true } | { ok: false; reason: "reverification"; body: Record<string, unknown> } = { ok: true };
   app.use(createItsmRoleAttestationRouter({
+    checkStepUp: () => stepUp,
     resolveActor: async () => ({
       id: admin.id,
       role: actorRole,
@@ -881,6 +886,13 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
     assert.deepEqual(findItsmRoleReconciliationIssues([
       { id: target.id, role: "N1", serviceIds: [] },
     ], audit), []);
+
+    stepUp = { ok: false, reason: "reverification", body: { clerk_error: { type: "forbidden", reason: "reverification-error" }, error: "Confirmez votre identité" } };
+    const unverified = await fetch(endpoint, attestationRequest);
+    assert.equal(unverified.status, 403, "a session not reverified recently cannot attest");
+    assert.equal(((await unverified.json()) as { clerk_error?: { reason?: string } }).clerk_error?.reason, "reverification-error");
+    assert.equal(audit.length, 1, "nothing is journaled without the step-up");
+    stepUp = { ok: true };
 
     target.publicMetadata.itsmServiceIds = ["new-scope"];
     const stale = await fetch(endpoint, attestationRequest);
