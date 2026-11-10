@@ -31,7 +31,8 @@ test("only N1 opens a temporary channel; it is restricted and ends after the cho
 
 test("an invited auditor sees only its temporary channel, until the end date", () => {
   const store = open();
-  const ids = (actor: Parameters<typeof userStoreView>[1]) => (userStoreView(store, actor).conversations as Array<{ id: string }>).map((c) => c.id);
+  // Fixed date inside the 48 h mission: the test must not depend on today's date.
+  const ids = (actor: Parameters<typeof userStoreView>[1]) => (userStoreView(store, actor, hours(1)).conversations as Array<{ id: string }>).map((c) => c.id);
   assert.deepEqual(ids(auditor), ["C-T1"]);
   assert.deepEqual(ids(otherAuditor), []);
   assert.deepEqual(ids(ssi), ["C-1"], "a temporary channel is not open to non-members");

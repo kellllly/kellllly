@@ -1331,7 +1331,7 @@ export function mergeLocalExamples(
   return importMerge(current, imported, actor, now);
 }
 
-export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRecord {
+export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = new Date()): JsonRecord {
   const { readStates, ...visibleStore } = store;
   const actorReads = isRecord(readStates) && isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
   const scopedTickets = records(store.tickets).filter((ticket) =>
@@ -1345,7 +1345,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor): JsonRec
   return {
     ...visibleStore,
     tickets: hiddenCollections ? [] : scopedTickets,
-    conversations: records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation)).map((conversation) => ({
+    conversations: records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation, now)).map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
     })),
