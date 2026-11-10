@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:coverage": "node --experimental-strip-types --experimental-test-coverage --test-coverage-exclude='tests/**' --test-coverage-exclude='../anif-secure-desk/**' --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=85 --test tests/*.test.ts",
+    "test:mutation": "pnpm dlx --package @stryker-mutator/core@9.6.1 --package typescript@5.9.3 stryker run stryker.config.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

@@ -1,0 +1,45 @@
+name: Tests de mutation
+
+# Stryker modifie le code des modules de sécurité (chaîne d'empreintes, Merkle,
+# SIEM, réauthentification) et vérifie que les tests échouent. Le job échoue
+# sous 80 % de mutants tués (thresholds.break de stryker.config.json).
+# Stryker est lancé par pnpm dlx : il n'entre pas dans le lockfile du projet.
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "artifacts/api-server/src/lib/itsm-audit-chain.ts"
+      - "artifacts/api-server/src/lib/itsm-audit-merkle.ts"
+      - "artifacts/api-server/src/lib/itsm-audit-siem.ts"
+      - "artifacts/api-server/src/lib/itsm-step-up.ts"
+      - "artifacts/api-server/stryker.config.json"
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: Stryker (score ≥ 80 %)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      # The pnpm version comes from packageManager in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tests de mutation
+        run: pnpm --filter @workspace/api-server run test:mutation
+      - name: Conserver le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: artifacts/api-server/reports/mutation
+          retention-days: 30

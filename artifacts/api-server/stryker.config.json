@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/core/schema/stryker-schema.json",
+  "_comment": "Mutation testing of the security-critical journal and authentication modules. Run: pnpm --filter @workspace/api-server run test:mutation",
+  "packageManager": "pnpm",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "node --experimental-strip-types --no-warnings --test tests/itsm-audit-chain.test.ts tests/itsm-audit-merkle.test.ts tests/itsm-audit-siem.test.ts tests/itsm-step-up.test.ts tests/itsm-rate-limit.test.ts tests/itsm-audit-hardening.test.ts"
+  },
+  "mutate": [
+    "src/lib/itsm-audit-chain.ts",
+    "src/lib/itsm-audit-merkle.ts",
+    "src/lib/itsm-audit-siem.ts",
+    "src/lib/itsm-step-up.ts"
+  ],
+  "coverageAnalysis": "off",
+  "concurrency": 4,
+  "timeoutMS": 30000,
+  "reporters": ["clear-text", "progress", "json"],
+  "jsonReporter": { "fileName": "reports/mutation/mutation.json" },
+  "thresholds": { "high": 90, "low": 80, "break": 80 },
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": "always"
+}

@@ -58,3 +58,7 @@ Thumbs.db
 # Local env
 .env
 .env.local
+
+# Mutation testing (Stryker) output
+**/reports/mutation
+**/.stryker-tmp
