@@ -1,7 +1,7 @@
 export { AuditIntegrityPanel } from '@/components/audit-integrity';
 export { AuditTimestampsPanel } from '@/components/audit-timestamps';
 export { AuditSiemPanel } from '@/components/audit-siem';
-export { handlers, calls } from '@workspace/api-client-react';
+export { handlers, calls, health } from '@workspace/api-client-react';
 export { default as TicketsPage } from '@/pages/tickets';
 export { TestStoreProvider, testStore, current, logs, clock, resyncs } from './store-stub';
 export { router } from './wouter-stub';

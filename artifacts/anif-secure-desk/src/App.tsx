@@ -48,44 +48,44 @@ const clerkAppearance = {
     logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
   },
   variables: {
-    colorPrimary: '#315f50',
-    colorForeground: '#1d3034',
-    colorMutedForeground: '#5e7071',
-    colorDanger: '#a4483f',
-    colorBackground: '#fffefa',
-    colorInput: '#ffffff',
-    colorInputForeground: '#1d3034',
-    colorNeutral: '#d7dfd9',
+    colorPrimary: '#58d8b2',
+    colorForeground: '#e5f0ef',
+    colorMutedForeground: '#9aafb0',
+    colorDanger: '#e47d75',
+    colorBackground: '#101923',
+    colorInput: '#182630',
+    colorInputForeground: '#e5f0ef',
+    colorNeutral: '#3a4d57',
     fontFamily: '"DM Sans", sans-serif',
-    borderRadius: '0.7rem',
+    borderRadius: '0.85rem',
   },
   elements: {
     rootBox: 'w-full min-w-0 flex justify-center',
-    cardBox: 'bg-[#fffefa] rounded-2xl w-full max-w-[440px] min-w-0 overflow-hidden',
+    cardBox: 'bg-card rounded-2xl w-full max-w-[440px] min-w-0 overflow-hidden',
     card: '!shadow-none !border-0 !bg-transparent !rounded-none max-[239px]:!px-2',
     footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
-    headerTitle: 'text-[#1d3034] font-semibold',
-    headerSubtitle: 'text-[#526767]',
-    socialButtonsBlockButtonText: 'text-[#1d3034] font-medium',
-    formFieldLabel: 'text-[#293e40] font-medium',
-    footerActionLink: 'text-[#315f50] font-semibold',
-    footerActionText: 'text-[#526767]',
-    dividerText: 'text-[#526767]',
-    formButtonPrimary: 'bg-[#315f50] text-white hover:bg-[#284f42]',
-    formFieldInput: 'text-[#1d3034] border-[#cfd9d2]',
-    alertText: 'text-[#8f3f37]',
+    headerTitle: 'text-foreground font-semibold',
+    headerSubtitle: 'text-muted-foreground',
+    socialButtonsBlockButtonText: 'text-foreground font-medium',
+    formFieldLabel: 'text-foreground font-medium',
+    footerActionLink: 'text-primary font-semibold',
+    footerActionText: 'text-muted-foreground',
+    dividerText: 'text-muted-foreground',
+    formButtonPrimary: 'bg-primary text-primary-foreground hover:brightness-95',
+    formFieldInput: 'text-foreground border-border',
+    alertText: 'text-destructive',
   },
 };
 
 function LandingPage() {
-  return <main className="grid min-h-[100dvh] place-items-center bg-[#f4f3ed] px-5 py-12 text-[#20363a]">
-    <section className="w-full max-w-3xl rounded-[24px] border border-[#dce2dc] bg-[#fffefa] p-7 shadow-sm md:p-12">
-      <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-[#315f50] text-white"><ShieldCheck size={22} /></span><div><div className="text-sm font-bold tracking-[.08em]">ANIF GABON</div><div className="eyebrow mt-1">POSTE DE PILOTAGE · ITSM</div></div></div>
-      <p className="eyebrow mt-10 text-[#647776]">ESPACE DE DÉMONSTRATION PARTAGÉ</p>
+  return <main className="auth-stage dark grid min-h-[100dvh] place-items-center px-5 py-12 text-foreground">
+    <section className="auth-card w-full max-w-3xl rounded-[24px] border border-border bg-card p-7 shadow-xl md:p-12">
+      <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground"><ShieldCheck size={22} /></span><div><div className="text-sm font-bold tracking-[.08em]">ANIF GABON</div><div className="eyebrow mt-1">POSTE DE PILOTAGE · ITSM</div></div></div>
+      <p className="eyebrow mt-10">ESPACE DE DÉMONSTRATION PARTAGÉ</p>
       <h1 className="serif mt-3 max-w-2xl text-4xl leading-tight md:text-5xl">Un suivi commun des demandes informatiques.</h1>
-      <p className="mt-5 max-w-2xl text-sm leading-7 text-[#526767]">Connectez-vous pour consulter les tickets fictifs partagés, qualifier les incidents, suivre leur prise en charge et documenter leur résolution.</p>
-      <div className="mt-8 flex flex-wrap gap-3"><Link href="/sign-in" className="inline-flex items-center gap-2 rounded-lg bg-[#315f50] px-5 py-3 text-sm font-semibold text-white hover:bg-[#284f42]">Se connecter <ArrowRight size={15} /></Link><Link href="/sign-up" className="inline-flex items-center rounded-lg border border-[#cfd9d2] px-5 py-3 text-sm font-semibold text-[#315f50] hover:bg-[#f2f5f1]">Créer un compte</Link></div>
-      <div className="mt-9 rounded-xl border border-[#e2d3ad] bg-[#f6efde] p-4 text-xs leading-relaxed text-[#66552e]"><strong>Pilote non homologué.</strong> Données fictives uniquement. Ne saisissez aucune donnée réelle, personnelle ou classifiée. Messagerie simulée; aucune promesse de chiffrement de bout en bout, d’immuabilité, de conformité ou d’hébergement souverain.</div>
+      <p className="mt-5 max-w-2xl text-sm leading-7 text-muted-foreground">Connectez-vous pour consulter les tickets fictifs partagés, qualifier les incidents, suivre leur prise en charge et documenter leur résolution.</p>
+      <div className="mt-8 flex flex-wrap gap-3"><Link href="/sign-in" className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm hover:brightness-95">Se connecter <ArrowRight size={15} /></Link><Link href="/sign-up" className="inline-flex items-center rounded-lg border border-border px-5 py-3 text-sm font-semibold text-primary hover:bg-muted">Créer un compte</Link></div>
+      <div className="mt-9 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-900 dark:text-amber-100"><strong>Pilote non homologué.</strong> Données fictives uniquement. Ne saisissez aucune donnée réelle, personnelle ou classifiée. Messagerie simulée; aucune promesse de chiffrement de bout en bout, d’immuabilité, de conformité ou d’hébergement souverain.</div>
     </section>
   </main>;
 }
@@ -98,13 +98,13 @@ function HomeRedirect() {
 }
 
 function SignInPage() {
-  return <div className="grid min-h-[100dvh] w-full min-w-0 place-items-center bg-[#f4f3ed] px-0 py-8 min-[240px]:px-4">
+  return <div className="auth-stage dark grid min-h-[100dvh] w-full min-w-0 place-items-center px-0 py-8 min-[240px]:px-4">
     <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
   </div>;
 }
 
 function SignUpPage() {
-  return <div className="grid min-h-[100dvh] w-full min-w-0 place-items-center bg-[#f4f3ed] px-0 py-8 min-[240px]:px-4">
+  return <div className="auth-stage dark grid min-h-[100dvh] w-full min-w-0 place-items-center px-0 py-8 min-[240px]:px-4">
     <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
   </div>;
 }
@@ -208,13 +208,13 @@ function ClerkRouter() {
 }
 
 function AuthSetupPage() {
-  return <main className="grid min-h-[100dvh] place-items-center bg-[#f4f3ed] px-5 py-12 text-[#20363a]">
-    <section role="alert" className="w-full max-w-2xl rounded-[24px] border border-[#dce2dc] bg-[#fffefa] p-7 shadow-sm md:p-10">
-      <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-[#315f50] text-white"><ShieldCheck size={22} /></span><div><div className="text-sm font-bold tracking-[.08em]">ANIF GABON</div><div className="eyebrow mt-1">CONFIGURATION LOCALE</div></div></div>
+  return <main className="auth-stage dark grid min-h-[100dvh] place-items-center px-5 py-12 text-foreground">
+    <section role="alert" className="auth-card w-full max-w-2xl rounded-[24px] border border-border bg-card p-7 shadow-xl md:p-10">
+      <div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-xl bg-primary text-primary-foreground"><ShieldCheck size={22} /></span><div><div className="text-sm font-bold tracking-[.08em]">ANIF GABON</div><div className="eyebrow mt-1">CONFIGURATION LOCALE</div></div></div>
       <h1 className="serif mt-8 text-3xl leading-tight">Authentification non configurée</h1>
-      <p className="mt-4 text-sm leading-7 text-[#526767]">Ce poste local n’a pas de clé Clerk. Créez une instance de développement sur dashboard.clerk.com, puis renseignez dans le fichier <code>.env</code> :</p>
-      <ul className="mt-3 list-disc space-y-1 pl-5 font-mono text-xs text-[#20363a]"><li>VITE_CLERK_PUBLISHABLE_KEY et CLERK_PUBLISHABLE_KEY (pk_test_…)</li><li>CLERK_SECRET_KEY (sk_test_…), côté API uniquement</li></ul>
-      <p className="mt-4 text-sm leading-7 text-[#526767]">Redémarrez ensuite le serveur de développement. Voir <code>DEVELOPPEMENT.md</code>.</p>
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">Ce poste local n’a pas de clé Clerk. Créez une instance de développement sur dashboard.clerk.com, puis renseignez dans le fichier <code>.env</code> :</p>
+      <ul className="mt-3 list-disc space-y-1 pl-5 font-mono text-xs text-foreground"><li>VITE_CLERK_PUBLISHABLE_KEY et CLERK_PUBLISHABLE_KEY (pk_test_…)</li><li>CLERK_SECRET_KEY (sk_test_…), côté API uniquement</li></ul>
+      <p className="mt-4 text-sm leading-7 text-muted-foreground">Redémarrez ensuite le serveur de développement. Voir <code>DEVELOPPEMENT.md</code>.</p>
     </section>
   </main>;
 }

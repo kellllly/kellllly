@@ -36,7 +36,7 @@ const auditEvents = (count: number) => Array.from({ length: count }, (_, i) => (
   scope: i % 2 ? 'Support informatique' : 'Messagerie', time: '', at: minutesAgo(i * 60),
 }));
 
-async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', withData = true, audit = auditEvents(3) } = {}) {
+async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', withData = true, audit = auditEvents(3), services = undefined as unknown[] | undefined } = {}) {
   ui.calls.length = 0;
   ui.logs.length = 0;
   ui.router.path = '/';
@@ -47,6 +47,7 @@ async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', 
   store.profile = { ...store.profile, name: 'user_me', clearance };
   store.kedb = withData ? kedb : [];
   store.audit = audit;
+  if (services) store.services = services as never;
   const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement('div');
   document.body.append(container);
@@ -76,24 +77,39 @@ const byText = (selector: string, needle: string) => [...document.querySelectorA
 
 // --- Tableau de bord ---------------------------------------------------------
 
-test('le tableau de bord compte les tickets ouverts, les échéances SLA dépassées et les messages non lus', async () => {
+test('le tableau de bord classe la file de travail, filtre par priorité et état, et signale le SLA dépassé', async () => {
   await mount(ui.DashboardPage);
-  assert.match($('metric-open')!.textContent!, /02/u, 'deux tickets ouverts, le clos est ignoré');
-  assert.match(text(), /1 en priorité P1 ou P2/u);
-  assert.match($('metric-due')!.textContent!, /01/u, 'le P1 sans prise en charge depuis 3 h');
-  assert.match(text(), /1 dépassée\(s\) · 0 proche\(s\)/u);
-  assert.match($('metric-unread')!.textContent!, /02/u);
-  assert.match($('metric-services')!.textContent!, /3 \/ 4/u);
-  assert.match(text(), /1 en vigilance/u, 'le portail est en vigilance');
-  const ranked = [...document.querySelectorAll('[data-testid^="link-dashboard-ticket-"]')].map((link) => (link as HTMLElement).dataset.testid);
-  assert.deepEqual(ranked, ['link-dashboard-ticket-INC-2410', 'link-dashboard-ticket-REQ-2411'], 'P1 en premier');
+  const queue = () => [...document.querySelectorAll('[data-testid^="link-dashboard-ticket-"]')].map((link) => (link as HTMLElement).dataset.testid!.replace('link-dashboard-ticket-', ''));
+  assert.match(text(), /File de travail\s*02 ouverts/u, 'le ticket clos est ignoré');
+  assert.deepEqual(queue(), ['INC-2410'], 'seul le premier ticket est montré par défaut');
+  assert.match($('link-dashboard-ticket-INC-2410')!.textContent!, /prise en charge dépassée|de \d+ h/u, 'P1 sans prise en charge depuis 3 h');
+  assert.match(text(), /FOCUS DU MOMENT\s*Panne du portail/u);
+  await click(byText('button', 'Afficher la file complète')!);
+  assert.deepEqual(queue(), ['INC-2410', 'REQ-2411'], 'P1 avant P4');
+
+  const chip = (label: string) => [...document.querySelectorAll('[aria-label="Filtrer la file de travail"] button')].find((button) => button.textContent!.startsWith(label)) as HTMLElement;
+  await click(chip('À prendre'));
+  assert.deepEqual(queue(), ['INC-2410'], 'nouveaux tickets');
+  await click(chip('P2'));
+  assert.deepEqual(queue(), []);
+  assert.match(text(), /Aucun ticket dans ce filtre/u);
+  await click(chip('Tous'));
+  await click(byText('button', 'Vue de garde')!);
+  assert.equal(byText('button', 'Quitter la vue de garde')!.getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(queue(), ['INC-2410'], 'la garde ne garde que P1 et P2');
+
+  assert.match(text(), /3\/4 opérationnel\(s\) · 1 vigilance/u);
+  assert.match(text(), /1 conversation\(s\) · 2 message\(s\) non lu\(s\)/u);
+  assert.match(text(), /Activité récente/u);
+  assert.ok(byText('li', 'Message envoyé 0'), 'événement le plus récent du journal');
   await click('link-dashboard-ticket-INC-2410');
   assert.equal(ui.logs.at(-1)!.action, 'Ticket INC-2410 ouvert depuis la vue générale');
 });
 
 test('un auditeur N5 voit une vue limitée, sans tickets ni conversations', async () => {
   await mount(ui.DashboardPage, { clearance: 'N5 · Audit' });
-  assert.equal($('metric-open'), null);
+  assert.equal(byText('h3', 'File de travail'), undefined);
+  assert.equal($('link-new-request'), null);
   assert.match(text(), /Consultation limitée/u);
   assert.match(text(), /Articles KEDB consultables/u);
 });
@@ -148,6 +164,90 @@ test('un lien vers un article KEDB l’ouvre puis nettoie l’adresse ; un audit
   assert.ok($('link-kedb-source'), 'lien vers le ticket d’origine');
   await mount(ui.ServicesPage, { clearance: 'N5 · Audit' });
   assert.ok(document.querySelector('section.hidden [data-testid="input-search-services"]'), 'catalogue masqué pour N5');
+});
+
+test('l’assistant de diagnostic vérifie le pilote, propose la KEDB et prépare un ticket guidé repris par la file', async () => {
+  window.sessionStorage.clear();
+  await mount(ui.ServicesPage);
+  assert.ok($('section-diagnostic-assistant'));
+  await fill('select-diagnostic-service', 'SVC-03');
+  await click('button-diagnostic-symptom-performance');
+  await fill('select-diagnostic-impact', '1');
+  await click('button-run-diagnostic');
+  assert.equal(ui.logs.at(-1)!.action, 'Contrôle d’autodiagnostic lancé');
+  assert.ok($('diagnostic-results'));
+  assert.match($('status-diagnostic-catalog')!.textContent!, /Opérationnel/u, 'état du réseau des bureaux dans le catalogue');
+  assert.match($('status-diagnostic-nkok')!.textContent!, /Non configurées · aucun test effectué/u, 'aucune sonde inventée');
+  assert.ok($('diagnostic-kedb-suggestions'));
+  await click('button-diagnostic-create-ticket');
+  assert.equal(ui.logs.at(-1)!.action, 'Préparation d’un ticket guidé pour SVC-03');
+  assert.deepEqual(ui.router.history, ['/tickets?new=1&diagnostic=1&service=SVC-03']);
+  const handoff = JSON.parse(window.sessionStorage.getItem('anif-diagnostic-ticket-handoff-v1') ?? 'null');
+  assert.equal(handoff?.serviceId, 'SVC-03');
+  assert.equal(handoff?.symptomId, 'performance');
+  assert.equal(handoff?.impact, 1);
+
+  // La file des tickets reprend le résumé, une seule fois.
+  await mount(ui.TicketsPage, { search: 'new=1&diagnostic=1&service=SVC-03' });
+  assert.match(text(), /Résumé du diagnostic repris/u);
+  assert.equal(($('select-service') as HTMLSelectElement).value, 'SVC-03');
+  assert.equal(window.sessionStorage.getItem('anif-diagnostic-ticket-handoff-v1'), null, 'le résumé est consommé');
+});
+
+test('l’assistant de diagnostic distingue une API accessible, en échec ou un poste hors ligne', async () => {
+  window.sessionStorage.clear();
+  ui.health.next = { status: 'ok' };
+  await mount(ui.ServicesPage);
+  await click('button-run-diagnostic');
+  assert.match($('status-diagnostic-api')!.textContent!, /Accessible/u);
+  assert.match($('status-diagnostic-network')!.textContent!, /En ligne/u);
+  await click('button-diagnostic-create-ticket');
+  assert.equal(JSON.parse(window.sessionStorage.getItem('anif-diagnostic-ticket-handoff-v1')!).apiProbe, 'healthy');
+
+  window.sessionStorage.clear();
+  ui.health.next = 'error';
+  await mount(ui.ServicesPage);
+  await fill('select-diagnostic-service', 'SVC-02');
+  await click('button-run-diagnostic');
+  assert.match($('status-diagnostic-api')!.textContent!, /Indisponible/u);
+  assert.ok($('text-diagnostic-api-error'), 'un ticket reste possible');
+  assert.match($('status-diagnostic-catalog')!.textContent!, /Vigilance/u);
+  await click('button-diagnostic-create-ticket');
+  assert.equal(JSON.parse(window.sessionStorage.getItem('anif-diagnostic-ticket-handoff-v1')!).apiProbe, 'unavailable');
+
+  // Changer de service efface les résultats : ils ne valent que pour le service vérifié.
+  await fill('select-diagnostic-service', 'SVC-01');
+  assert.equal($('diagnostic-results'), null);
+
+  const online = Object.getOwnPropertyDescriptor(window.navigator, 'onLine');
+  Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
+  try {
+    await click('button-run-diagnostic');
+    assert.match($('status-diagnostic-network')!.textContent!, /Hors ligne/u);
+  } finally {
+    if (online) Object.defineProperty(window.navigator, 'onLine', online); else delete (window.navigator as unknown as Record<string, unknown>).onLine;
+  }
+  ui.health.next = { status: 'ok' };
+});
+
+test('un résumé de diagnostic qui ne peut pas être conservé ne crée rien', async () => {
+  await mount(ui.ServicesPage);
+  await click('button-run-diagnostic');
+  const setItem = window.Storage.prototype.setItem;
+  window.Storage.prototype.setItem = () => { throw new Error('quota'); };
+  try {
+    await click('button-diagnostic-create-ticket');
+  } finally {
+    window.Storage.prototype.setItem = setItem;
+  }
+  assert.match($('text-diagnostic-handoff-error')!.textContent!, /Aucun ticket n’a été créé/u);
+  assert.deepEqual(ui.router.history, [], 'pas de navigation');
+});
+
+test('sans service au catalogue, l’assistant ne lance rien', async () => {
+  await mount(ui.ServicesPage, { withData: false, services: [] });
+  assert.equal(($('button-run-diagnostic') as HTMLButtonElement).disabled, true);
+  assert.match($('select-diagnostic-service')!.textContent!, /Aucun service autorisé/u);
 });
 
 test('une KEDB vide invite à documenter une résolution', async () => {

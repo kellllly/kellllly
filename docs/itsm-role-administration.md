@@ -28,6 +28,14 @@ An existing N1 opens **Préférences**, selects the account, reviews its current
 
 This creates a distinct `itsm.role.attested` event at the current time, identifying the acting N1 and target account. It does not write Clerk metadata, assign access, invent an earlier grant date, or establish how the old role was originally granted. The reconciliation monitor accepts this current-state evidence, but detects later role/scope differences as usual. A self-attestation is identified transparently because actor and target IDs are identical; it is not an independent approval.
 
+## Investigate an N1 role with no journal entry
+
+A startup reconciliation finding establishes that the current Clerk role or scope has no matching ITSM role event. It does **not** establish how that access was granted. The pilot's earlier implementation wrote both allowlisted bootstrap grants and administrator role assignments directly to Clerk without a corresponding journal event. A direct edit in Clerk can also bypass the API journal. The `itsmBootstrapCompleted` metadata flag is only a guard against bootstrap re-granting access; bootstrap and manual role changes both set it, so it is not proof of origin.
+
+To investigate a specific account, compare the Clerk role and service scope with Clerk's activity history, the external role archive, and approved change records. Check the deployed version and relevant bootstrap/role-change timing as supporting context. A matching `itsm.role.changed` event with `origin: "bootstrap"` is evidence of an archived bootstrap; an event naming an administrator is evidence of an API role change. If none of these records identify the grant, record the origin as **undetermined** rather than treating the missing entry or metadata flag as proof. The current code and reconciliation finding alone cannot identify the origin of a particular account.
+
+Do not remove or rewrite the current Clerk role to clear the finding, and do not backdate or fabricate an `itsm.role.changed` event. If an authorized N1 verifies that the current access and scope are correct, use **Attester le rôle** to record that present-day verification. This preserves Clerk authentication and access, while giving the journal and archive a truthful timestamped event. Future assignments must continue through the API so the existing last-N1 protection and audit requirements apply.
+
 ## Role-change archive
 
 The default mode requires an external HTTPS archive. Configure `ITSM_ROLE_ARCHIVE_URL`; configure `ITSM_ROLE_ARCHIVE_TOKEN` as a secret when the archive requires bearer authentication. The archive must accept `HEAD` for its health check and acknowledge `POST` events, including both `itsm.role.changed` and `itsm.role.attested`. Attestation remains a distinct current-state assertion, not evidence of an earlier grant.

@@ -1,16 +1,98 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'wouter';
-import { Activity, ArrowRight, ClipboardList, Clock3, MessageSquare, Plus, Server, ShieldCheck } from 'lucide-react';
+import {
+  Activity,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  ChevronDown,
+  CircleAlert,
+  Clock3,
+  Filter,
+  MessageSquare,
+  Plus,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
 import { useNow, useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
+import { usePeople } from '@/hooks/use-people';
+import { formatWAT } from '@/lib/itsm';
 import { isOpen, messageTime, priorityTone, statusTone, ticketSla, unreadOf } from '@/lib/domain';
-import { Avatar, Badge, Metric, SectionTitle, Warning, pad2 } from '@/components/kit';
+import { Badge, Warning, pad2 } from '@/components/kit';
+import type { Ticket } from '@/lib/types';
+import './dashboard.css';
+
+type QueueFilter = 'Tous' | 'P1' | 'P2' | 'À prendre' | 'En cours' | 'Garde';
+
+function OpsMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+  testId,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  detail: string;
+  tone: 'mint' | 'amber' | 'rose' | 'blue';
+  testId?: string;
+}) {
+  return <article className={`ops-metric ops-${tone}`} data-testid={testId}>
+    <div className="ops-metric-top"><span className="ops-kicker">{label}</span><span className="ops-metric-icon"><Icon size={17} /></span></div>
+    <div className="ops-metric-value">{value}</div>
+    <div className="ops-metric-detail"><span className="ops-dot" />{detail}</div>
+  </article>;
+}
+
+function OpsSectionHeading({ kicker, title, action }: { kicker: string; title: string; action: ReactNode }) {
+  return <div className="ops-section-head">
+    <div><div className="ops-kicker">{kicker}</div><h3>{title}</h3></div>
+    {action}
+  </div>;
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toLocaleUpperCase('fr-FR');
+}
+
+function shortDuration(milliseconds: number) {
+  const minutes = Math.max(1, Math.ceil(Math.abs(milliseconds) / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`;
+  const days = Math.floor(hours / 24);
+  return `${days} j${hours % 24 ? ` ${hours % 24} h` : ''}`;
+}
+
+function slaSummary(ticket: Ticket, now: number) {
+  const sla = ticketSla(ticket, now);
+  const waitingForAcknowledgement = !ticket.acknowledgedAt;
+  const progress = waitingForAcknowledgement ? sla.ack : sla.res;
+  const completedAt = waitingForAcknowledgement ? ticket.acknowledgedAt : ticket.resolvedAt;
+  const phase = waitingForAcknowledgement ? 'prise en charge' : 'résolution';
+  if (completedAt) {
+    const late = new Date(completedAt).getTime() > new Date(waitingForAcknowledgement ? sla.deadlines.acknowledgeBy : sla.deadlines.resolveBy).getTime();
+    return { label: late ? `${phase} hors délai` : `${phase} tenue`, tone: late ? 'red' : 'green', remaining: '' };
+  }
+  if (progress.remainingMs < 0) return { label: `${phase} dépassée`, tone: 'red', remaining: `de ${shortDuration(progress.remainingMs)}` };
+  if (progress.state === 'warning') return { label: `${phase} à surveiller`, tone: 'amber', remaining: `dans ${shortDuration(progress.remainingMs)}` };
+  return { label: `SLA · ${phase}`, tone: 'blue', remaining: `dans ${shortDuration(progress.remainingMs)}` };
+}
 
 export default function Dashboard() {
   const { store, log } = useStore();
   const { firstName } = useDisplayName();
+  const { person } = usePeople();
   const now = useNow(30_000);
   const isAuditor = store.profile.clearance.startsWith('N5 ·');
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>('Tous');
+  const [showAll, setShowAll] = useState(false);
+  const [selectedId, setSelectedId] = useState('');
   const stats = useMemo(() => {
     const open = store.tickets.filter(t => isOpen(t) && t.status !== 'Résolu');
     const p1p2 = open.filter(t => t.priority === 'P1' || t.priority === 'P2').length;
@@ -26,32 +108,146 @@ export default function Dashboard() {
     const ops = store.services.filter(s => s.status === 'Opérationnel').length;
     const watch = store.services.length - ops;
     const ranked = [...open].sort((a, b) => a.priority.localeCompare(b.priority) || a.openedAt.localeCompare(b.openedAt));
-    return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked };
+    const recentActivity = [...store.audit].sort((a, b) => {
+      const aTime = a.at ? Date.parse(a.at) : 0;
+      const bTime = b.at ? Date.parse(b.at) : 0;
+      return bTime - aTime;
+    }).slice(0, 4);
+    return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked, recentActivity };
   }, [store, now]);
-  return <div className="page-enter min-w-0"><Warning />
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><div className="eyebrow">{new Date(now).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Libreville' }).toLocaleUpperCase('fr-FR')} <span className="mx-1">·</span> POINT DE SITUATION</div><h2 className="serif mt-1 text-[30px] leading-tight">Bonjour, {firstName}.</h2><p className="mt-1 text-[13px] text-muted-foreground">Voici les repères opérationnels de votre espace de travail.</p></div><div className="flex max-w-full flex-wrap gap-2">{!isAuditor && <Link href="/tickets?new=1" data-testid="link-new-request" className="focus-ring inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-[12px] font-semibold hover:bg-muted"><Plus size={15} />Nouvelle demande</Link>}<Link href="/audit" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2.5 text-[12px] font-semibold text-primary-foreground"><Activity size={15} />Journal d’activité</Link></div></div>
-    {isAuditor ? <div className="mt-5 max-w-3xl space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2"><Metric label="Articles KEDB consultables" value={pad2(store.kedb.length)} delta="Consultation en lecture seule" icon={ShieldCheck} tone="blue" /><Metric label="Événements du journal" value={pad2(store.audit.length)} delta="Export disponible selon les filtres" icon={Activity} tone="neutral" /></div>
-      <section className="panel p-5"><SectionTitle kicker="ACCÈS N5 · LECTURE" title="Consultation limitée" /><p className="text-[12px] leading-relaxed text-muted-foreground">Les détails des tickets et les conversations ne font pas partie de votre périmètre. Vous pouvez consulter la base d’erreurs connues et exporter le journal d’activité.</p><div className="mt-4 flex flex-wrap gap-3"><Link href="/services" className="text-[11px] font-semibold text-primary hover:underline">Consulter la base KEDB</Link><Link href="/audit" className="text-[11px] font-semibold text-primary hover:underline">Ouvrir le journal</Link></div></section>
+
+  const date = new Date(now).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Africa/Libreville',
+  }).toLocaleUpperCase('fr-FR');
+  const time = formatWAT(new Date(now).toISOString(), 'time');
+  const filteredQueue = stats.ranked.filter(ticket => {
+    if (queueFilter === 'Garde') return ticket.priority === 'P1' || ticket.priority === 'P2';
+    if (queueFilter === 'À prendre') return ticket.status === 'Nouveau';
+    if (queueFilter === 'En cours') return ticket.status === 'En cours';
+    if (queueFilter === 'P1' || queueFilter === 'P2') return ticket.priority === queueFilter;
+    return true;
+  });
+  const focusTicket = filteredQueue.find(ticket => ticket.id === selectedId) ?? filteredQueue[0] ?? null;
+  const visibleQueue = showAll ? filteredQueue : filteredQueue.slice(0, 1);
+  const guardMode = queueFilter === 'Garde';
+
+  return <div className="page-enter dashboard-ops min-w-0">
+    <div className="ops-warning"><Warning /></div>
+    <section className="ops-welcome" aria-labelledby="dashboard-greeting">
+      <div className="min-w-0">
+        <div className="ops-date"><span>LIBREVILLE</span><i />{date}<i />WAT · {time}</div>
+        <h2 id="dashboard-greeting">Le point de situation<span className="ops-title-dot">.</span></h2>
+        <p>Bonjour {firstName} — voici ce qui mérite votre attention aujourd’hui.</p>
+      </div>
+      {!isAuditor && <div className="ops-actions">
+        <Link href="/tickets?new=1" data-testid="link-new-request" className="ops-action ops-action-secondary focus-ring"><Plus size={15} />Nouvelle demande</Link>
+        <button type="button" className={`ops-action ops-action-primary focus-ring ${guardMode ? 'is-active' : ''}`} aria-pressed={guardMode} title={`${stats.p1p2} ticket(s) P1/P2 · ${stats.due.length} échéance(s) SLA à surveiller`} onClick={() => setQueueFilter(guardMode ? 'Tous' : 'Garde')}><Activity size={15} />{guardMode ? 'Quitter la vue de garde' : 'Vue de garde'}<ArrowDownRight size={14} /></button>
+      </div>}
+    </section>
+
+    {isAuditor ? <div className="ops-auditor">
+      <section className="ops-metrics ops-metrics-limited" aria-label="Repères de consultation">
+        <OpsMetric label="Articles KEDB consultables" value={pad2(store.kedb.length)} detail="Consultation en lecture seule" icon={ShieldCheck} tone="blue" />
+        <OpsMetric label="Événements du journal" value={pad2(store.audit.length)} detail="Export selon les filtres autorisés" icon={Activity} tone="mint" />
+      </section>
+      <section className="ops-panel ops-limited-panel">
+        <div className="ops-kicker">ACCÈS N5 · LECTURE</div>
+        <h3>Consultation limitée</h3>
+        <p>Les détails des tickets et les conversations ne font pas partie de votre périmètre. Vous pouvez consulter la base d’erreurs connues et le journal d’activité.</p>
+        <div className="ops-inline-links"><Link href="/services">Consulter la base KEDB <ArrowRight size={13} /></Link><Link href="/audit">Ouvrir le journal <ArrowRight size={13} /></Link></div>
+      </section>
     </div> : <>
-    <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric testId="metric-services" label="Services opérationnels" value={`${stats.ops} / ${store.services.length}`} delta={stats.watch ? `${stats.watch} en vigilance` : 'Aucune vigilance'} icon={ShieldCheck} tone="green" />
-      <Metric testId="metric-open" label="Tickets ouverts" value={pad2(stats.open.length)} delta={`${stats.p1p2} en priorité P1 ou P2`} icon={ClipboardList} tone="amber" />
-      <Metric testId="metric-due" label="Échéances SLA à surveiller" value={pad2(stats.due.length)} delta={`${stats.breach} dépassée(s) · ${stats.warn} proche(s)`} icon={Clock3} tone={stats.breach ? 'red' : 'blue'} />
-      <Metric testId="metric-unread" label="Messages non lus" value={pad2(stats.unread)} delta={stats.unreadConvs ? `Dans ${stats.unreadConvs} conversation(s)` : 'Tout est lu'} icon={MessageSquare} tone="neutral" />
-    </div>
-    <div className="mt-5 grid min-w-0 gap-5 xl:grid-cols-[1.55fr_1fr]">
-      <section className="panel p-5 md:p-6"><SectionTitle kicker="CONTINUITÉ DE SERVICE" title="État des services" action={<Link className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline" href="/services">Catalogue complet <ArrowRight size={13} /></Link>} />
-        <div className="space-y-1">{store.services.map(s => { const linked = stats.open.filter(t => t.serviceId === s.id).length; return <div key={s.id} className="flex items-center gap-3 border-t border-border/70 py-3.5"><div className={`grid h-9 w-9 place-items-center rounded-lg ${s.status === 'Vigilance' ? 'bg-[#f5ecd8] text-[#977033]' : 'bg-[#e3eee7] text-[#36745a] dark:bg-[#25443a] dark:text-[#aed9c2]'}`}><Server size={16} /></div><div className="min-w-0 flex-1"><div className="text-[13px] font-semibold">{s.name}</div><div className="mt-0.5 text-[11px] text-muted-foreground">{s.owner} <span className="mx-1">·</span> {linked} ticket(s) ouvert(s)</div></div><Badge tone={s.status === 'Vigilance' ? 'amber' : 'green'}><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-current" />{s.status}</Badge></div>; })}</div>
-      </section>
-      <section className="panel p-5 md:p-6"><SectionTitle kicker="SUIVI DU SUPPORT" title="Tickets à surveiller" action={<Link className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline" href="/tickets">Tous les tickets <ArrowRight size={13} /></Link>} />
-        <div className="space-y-2">{stats.ranked.slice(0, 4).map(t => <Link href={`/tickets?ticket=${encodeURIComponent(t.id)}`} onClick={() => log(`Ticket ${t.id} ouvert depuis la vue générale`, 'Support informatique')} key={t.id} data-testid={`link-dashboard-ticket-${t.id}`} className="focus-ring block w-full rounded-lg border border-border/80 px-3.5 py-3 text-left transition hover:border-primary/40 hover:bg-muted/50"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="mono text-[10px] text-muted-foreground">{t.id} <span className="mx-1">·</span> {t.kind} · L{t.supportLevel}</div><div className="mt-1 truncate text-[12px] font-semibold">{t.title}</div></div><Badge tone={priorityTone(t.priority)}>{t.priority}</Badge></div><div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground"><span>{t.assignee}</span><Badge tone={statusTone(t.status)}>{t.status}</Badge></div></Link>)}{!stats.ranked.length && <div className="rounded-lg border border-dashed border-border p-6 text-center text-[11px] text-muted-foreground">Aucun ticket ouvert.</div>}</div>
-      </section>
-    </div>
-    <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[1.3fr_1fr]">
-      <section className="panel p-5 md:p-6"><SectionTitle kicker="ESPACE COLLABORATIF" title="Conversations récentes" action={<Link className="text-[11px] font-semibold text-primary hover:underline" href="/messages">Ouvrir la messagerie <ArrowRight className="inline" size={12} /></Link>} /><div className="divide-y divide-border/70">{store.conversations.slice(0, 4).map(c => { const last = c.messages.at(-1); return <Link href={`/messages?c=${encodeURIComponent(c.id)}`} key={c.id} className="flex items-center gap-3 py-3"><Avatar name={c.participants[1] || c.title} /><div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-[12px] font-semibold"><span className="truncate">{c.title}</span>{unreadOf(c) > 0 && <span className="rounded-full bg-primary px-1.5 text-[9px] text-primary-foreground">{unreadOf(c)}</span>}</div><div className="mt-1 truncate text-[11px] text-muted-foreground">{last?.body}</div></div><span className="text-[10px] text-muted-foreground">{last ? messageTime(last) : ''}</span></Link>; })}</div></section>
-      <section className="panel overflow-hidden"><div className="bg-[#213b42] px-5 py-4 text-[#eef3eb]"><div className="eyebrow text-[#a9c2b8]">REPÈRE SSI</div><div className="mt-1 text-[15px] font-semibold">Une séparation claire des usages</div><p className="mt-2 text-[11px] leading-relaxed text-[#c1d1cc]">Les informations de support portent uniquement sur la continuité technique. Aucun contenu d’enquête n’est nécessaire à la gestion d’un incident.</p></div><div className="grid grid-cols-2 divide-x divide-border"><div className="p-4"><div className="eyebrow">COMPTE</div><div className="mt-1 text-[13px] font-semibold">{store.profile.role}</div></div><div className="p-4"><div className="eyebrow">ARTICLES KEDB</div><div className="mt-1 text-[13px] font-semibold">{store.kedb.length} validé(s)</div></div></div><div className="border-t border-border px-4 py-3"><Link href="/governance" className="text-[11px] font-semibold text-primary hover:underline">Référentiel de gouvernance <ArrowRight className="inline" size={12} /></Link></div></section>
-    </div>
+      <div className="ops-brief-grid">
+        <section className="ops-brief-main">
+          <div className="ops-queue-head">
+            <div><div className="ops-kicker">À TRAITER EN PREMIER</div><h3>File de travail <span>{pad2(stats.open.length)} ouverts</span></h3></div>
+            <span className="ops-sort-indicator"><ArrowRight size={12} />Priorité puis ancienneté</span>
+          </div>
+          <div className="ops-filter-row" role="group" aria-label="Filtrer la file de travail">
+            {(['Tous', 'P1', 'P2', 'À prendre', 'En cours'] as const).map(filter => {
+              const count = filter === 'Tous' ? stats.ranked.length
+                : filter === 'À prendre' ? stats.ranked.filter(ticket => ticket.status === 'Nouveau').length
+                : filter === 'En cours' ? stats.ranked.filter(ticket => ticket.status === 'En cours').length
+                : stats.ranked.filter(ticket => ticket.priority === filter).length;
+              return <button key={filter} type="button" aria-pressed={queueFilter === filter} onClick={() => { setQueueFilter(filter); setSelectedId(''); setShowAll(false); }} className="ops-filter-chip">{filter}{filter === 'Tous' && <span>{pad2(count)}</span>}</button>;
+            })}
+          </div>
+          <div className="ops-queue-list">
+            {visibleQueue.map((ticket, index) => {
+              const service = store.services.find(item => item.id === ticket.serviceId);
+              const sla = slaSummary(ticket, now);
+              const selected = focusTicket?.id === ticket.id;
+              return <Link
+                href={`/tickets?ticket=${encodeURIComponent(ticket.id)}`}
+                onClick={() => { setSelectedId(ticket.id); log(`Ticket ${ticket.id} ouvert depuis la vue générale`, 'Support informatique'); }}
+                key={ticket.id}
+                data-testid={`link-dashboard-ticket-${ticket.id}`}
+                className={`ops-queue-row focus-ring ${selected ? 'is-selected' : ''}`}
+              >
+                <span className="ops-queue-index">{String(index + 1).padStart(2, '0')}</span>
+                <span className="ops-queue-copy">
+                  <span className="ops-queue-meta">{ticket.id}<Badge tone={priorityTone(ticket.priority)}>{ticket.priority}</Badge><span>{ticket.kind} · {formatWAT(ticket.openedAt, 'time')}</span></span>
+                  <strong>{ticket.title}</strong>
+                  <small>{service?.name || ticket.category} <i>/</i> {person(ticket.assignee)}</small>
+                </span>
+                <span className="ops-queue-state"><small>ÉTAT</small><strong>{ticket.status === 'Nouveau' ? 'À prendre' : ticket.status}</strong></span>
+                <span className={`ops-queue-sla is-${sla.tone}`}><small>SLA</small><strong><Clock3 size={11} />{sla.remaining || sla.label}</strong></span>
+              </Link>;
+            })}
+            {!visibleQueue.length && <div className="ops-empty">Aucun ticket dans ce filtre.</div>}
+          </div>
+          <button type="button" className="ops-show-all" aria-expanded={showAll} onClick={() => setShowAll(value => !value)}>{showAll ? 'Réduire la file' : 'Afficher la file complète'}<ChevronDown size={13} className={showAll ? 'is-expanded' : ''} /></button>
+
+          <div className="ops-brief-cards">
+            {focusTicket ? <section className="ops-focus-card">
+              <div className="ops-focus-decoration" />
+              <div className="ops-focus-top"><div><div className="ops-kicker">FOCUS DU MOMENT</div><h4>{focusTicket.title}</h4></div><CircleAlert size={17} /></div>
+              <div className="ops-focus-foot"><span>{focusTicket.id}</span><span>Responsable : {person(focusTicket.assignee)}</span><Link href={`/tickets?ticket=${encodeURIComponent(focusTicket.id)}`}>Ouvrir le ticket <ArrowUpRight size={12} /></Link></div>
+            </section> : <section className="ops-focus-card ops-focus-empty"><div><div className="ops-kicker">FOCUS DU MOMENT</div><h4>Aucun ticket ouvert à traiter</h4><p>Les nouvelles demandes apparaîtront dans cette file.</p></div></section>}
+            <section className="ops-coordination-card">
+              <div><div className="ops-kicker">DANS L’ESPACE</div><h4>Coordination active <span aria-label={stats.unreadConvs ? 'Messages non lus' : 'Aucun message non lu'} /></h4><p>{store.conversations.length} conversation(s) · {stats.unread} message(s) non lu(s)</p></div>
+              <Link href="/messages"><MessageSquare size={14} />Ouvrir la messagerie <ArrowUpRight size={13} /></Link>
+            </section>
+          </div>
+        </section>
+
+        <aside className="ops-brief-side">
+          <section className="ops-service-section">
+            <OpsSectionHeading kicker="CONTINUITÉ" title="Santé des services" action={<span className="ops-period-label">{stats.ops}/{store.services.length} opérationnel(s) · {stats.watch} vigilance</span>} />
+            <div className="ops-service-list">{store.services.map(service => {
+              const linked = stats.open.filter(ticket => ticket.serviceId === service.id).length;
+              const onWatch = service.status !== 'Opérationnel';
+              return <Link href="/services" key={service.id} className={`ops-service ${onWatch ? 'is-vigilance' : ''}`}>
+                <span className="ops-service-dot" />
+                <span className="ops-service-copy"><strong>{service.name}</strong><small>{service.id} · {service.status} · {linked} ticket(s) ouvert(s)</small></span>
+                <span className={`ops-service-status ${onWatch ? 'watch' : 'good'}`}>{service.status}</span>
+                <span className="ops-service-rule"><i /></span>
+              </Link>;
+            })}</div>
+            <Link href="/services" className="ops-text-action"><Server size={13} />Catalogue des services <ArrowUpRight size={12} /></Link>
+          </section>
+
+          <section className="ops-activity-section">
+            <div className="ops-section-head"><div><div className="ops-kicker">RYTHME DE LA JOURNÉE</div><h3>Activité récente</h3></div><Link href="/audit" aria-label="Ouvrir le journal d’activité" className="ops-filter-icon"><Filter size={12} /></Link></div>
+            {stats.recentActivity.length ? <ol className="ops-activity-list">{stats.recentActivity.map((event, index) => <li key={event.id} className={`ops-activity tone-${event.type === 'itsm.sla.breached' ? 'rose' : index === 0 ? 'amber' : 'mint'}`}>
+              <span className="ops-activity-time">{event.at ? formatWAT(event.at, 'time') : event.time}</span>
+              {event.ticketId ? <Link href={`/tickets?ticket=${encodeURIComponent(event.ticketId)}`}><strong>{event.action}</strong><span>{event.scope} · {person(event.actor)}</span></Link>
+                : <div><strong>{event.action}</strong><span>{event.scope} · {person(event.actor)}</span></div>}
+            </li>)}</ol> : <div className="ops-empty ops-activity-empty">Aucun événement récent.</div>}
+          </section>
+
+          <section className="ops-ssi">
+            <div className="ops-ssi-top"><div className="ops-kicker">REPÈRE SSI</div><h3>Une séparation claire des usages</h3><p>Les informations de support portent uniquement sur la continuité technique. Aucun contenu d’enquête n’est nécessaire à la gestion d’un incident.</p></div>
+            <div className="ops-ssi-grid"><div><div className="ops-kicker">COMPTE</div><strong>{store.profile.role}</strong></div><div><div className="ops-kicker">ARTICLES KEDB</div><strong>{store.kedb.length} validé(s)</strong></div></div>
+            <Link className="ops-ssi-link" href="/governance">Référentiel de gouvernance <ArrowRight size={12} /></Link>
+          </section>
+        </aside>
+      </div>
     </>}
+    <footer className="ops-footer"><Sparkles size={12} />Démonstrateur non homologué · Données fictives de l’espace pilote</footer>
   </div>;
 }
