@@ -45,8 +45,9 @@ jobs:
         run: pnpm --filter @workspace/anif-secure-desk run test:coverage
       - name: Tests API et couverture
         run: pnpm --filter @workspace/api-server run test:coverage
-      # Report only (no threshold): journal panels rendered in jsdom, mapped back to src/components.
-      - name: Couverture des écrans testés (rapport)
+      # Screens rendered in jsdom (journal panels, tickets, settings): blocking floor on
+      # branches and functions per screen (tests/check-screen-coverage.mjs).
+      - name: Couverture des écrans testés (seuil bloquant)
         run: pnpm --filter @workspace/anif-secure-desk run test:coverage:components
       - name: Build
         env:

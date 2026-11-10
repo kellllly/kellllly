@@ -63,7 +63,9 @@ export default function SettingsPage() {
     offset: directoryPage * directoryPageSize,
   };
   const directory = useQuery({
-    queryKey: [...getGetItsmUserDirectoryQueryKey(directoryParams), currentUser?.id],
+    // Losing N1 moves the observer to a separate, disabled key, so the cached
+    // directory becomes inactive and can be cleared (see the effect below).
+    queryKey: [...getGetItsmUserDirectoryQueryKey(directoryParams), currentUser?.id, directoryAccessDeniedFor === currentUser?.id ? 'denied' : 'allowed'],
     queryFn: async ({ signal }) => {
       try {
         return await getItsmUserDirectory(directoryParams, { signal });
@@ -74,7 +76,6 @@ export default function SettingsPage() {
         setTargetUserId('');
         if (status === 401 || status === 403) {
           setDirectoryAccessDeniedFor(currentUser?.id ?? null);
-          queryClient.removeQueries({ queryKey: getGetItsmUserDirectoryQueryKey(), exact: false });
         }
         throw error;
       }
@@ -85,6 +86,14 @@ export default function SettingsPage() {
   useEffect(() => {
     setPilotServices(pilotServiceOptions(store.services));
   }, [store.services]);
+  // Once access is refused, clear the cached directory, never the entry the page
+  // still observes: removing it (from its own fetch, or while
+  // mounted) made React Query rebuild it at once, in a loop that froze the page.
+  useEffect(() => {
+    // "inactive" in React Query includes a query whose only observer is disabled:
+    // keep to entries nobody observes any more.
+    if (directoryAccessDeniedFor) queryClient.removeQueries({ queryKey: getGetItsmUserDirectoryQueryKey(), exact: false, predicate: query => query.getObserversCount() === 0 });
+  }, [directoryAccessDeniedFor, queryClient]);
   useEffect(() => {
     if (!isRoleAdmin || !currentUser?.id || directoryAccessDeniedFor === currentUser.id) return;
 
@@ -97,7 +106,6 @@ export default function SettingsPage() {
       source.close();
       setTargetUserId('');
       setDirectoryAccessDeniedFor(currentUser.id);
-      queryClient.removeQueries({ queryKey: getGetItsmUserDirectoryQueryKey(), exact: false });
     };
     source.onopen = () => {
       setDirectoryStreamStatus('connected');
