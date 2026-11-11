@@ -17,6 +17,7 @@ import {
   ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE,
   saveWorkspaceAtVersion,
 } from "../src/lib/itsm-workspace.ts";
+import { importWithTestDatabaseUrl } from "./helpers/database-bootstrap.ts";
 
 test("generated ITSM response schemas accept complete values and reject incomplete values", () => {
   const workspace = { store: {}, version: 0 };
@@ -96,7 +97,7 @@ test("stale workspace PUT returns a valid current snapshot and conflict identifi
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmWorkspaceSaveRouter } = await import(pathToFileURL(bundlePath).href);
+    const { createItsmWorkspaceSaveRouter } = await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
     const currentStore = { marker: "version-distante" };
     const currentVersion = 8;
     const actor = { id: "pilot-admin", role: "N1" as const, serviceIds: [] };
@@ -172,7 +173,7 @@ test("role assignment HTTP response follows the generated schema without externa
       createItsmRoleArchiveCheckRouter,
       createItsmRoleAssignmentRouter,
       createItsmUserDirectoryRouter,
-    } = await import(pathToFileURL(bundlePath).href);
+    } = await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
     const app = express();
     app.use(express.json());
     app.use((req: any, _res, next) => {

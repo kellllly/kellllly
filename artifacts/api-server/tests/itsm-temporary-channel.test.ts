@@ -55,7 +55,7 @@ test("an auditor posts through the dedicated command; the post is journaled; clo
   assert.throws(() => postTemporaryChannelMessage(store, "C-T1", "Hors mission", otherAuditor, hours(1)), /pas accessible/);
   assert.throws(() => postTemporaryChannelMessage(store, "C-1", "Canal pérenne", auditor, hours(1)), /pas accessible/);
   assert.throws(() => postTemporaryChannelMessage(store, "C-T1", "   ", auditor, hours(1)), /vide/);
-  const view = structuredClone(userStoreView(store, n1)) as { conversations: Array<{ id: string; messages: unknown[] }> };
+  const view = structuredClone(userStoreView(store, n1, hours(49))) as { conversations: Array<{ id: string; messages: unknown[] }> };
   view.conversations.find((c) => c.id === "C-T1")!.messages.push({ id: "x", body: "Après clôture", time: "" });
   assert.throws(() => applyWorkspaceUpdate(store, view, n1, hours(49)), /clos/);
 });
