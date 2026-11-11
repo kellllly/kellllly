@@ -105,6 +105,15 @@ test('le tableau de bord classe la file de travail, filtre par priorité et éta
   assert.match($('kpi-satisfaction')!.textContent!, /—\s*Aucune note pour l’instant/u);
   assert.match($('kpi-category')!.textContent!, /3/u);
   assert.ok($('kpi-assignee')!.querySelector('li'), 'volume par technicien');
+  const reports: Blob[] = [];
+  (URL as unknown as Record<string, unknown>).createObjectURL = (blob: Blob) => { reports.push(blob); return 'blob:kpi'; };
+  (URL as unknown as Record<string, unknown>).revokeObjectURL = () => {};
+  const downloads: string[] = [];
+  window.HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) { downloads.push(this.download); };
+  await click('button-export-kpis');
+  assert.match(downloads[0]!, /^indicateurs-itil-\d{4}-\d{2}-\d{2}\.csv$/u);
+  assert.match(await reports[0]!.text(), /"MTTR";"\d+";"minutes"/u);
+  assert.equal(ui.logs.at(-1)!.action, 'Rapport des indicateurs ITIL exporté (CSV)');
   assert.match(text(), /3\/4 opérationnel\(s\) · 1 vigilance/u);
   assert.match(text(), /1 conversation\(s\) · 2 message\(s\) non lu\(s\)/u);
   assert.match(text(), /Activité récente/u);

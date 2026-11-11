@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ticketKpis } from '../src/lib/domain';
+import { ticketKpis, ticketKpisToCsv } from '../src/lib/domain';
 import { normalizeTicket } from '../src/lib/seed';
 
 const NOW = Date.parse('2026-11-11T12:00:00Z');
@@ -62,4 +62,18 @@ test('ITIL indicators stay empty without data', () => {
   assert.equal(kpis.mtbfMs, null);
   assert.equal(kpis.slaRate, null);
   assert.deepEqual(ticketKpis([], NOW).byCategory, []);
+});
+
+test('the ITIL report exports every indicator as CSV, empty values left blank', () => {
+  const kpis = ticketKpis([
+    ticket({ id: 'INC-1', category: 'Réseau', assignee: 'user_n3', status: 'Résolu', openedAt: ago(300), resolvedAt: ago(240) }),
+    ticket({ id: 'INC-2', category: '=Accès', assignee: '', status: 'Nouveau', openedAt: ago(5) }),
+  ], NOW);
+  const csv = ticketKpisToCsv(kpis, '2026-11-11T12:00:00.000Z', id => (id === 'user_n3' ? 'Olivier Nguema' : id));
+  const rows = csv.replace('﻿', '').trim().split('\r\n');
+  assert.equal(rows[0], '"indicateur";"valeur";"unite";"detail"');
+  assert.ok(rows.includes('"MTTR";"60";"minutes";"1 résolu(s) sur 2"'));
+  assert.ok(rows.includes('"MTBF";"";"minutes";"0 intervalle(s)"'), 'no MTBF yet: blank value');
+  assert.ok(rows.includes('"Volume · technicien Olivier Nguema";"1";"tickets";""'), 'assignee names resolved');
+  assert.ok(rows.includes('"Volume · catégorie =Accès";"1";"tickets";""'), 'a formula-like label is only inside the cell text');
 });

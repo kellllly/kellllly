@@ -8,6 +8,7 @@ import {
   ChevronDown,
   CircleAlert,
   Clock3,
+  Download,
   Filter,
   MessageSquare,
   Plus,
@@ -20,7 +21,7 @@ import { useNow, useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { usePeople } from '@/hooks/use-people';
 import { formatWAT } from '@/lib/itsm';
-import { isOpen, messageTime, priorityTone, statusTone, ticketKpis, ticketSla, unreadOf } from '@/lib/domain';
+import { isOpen, messageTime, priorityTone, statusTone, ticketKpis, ticketKpisToCsv, ticketSla, unreadOf } from '@/lib/domain';
 import { Badge, Warning, pad2 } from '@/components/kit';
 import type { Ticket } from '@/lib/types';
 import './dashboard.css';
@@ -116,6 +117,18 @@ export default function Dashboard() {
     return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked, recentActivity };
   }, [store, now]);
   const kpis = useMemo(() => ticketKpis(store.tickets, now), [store.tickets, now]);
+  const exportKpis = () => {
+    const generatedAt = new Date(now).toISOString();
+    const url = URL.createObjectURL(new Blob([ticketKpisToCsv(kpis, generatedAt, person)], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `indicateurs-itil-${generatedAt.slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    log('Rapport des indicateurs ITIL exporté (CSV)', 'Tableau de bord');
+  };
 
   const date = new Date(now).toLocaleDateString('fr-FR', {
     weekday: 'long',
@@ -249,6 +262,7 @@ export default function Dashboard() {
         </aside>
       </div>
       <section className="ops-kpis" aria-label="Indicateurs ITIL" data-testid="dashboard-kpis">
+        <div className="ops-kpis-head"><div><div className="ops-kicker">INDICATEURS ITIL</div><h3>Rapport de performance du support</h3></div><button type="button" data-testid="button-export-kpis" onClick={exportKpis} className="focus-ring inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-[11px] font-semibold hover:bg-muted"><Download size={14} />Exporter (CSV)</button></div>
         <div className="ops-metrics ops-metrics-kpi">
           <OpsMetric testId="kpi-mttr" label="MTTR · temps moyen de résolution" value={kpis.mttrMs === null ? '—' : shortDuration(kpis.mttrMs)} detail={`${kpis.resolved} ticket(s) résolu(s) sur ${kpis.total}`} icon={Clock3} tone="blue" />
           <OpsMetric testId="kpi-mtbf" label="MTBF · temps moyen entre pannes" value={kpis.mtbfMs === null ? '—' : shortDuration(kpis.mtbfMs)} detail={kpis.mtbfIntervals ? `${kpis.mtbfIntervals} intervalle(s) entre incidents d’un même service` : 'Pas encore deux incidents sur un même service'} icon={Activity} tone="mint" />

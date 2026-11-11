@@ -1,4 +1,4 @@
-import { formatWAT, getDeadlines, slaProgress, type Priority } from './itsm';
+import { formatWAT, getDeadlines, slaProgress, toCsv, type Priority } from './itsm';
 import type { Conversation, Store, Ticket, TicketKind, TicketStatus } from './types';
 
 export const KINDS: TicketKind[] = ['Incident', 'Demande', 'Problème', 'Changement'];
@@ -154,6 +154,20 @@ export function ticketKpis(tickets: Ticket[], now: number) {
     byCategory: countBy(counted, t => t.category),
     byAssignee: countBy(counted, t => t.assignee),
   };
+}
+
+/** ITIL indicators as a CSV report (§ 4.5): one row per figure, durations in minutes. */
+export function ticketKpisToCsv(kpis: ReturnType<typeof ticketKpis>, generatedAt: string, label: (assignee: string) => string = x => x): string {
+  const minutes = (ms: number | null) => (ms === null ? '' : Math.round(ms / 60_000));
+  return toCsv(['indicateur', 'valeur', 'unite', 'detail'], [
+    ['Rapport généré le', generatedAt, 'ISO 8601', ''],
+    ['MTTR', minutes(kpis.mttrMs), 'minutes', `${kpis.resolved} résolu(s) sur ${kpis.total}`],
+    ['MTBF', minutes(kpis.mtbfMs), 'minutes', `${kpis.mtbfIntervals} intervalle(s)`],
+    ['Taux de respect du SLA de résolution', kpis.slaRate === null ? '' : Math.round(kpis.slaRate * 1000) / 10, '%', `${kpis.slaMet}/${kpis.slaDecided} dans le délai`],
+    ['Satisfaction moyenne', kpis.satisfactionAvg === null ? '' : Math.round(kpis.satisfactionAvg * 10) / 10, 'sur 5', `${kpis.satisfactionCount} note(s)`],
+    ...kpis.byCategory.map(row => [`Volume · catégorie ${row.label}`, row.count, 'tickets', '']),
+    ...kpis.byAssignee.map(row => [`Volume · technicien ${label(row.label)}`, row.count, 'tickets', '']),
+  ]);
 }
 
 /**

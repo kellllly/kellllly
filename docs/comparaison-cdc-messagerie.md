@@ -17,7 +17,7 @@
 ## Déjà couvert
 
 - **Tickets :** les quatre types ITIL, la création depuis l'interface et depuis le canal support (conversion d'un message), l'escalade automatique sur dépassement de SLA, la validation des changements par le CAB et la clôture confirmée par le demandeur.
-- **Indicateurs ITIL (§ 6.5) :** MTTR, MTBF, taux de respect du SLA de résolution, volume par catégorie et par technicien, satisfaction après résolution (note de 1 à 5 donnée à la clôture).
+- **Indicateurs ITIL (§ 6.5) :** MTTR, MTBF, taux de respect du SLA de résolution, volume par catégorie et par technicien, satisfaction après résolution (note de 1 à 5 donnée à la clôture), export du rapport en CSV depuis le tableau de bord (§ 4.5 ; le PDF et l’Excel restent à faire).
 - **Détection de récurrence (§ 6.3) :** à partir de 3 incidents sur un même service et une même catégorie en 7 jours, la file des tickets propose d’ouvrir un ticket Problème prérempli ; le serveur enregistre les incidents liés à la création et ne les laisse plus modifier.
 - **Demandes préformatées (§ 6.5) :** trois modèles (réinitialisation de mot de passe, création de compte, installation de logiciel) préremplissent le formulaire. Seule la réinitialisation de mot de passe est une demande standard prise en compte automatiquement ; le serveur tient la liste des modèles autorisés et vérifie la catégorie.
 - **Base de connaissances :** article KEDB créé à la clôture, assistant de diagnostic qui propose les fiches, et suggestion des erreurs connues proches pendant la saisie du sujet d’un nouveau ticket (§ 6.5).
@@ -31,7 +31,6 @@ Classé par valeur pour le pilote, du plus utile au moins utile.
 
 | Exigence | Section | Ce qu'il faudrait faire |
 | --- | --- | --- |
-| **Export des rapports d'indicateurs** | § 4.5 | Export CSV des indicateurs ITIL (le PDF et l'Excel ensuite). |
 | **Réponse avec citation, épinglage, transfert** | § 4.1 | Fonctions de messagerie absentes. |
 | **Modification d'un message dans les 5 minutes, suppression tracée** | § 4.1, § 10.1 | Avec le contenu avant et après dans le journal. |
 | **Accusés de réception (envoyé, délivré, lu)** | § 4.1 | Seul un compteur de non-lus existe. |
