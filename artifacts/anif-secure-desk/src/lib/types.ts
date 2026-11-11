@@ -41,6 +41,8 @@ export type Ticket = {
   satisfaction?: number | null;
   /** Problème only: the incidents it was opened from, fixed by the server at creation. */
   incidentIds?: string[];
+  /** Auto-approved standard request: the template it was created from, checked by the server. */
+  template?: string;
   updates: TicketUpdate[];
 };
 export type Service = { id: string; name: string; category: string; status: string; owner: string; sla: string; description: string };

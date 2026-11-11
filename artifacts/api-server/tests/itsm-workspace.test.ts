@@ -1351,3 +1351,16 @@ test("a problem keeps the recurring incidents it was opened from, fixed at creat
   }, actor("user-a"), at);
   assert.deepEqual((edited.tickets.find((ticket) => (ticket as Record<string, unknown>).id === problem.id) as Record<string, any>).incidentIds, [inc1, inc2], "liste figée");
 });
+
+test("only a known standard request template is acknowledged automatically at creation", () => {
+  const request = (fields: Record<string, unknown>) => ({ ...candidateTicket("REQ-new", "Demande"), category: "Accès", ...fields });
+  const create = (fields: Record<string, unknown>) => applyWorkspaceUpdate(empty(), { ...empty(), tickets: [request(fields)] }, actor("user-a"), at);
+  for (const invalid of [{ template: "inconnu" }, { template: "constructor" }, { template: "mot-de-passe", category: "Réseau" }, { template: "mot-de-passe", kind: "Incident" }]) {
+    assert.throws(() => create(invalid), /Modèle de demande standard invalide/);
+  }
+  const plain = create({}).tickets[0] as Record<string, any>;
+  assert.deepEqual([plain.status, plain.acknowledgedAt, "template" in plain], ["Nouveau", null, false]);
+  const auto = create({ template: "mot-de-passe" }).tickets[0] as Record<string, any>;
+  assert.deepEqual([auto.status, auto.acknowledgedAt, auto.template], ["Pris en compte", at.toISOString(), "mot-de-passe"]);
+  assert.match(auto.updates.at(-1).body, /prise en compte automatiquement/);
+});

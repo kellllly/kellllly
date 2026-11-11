@@ -19,6 +19,7 @@
 - **Tickets :** les quatre types ITIL, la création depuis l'interface et depuis le canal support (conversion d'un message), l'escalade automatique sur dépassement de SLA, la validation des changements par le CAB et la clôture confirmée par le demandeur.
 - **Indicateurs ITIL (§ 6.5) :** MTTR, MTBF, taux de respect du SLA de résolution, volume par catégorie et par technicien, satisfaction après résolution (note de 1 à 5 donnée à la clôture).
 - **Détection de récurrence (§ 6.3) :** à partir de 3 incidents sur un même service et une même catégorie en 7 jours, la file des tickets propose d’ouvrir un ticket Problème prérempli ; le serveur enregistre les incidents liés à la création et ne les laisse plus modifier.
+- **Demandes préformatées (§ 6.5) :** trois modèles (réinitialisation de mot de passe, création de compte, installation de logiciel) préremplissent le formulaire. Seule la réinitialisation de mot de passe est une demande standard prise en compte automatiquement ; le serveur tient la liste des modèles autorisés et vérifie la catégorie.
 - **Base de connaissances :** article KEDB créé à la clôture, assistant de diagnostic qui propose les fiches.
 - **Messagerie :** conversations de groupe et bilatérales, salons restreints, annonces réservées à la Direction, canaux temporaires pour les externes, messages éphémères, pièces jointes simulées avec contrôle des formats, saisie hors ligne.
 - **Audit (§ 10.1) :** journal en ajout seul, chaîné par empreintes, arbre de Merkle, horodatage RFC 3161, flux SIEM, export CSV.
@@ -30,7 +31,6 @@ Classé par valeur pour le pilote, du plus utile au moins utile.
 
 | Exigence | Section | Ce qu'il faudrait faire |
 | --- | --- | --- |
-| **Demandes préformatées et approbation automatique** | § 6.5 | Modèles de demande (création de compte, réinitialisation de mot de passe, installation de logiciel) qui préremplissent le formulaire ; les demandes standard passent sans validation manuelle. |
 | **Suggestions de la base de connaissances à la création d'un ticket** | § 6.5 | Proposer les articles KEDB proches pendant la saisie du titre, avant l'envoi. |
 | **Export des rapports d'indicateurs** | § 4.5 | Export CSV des indicateurs ITIL (le PDF et l'Excel ensuite). |
 | **Réponse avec citation, épinglage, transfert** | § 4.1 | Fonctions de messagerie absentes. |

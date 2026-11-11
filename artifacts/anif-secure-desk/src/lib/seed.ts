@@ -53,6 +53,7 @@ export function normalizeTicket(t: any): Ticket {
     // Only when rated: the server compares closed tickets exactly and stores no `null` here.
     ...(t.satisfaction != null ? { satisfaction: t.satisfaction } : {}),
     ...(Array.isArray(t.incidentIds) ? { incidentIds: t.incidentIds } : {}),
+    ...(typeof t.template === 'string' ? { template: t.template } : {}),
     updates: Array.isArray(t.updates) ? t.updates : [],
   };
 }

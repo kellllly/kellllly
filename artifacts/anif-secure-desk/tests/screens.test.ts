@@ -496,3 +496,27 @@ test('trois incidents sur un même service ouvrent un problème lié, puis l’a
   await createTicket({ 'select-kind': 'Problème', 'input-title': 'Autre problème' });
   assert.ok(!('incidentIds' in tickets()[0]!));
 });
+
+test('une demande préformatée préremplit le formulaire ; seule la demande standard est prise en compte d’office', async () => {
+  await mountTickets();
+  await click('button-create-ticket');
+  await click('button-template-compte');
+  assert.equal(($('input-title') as HTMLInputElement).value, 'Création de compte utilisateur');
+  assert.equal(($('select-kind') as HTMLSelectElement).value, 'Demande');
+  assert.match($('text-template-approval')?.textContent ?? '', /validée par le support/u);
+  await click('button-template-mot-de-passe');
+  assert.equal(($('select-category') as HTMLSelectElement).value, 'Accès');
+  assert.match($('text-template-approval')?.textContent ?? '', /automatiquement/u);
+  await submitForm('button-submit-ticket');
+  let [created] = tickets();
+  assert.deepEqual([created!.status, created!.template, Boolean(created!.acknowledgedAt)], ['Pris en compte', 'mot-de-passe', true]);
+
+  // Changing the category drops the auto-approval.
+  await click('button-create-ticket');
+  assert.equal($('text-template-approval'), null, 'aucun modèle repris d’une création précédente');
+  await click('button-template-mot-de-passe');
+  await fill('select-category', 'Réseau');
+  await submitForm('button-submit-ticket');
+  [created] = tickets();
+  assert.deepEqual([created!.status, 'template' in created!], ['Nouveau', false]);
+});

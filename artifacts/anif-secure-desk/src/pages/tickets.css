@@ -52,6 +52,9 @@
 .td-sla-note strong { color: var(--td-ink); }
 .td-recurrence ul { display: grid; gap: 6px; margin-top: 7px; }
 .td-recurrence li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; color: var(--td-ink); font-size: 10px; }
+.td-templates { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+.td-templates > span { width: 100%; color: var(--muted-foreground); font-size: 9px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.td-templates > p { width: 100%; color: var(--muted-foreground); font-size: 11px; }
 .td-linked { margin-top: 6px; color: var(--td-muted); font: 10px var(--app-font-mono); }
 .td-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 13px; }
 .td-summary-card { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; border: 1px solid var(--td-line); border-radius: 8px; padding: 7px 10px; background: var(--td-row); color: var(--td-muted); font-size: 9px; }

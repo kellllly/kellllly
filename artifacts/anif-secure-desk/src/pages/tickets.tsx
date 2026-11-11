@@ -3,7 +3,7 @@ import { Link, useLocation, useSearch } from 'wouter';
 import { Activity, ArrowDownWideNarrow, ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, CheckCheck, ChevronDown, ChevronRight, CircleCheck, Clock3, Filter, Gavel, Hand, Headphones, Inbox, MessageSquare, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Server, ShieldAlert, Timer, UserRound } from 'lucide-react';
 import { SLA_POLICIES, formatWAT, priorityFor } from '@/lib/itsm';
 import { useNow, useStore } from '@/lib/store';
-import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, RECURRENCE_WINDOW_DAYS, closeResolvedTicket, isOpen, nextTicketId, recurringIncidents, nowIso, priorityTone, resolveTicket, statusTone, ticketSla, uid, withTicketEvent } from '@/lib/domain';
+import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, RECURRENCE_WINDOW_DAYS, REQUEST_TEMPLATES, closeResolvedTicket, isOpen, nextTicketId, recurringIncidents, nowIso, priorityTone, resolveTicket, statusTone, ticketSla, uid, withTicketEvent } from '@/lib/domain';
 import { consumeDiagnosticTicketHandoff, diagnosticTicketPrefill } from '@/lib/diagnostic-assistant';
 import type { Level, Ticket } from '@/lib/types';
 import { Badge, Button, dialogStickyActionsCls, EmptyState, Field, Modal, pad2, SearchBox, Warning, textareaCls } from '@/components/kit';
@@ -30,6 +30,7 @@ export default function TicketsPage() { const { person } = usePeople();
   const [diagnosticNotice, setDiagnosticNotice] = useState('');
   // Incidents the problem being created is opened from (set only by a recurrence alert).
   const [linkIncidents, setLinkIncidents] = useState<string[]>([]);
+  const [template, setTemplate] = useState('');
 
   useEffect(() => {
     const p = new URLSearchParams(search);
@@ -93,7 +94,8 @@ export default function TicketsPage() { const { person } = usePeople();
     setPrefill(emptyDraft({ kind: 'Problème', title: `Problème — incidents répétés sur ${name}`, category: r.category, serviceId: r.serviceId, supportLevel: 2, description: `${r.incidentIds.length} incidents ${r.category} sur ${name} en ${RECURRENCE_WINDOW_DAYS} jours : ${r.incidentIds.join(', ')}. Cause commune à rechercher.` }));
     setLinkIncidents(r.incidentIds); setDiagnosticNotice(''); setDialog('create');
   };
-  const closeCreate = () => { setDialog(null); setDiagnosticNotice(''); setLinkIncidents([]); };
+  const closeCreate = () => { setDialog(null); setDiagnosticNotice(''); setLinkIncidents([]); setTemplate(''); };
+  const chosenTemplate = REQUEST_TEMPLATES.find(t => t.id === template);
   const currentTime = formatWAT(new Date(now).toISOString(), 'time');
   const quickStatus = statusF === 'Nouveau' ? 'À traiter' : statusF === 'En cours' ? 'En cours' : statusF === 'Ouverts' ? 'Ouverts' : statusF === 'Tous' ? 'Tous' : '';
   const clearFilters = () => { setKindF('Tous'); setStatusF('Ouverts'); setPrioF('Toutes'); setQuery(''); };
@@ -105,10 +107,12 @@ export default function TicketsPage() { const { person } = usePeople();
     const id = nextTicketId(d.kind, store.tickets);
     const openedAt = nowIso();
     const incidentIds = d.kind === 'Problème' && linkIncidents.length ? linkIncidents : null;
-    const t: Ticket = { id, title: d.title, kind: d.kind, category: d.category, impact: d.impact, urgency: d.urgency, priority: priorityFor(d.impact, d.urgency), supportLevel: d.supportLevel, status: 'Nouveau', assignee: d.assignee, requester: store.profile.name, serviceId: d.serviceId || null, assetId: d.assetId || null, openedAt, acknowledgedAt: null, resolvedAt: null, closedAt: null, description: d.description || 'Demande de support de démonstration.', cab: null, ...(incidentIds ? { incidentIds } : {}), updates: [{ author: store.profile.name, body: `${d.kind} ouvert en ${priorityFor(d.impact, d.urgency)} (impact ${d.impact}, urgence ${d.urgency})${incidentIds ? ` depuis ${incidentIds.join(', ')}` : ''}.`, time: formatWAT(openedAt, 'datetime'), at: openedAt }] };
+    // Auto-approval only while the draft still matches the template's kind and category.
+    const auto = chosenTemplate?.autoApproved && d.kind === 'Demande' && d.category === chosenTemplate.draft.category ? chosenTemplate : null;
+    const t: Ticket = { id, title: d.title, kind: d.kind, category: d.category, impact: d.impact, urgency: d.urgency, priority: priorityFor(d.impact, d.urgency), supportLevel: d.supportLevel, status: auto ? 'Pris en compte' : 'Nouveau', assignee: d.assignee, requester: store.profile.name, serviceId: d.serviceId || null, assetId: d.assetId || null, openedAt, acknowledgedAt: auto ? openedAt : null, resolvedAt: null, closedAt: null, description: d.description || 'Demande de support de démonstration.', cab: null, ...(incidentIds ? { incidentIds } : {}), ...(auto ? { template: auto.id } : {}), updates: [{ author: store.profile.name, body: `${d.kind} ouvert en ${priorityFor(d.impact, d.urgency)} (impact ${d.impact}, urgence ${d.urgency})${incidentIds ? ` depuis ${incidentIds.join(', ')}` : ''}.${auto ? ` Demande standard (${auto.label}) prise en compte automatiquement.` : ''}`, time: formatWAT(openedAt, 'datetime'), at: openedAt }] };
     setStore(s => ({ ...s, tickets: [t, ...s.tickets] }));
     setActive(id); setStatusF('Ouverts'); setKindF('Tous'); setPrioF('Toutes'); setQuery(''); setDialog(null);
-    setDiagnosticNotice(''); setLinkIncidents([]);
+    setDiagnosticNotice(''); setLinkIncidents([]); setTemplate('');
     log(`Ticket ${id} créé (${t.kind}, ${t.priority})${incidentIds ? ` depuis ${incidentIds.length} incidents récurrents` : ''}`, 'Support informatique');
   };
   const edit = (d: TicketDraft) => {
@@ -130,7 +134,7 @@ export default function TicketsPage() { const { person } = usePeople();
         <h2>File d’intervention</h2>
         <p>Priorisez le signal, puis ouvrez le contexte utile.</p>
       </div>
-      <Button testId="button-create-ticket" className="td-create-btn" onClick={() => { setPrefill(emptyDraft()); setLinkIncidents([]); setDialog('create'); }}><Plus size={15} />Créer un ticket</Button>
+      <Button testId="button-create-ticket" className="td-create-btn" onClick={() => { setPrefill(emptyDraft()); setLinkIncidents([]); setTemplate(''); setDialog('create'); }}><Plus size={15} />Créer un ticket</Button>
     </div>
     <div className="td-sla-note"><Timer size={15} /><div><strong>Minuteurs SLA de démonstration.</strong> Les délais courent en continu depuis l’ouverture (24 h sur 24, sans calendrier ouvré ni jours fériés) et sont recalculés chaque seconde. Un changement de priorité modifie les échéances mais ne remet jamais le temps écoulé à zéro. Ces indicateurs ne mesurent aucune performance contractuelle.</div></div>
     {recurrences.length > 0 && <div className="td-sla-note td-recurrence" role="status" data-testid="recurrence-alerts"><ShieldAlert size={15} /><div><strong>Incidents récurrents.</strong> Plusieurs incidents d’une même catégorie touchent le même service depuis {RECURRENCE_WINDOW_DAYS} jours : un ticket Problème permet d’en chercher la cause commune.
@@ -190,7 +194,7 @@ export default function TicketsPage() { const { person } = usePeople();
       </section>
     </div>
     <footer className="td-footer"><ShieldAlert size={12} />Espace ITSM partagé · données fictives de démonstration · aucun indicateur SLA n’est contractuel.</footer>
-     {dialog === 'create' && <Modal wide title="Créer un ticket" description={diagnosticNotice || "Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence."} onClose={closeCreate}><TicketForm initial={prefill} services={store.services} assets={store.assets} submitLabel="Créer le ticket" onSubmit={create} onCancel={closeCreate} /></Modal>}
+     {dialog === 'create' && <Modal wide title="Créer un ticket" description={diagnosticNotice || "Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence."} onClose={closeCreate}>{!linkIncidents.length && <div className="td-templates" role="group" aria-label="Demandes préformatées"><span>Demandes préformatées</span>{REQUEST_TEMPLATES.map(t => <Button key={t.id} testId={`button-template-${t.id}`} variant={template === t.id ? 'primary' : 'outline'} className="h-7 px-2.5" onClick={() => { setTemplate(t.id); setPrefill(emptyDraft({ kind: 'Demande', ...t.draft })); }}>{t.label}</Button>)}{chosenTemplate && <p data-testid="text-template-approval">{chosenTemplate.autoApproved ? 'Demande standard : prise en compte automatiquement à la création, sans validation manuelle.' : 'Demande préremplie : elle sera validée par le support avant traitement.'}</p>}</div>}<TicketForm key={template || 'libre'} initial={prefill} services={store.services} assets={store.assets} submitLabel="Créer le ticket" onSubmit={create} onCancel={closeCreate} /></Modal>}
     {dialog === 'edit' && ticket && <Modal wide title={`Modifier ${ticket.id}`} description="L’heure d’ouverture est conservée : les échéances SLA sont recalculées sans remettre le temps écoulé à zéro." onClose={() => setDialog(null)}><TicketForm lockKind={ticket.status !== 'Nouveau' || !!ticket.cab} initial={emptyDraft({ kind: ticket.kind, title: ticket.title, description: ticket.description, category: ticket.category, impact: ticket.impact, urgency: ticket.urgency, supportLevel: ticket.supportLevel, assignee: ticket.assignee, serviceId: ticket.serviceId ?? '', assetId: ticket.assetId ?? '' })} services={store.services} assets={store.assets} submitLabel="Enregistrer" onSubmit={edit} onCancel={() => setDialog(null)} /></Modal>}
     {dialog === 'resolve' && ticket && <ResolveDialog ticket={ticket} onClose={() => setDialog(null)} onDone={(rootCause, resolution) => { setStore(s => resolveTicket(s, ticket.id, rootCause, resolution)); log(`Ticket ${ticket.id} résolu (en attente de confirmation)`, `Ticket ${ticket.id}`); setDialog(null); }} />}
     {dialog === 'confirm' && ticket && <ConfirmDialog ticket={ticket} onClose={() => setDialog(null)} onDone={satisfaction => {

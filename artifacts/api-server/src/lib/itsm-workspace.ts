@@ -30,6 +30,8 @@ const TICKET_FIELDS = [
   "serviceId", "assetId", "description", "rootCause", "resolution", "cab",
   "conversationId", "sourceMessageId",
 ] as const;
+/** Standard requests acknowledged at creation (CDC-ANIF-MSG-2025 §6.5): template id → required category. Mirrors REQUEST_TEMPLATES in the front. */
+const AUTO_APPROVED_REQUESTS = new Map([["mot-de-passe", "Accès"]]);
 const isRecord = (value: unknown): value is JsonRecord =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
 const records = (value: unknown) => Array.isArray(value) ? value.filter(isRecord) : [];
@@ -917,6 +919,10 @@ export function applyWorkspaceUpdate(
           throw new Error("Un problème ne peut référencer que des incidents existants, sans doublon (50 au plus).");
         }
       }
+      const template = proposed.template ?? null;
+      if (template !== null && (proposed.kind !== "Demande" || AUTO_APPROVED_REQUESTS.get(String(template)) !== proposed.category)) {
+        throw new Error("Modèle de demande standard invalide.");
+      }
       const id = nextTicketId(proposed.kind, [...oldTickets, ...nextTickets]);
       const priority = PRIORITY[String(proposed.impact)]![Number(proposed.urgency) - 1];
       const at = newStamp(now);
@@ -939,17 +945,18 @@ export function applyWorkspaceUpdate(
         resolution: null,
         conversationId: proposed.conversationId ?? null,
         sourceMessageId: proposed.sourceMessageId ?? null,
-        status: "Nouveau",
+        status: template ? "Pris en compte" : "Nouveau",
         openedAt: at,
-        acknowledgedAt: null,
+        acknowledgedAt: template ? at : null,
         resolvedAt: null,
         closedAt: null,
         cab: null,
         kedbId: null,
         ...(incidentIds ? { incidentIds } : {}),
+        ...(template ? { template } : {}),
         updates: [],
       };
-      nextTickets.push(eventFor(created, `Ticket créé en ${priority} (impact ${proposed.impact}, urgence ${proposed.urgency}).`, actor, now));
+      nextTickets.push(eventFor(created, `Ticket créé en ${priority} (impact ${proposed.impact}, urgence ${proposed.urgency}).${template ? ` Demande standard « ${template} » prise en compte automatiquement.` : ""}`, actor, now));
       continue;
     }
 

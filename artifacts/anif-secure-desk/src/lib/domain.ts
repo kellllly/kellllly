@@ -156,6 +156,19 @@ export function ticketKpis(tickets: Ticket[], now: number) {
   };
 }
 
+/**
+ * Preformatted requests (CDC-ANIF-MSG-2025 §6.5). Only autoApproved ones skip manual acknowledgement;
+ * the server keeps the same list (AUTO_APPROVED_REQUESTS in itsm-workspace.ts).
+ */
+export const REQUEST_TEMPLATES: Array<{ id: string; label: string; autoApproved: boolean; draft: { title: string; category: string; impact: 1 | 2 | 3; urgency: 1 | 2 | 3; description: string } }> = [
+  { id: 'mot-de-passe', label: 'Réinitialisation de mot de passe', autoApproved: true,
+    draft: { title: 'Réinitialisation de mot de passe', category: 'Accès', impact: 3, urgency: 2, description: 'Compte concerné : \nMoyen de remise du mot de passe provisoire : ' } },
+  { id: 'compte', label: 'Création de compte', autoApproved: false,
+    draft: { title: 'Création de compte utilisateur', category: 'Accès', impact: 3, urgency: 3, description: 'Nom et prénom : \nDirection ou service : \nDate d’arrivée : \nAccès nécessaires : ' } },
+  { id: 'logiciel', label: 'Installation de logiciel', autoApproved: false,
+    draft: { title: 'Installation de logiciel', category: 'Poste de travail', impact: 3, urgency: 3, description: 'Logiciel et version : \nPoste (n° d’inventaire) : \nJustification : ' } },
+];
+
 export const RECURRENCE_WINDOW_DAYS = 7;
 export const RECURRENCE_THRESHOLD = 3;
 export type Recurrence = { serviceId: string; category: string; incidentIds: string[] };
