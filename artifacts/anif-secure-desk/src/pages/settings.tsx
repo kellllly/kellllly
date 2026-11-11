@@ -17,6 +17,7 @@ import { useDisplayName } from '@/hooks/use-display-name';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
 import { isStepUpHint, stepUpMessage, withStepUpHint } from '@/lib/step-up';
 import { APP_FONT_OPTIONS, setAppFontPreference, useAppFontPreference } from '@/lib/font-preference';
+import { SHORTCUTS } from '@/lib/shortcuts';
 import { TEXT_SIZE_OPTIONS, setTextSizePreference, useTextSizePreference } from '@/lib/text-size-preference';
 import { setWatermarkEnabled, useWatermarkEnabled } from '@/lib/watermark-preference';
 import { Button, Field, inputCls, PageIntro, SectionTitle, Warning } from '@/components/kit';
@@ -428,6 +429,10 @@ export default function SettingsPage() {
           <span className="text-[11px] font-semibold">Taille du texte</span>
           {TEXT_SIZE_OPTIONS.map(size => <button key={size.id} type="button" data-testid={`button-text-size-${size.id}`} aria-pressed={textSize === size.id} onClick={() => { setTextSizePreference(size.id); log(`Taille du texte ${size.label} sélectionnée`, 'Préférences'); }} className={`focus-ring h-8 rounded-lg border px-3 text-[11px] font-semibold ${textSize === size.id ? 'border-primary bg-muted/60' : 'border-border hover:bg-muted/50'}`}>{size.label} · {Math.round(size.zoom * 100)} %</button>)}
         </div>
+      </section>
+      <section className="panel min-w-0 p-5 md:p-6" data-testid="section-shortcuts">
+        <SectionTitle kicker="CLAVIER" title="Raccourcis clavier" />
+        <dl className="grid gap-2 text-[11px] sm:grid-cols-2">{SHORTCUTS.map(s => <div key={s.keys} className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2"><dt className="min-w-0">{s.label}</dt><dd><kbd className="mono whitespace-nowrap rounded border border-border bg-card px-1.5 py-0.5 text-[10px]">{s.keys}</kbd></dd></div>)}</dl>
       </section>
       <section className="panel min-w-0 p-5 md:p-6">
         <SectionTitle kicker="CONFIDENTIALITÉ" title="Filigrane de l’écran" />

@@ -23,7 +23,7 @@
 - **Base de connaissances :** article KEDB créé à la clôture, assistant de diagnostic qui propose les fiches, et suggestion des erreurs connues proches pendant la saisie du sujet d’un nouveau ticket (§ 6.5).
 - **Messagerie :** conversations de groupe et bilatérales, salons restreints, annonces réservées à la Direction, canaux temporaires pour les externes, messages éphémères, pièces jointes simulées avec contrôle des formats, saisie hors ligne.
 - **Audit (§ 10.1) :** journal en ajout seul, chaîné par empreintes, arbre de Merkle, horodatage RFC 3161, flux SIEM, export CSV.
-- **Interface :** mode clair et sombre, choix de la police, taille du texte réglable (100 %, 115 %, 130 % ; § 8.5), icônes Lucide, mise en page utilisable sur téléphone.
+- **Interface :** mode clair et sombre, raccourcis clavier listés dans les Préférences (Ctrl+K pour la recherche ; Alt+Maj+T, M et D à la place de Ctrl+N et Ctrl+T, réservés par le navigateur ; § 8.3), choix de la police, taille du texte réglable (100 %, 115 %, 130 % ; § 8.5), icônes Lucide, mise en page utilisable sur téléphone.
 
 ## Manquant et réalisable dans le pilote web
 
@@ -36,7 +36,6 @@ Classé par valeur pour le pilote, du plus utile au moins utile.
 | **Accusés de réception (envoyé, délivré, lu)** | § 4.1 | Seul un compteur de non-lus existe. |
 | **Mentions @utilisateur et @tous, fils de discussion** | § 4.1 | Absents. |
 | **Statuts de présence, heures silencieuses** | § 4.1, § 4.4 | Absents. |
-| **Raccourcis clavier** (Ctrl+K, Ctrl+N, Ctrl+T) | § 8.3 | Seul le repli de la barre latérale a un raccourci. |
 
 ## Hors de portée de ce pilote
 

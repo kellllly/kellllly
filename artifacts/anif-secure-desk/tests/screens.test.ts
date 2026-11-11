@@ -330,6 +330,7 @@ test('Plus Jakarta Sans est la police par défaut et les Préférences peuvent l
   defaultHandlers();
   const settings = await mountSettings('N2 · Interne');
   assert.ok(settings.querySelector('[data-testid="page-intro"]'), 'Préférences utilisent le gabarit d’en-tête partagé');
+  assert.match(settings.querySelector('[data-testid="section-shortcuts"]')?.textContent ?? '', /Alt \+ Maj \+ T/u, 'les raccourcis sont listés');
   const plusJakarta = settings.querySelector('[data-testid="button-font-plus-jakarta"]') as HTMLButtonElement;
   assert.equal(plusJakarta.getAttribute('aria-pressed'), 'true');
   assert.equal(document.documentElement.dataset.appFont, 'plus-jakarta');

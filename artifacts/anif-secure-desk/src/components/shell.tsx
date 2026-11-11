@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Watermark } from '@/components/watermark';
 import { Link, useLocation } from 'wouter';
 import { Activity, AlertTriangle, Bell, BellOff, Check, ClipboardList, Cpu, Landmark, LayoutDashboard, LifeBuoy, LockKeyhole, LogOut, Menu, MessageSquare, Settings, ShieldCheck, WifiOff, X } from 'lucide-react';
@@ -10,6 +10,7 @@ import { deriveNotifications, unreadOf } from '@/lib/domain';
 import { formatWAT } from '@/lib/itsm';
 import { SyncRecoveryActions } from './sync-recovery-actions';
 import { offlineMessage } from '@/lib/offline';
+import { runShortcut } from '@/lib/shortcuts';
 
 
 const navItems = [
@@ -35,7 +36,7 @@ const meta: Record<string, { title: string; sub: string }> = {
 const initials = (n: string) => n.split(' ').filter(Boolean).map(x => x[0]).join('').slice(0, 3);
 
 export function Shell({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { store, storageIssue, dismissIssue, unreadableRecoveryDraftCount, recovery, writesSuspended, resync, offlineSince } = useStore();
   const { name: displayName } = useDisplayName();
   const { signOut } = useClerk();
@@ -45,6 +46,16 @@ export function Shell({ children }: { children: ReactNode }) {
   const isDashboard = location === '/' || location === '/user-portal';
   const unread = useMemo(() => store.conversations.reduce((n, c) => n + unreadOf(c), 0), [store.conversations]);
   const roleCode = store.profile.clearance.slice(0, 2);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => runShortcut(e, roleCode, setLocation, () => {
+      const box = document.querySelector<HTMLInputElement>('main input[type="search"]');
+      box?.focus();
+      box?.select();
+      return !!box;
+    });
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [roleCode, setLocation]);
   return <div className={`app-shell flex min-h-[100dvh] ${isDashboard ? 'anif-dashboard-shell' : ''}`}><Watermark name={displayName} />
     <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col overflow-y-auto px-4 py-5 transition-transform lg:sticky lg:top-0 lg:h-[100dvh] lg:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="mb-8 flex items-center gap-3 px-2">
