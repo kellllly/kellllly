@@ -25,7 +25,8 @@ const MIN = { branches: 75, functions: 60 };
 const report = readFileSync(process.argv[2] ?? '.component-build/lcov.info', 'utf8');
 const files = new Map();
 for (const record of report.split('end_of_record')) {
-  const path = record.match(/^SF:(.+)$/mu)?.[1]?.trim();
+  // lcov paths use backslashes on Windows.
+  const path = record.match(/^SF:(.+)$/mu)?.[1]?.trim().replaceAll('\\', '/');
   if (!path) continue;
   const value = (key) => Number(record.match(new RegExp(`^${key}:(\\d+)$`, 'mu'))?.[1] ?? 0);
   files.set(path, { BRF: value('BRF'), BRH: value('BRH'), FNF: value('FNF'), FNH: value('FNH') });

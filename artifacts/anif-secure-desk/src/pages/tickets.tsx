@@ -3,11 +3,11 @@ import { Link, useLocation, useSearch } from 'wouter';
 import { Activity, ArrowDownWideNarrow, ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, CheckCheck, ChevronDown, ChevronRight, CircleCheck, Clock3, Filter, Gavel, Hand, Headphones, Inbox, MessageSquare, Pause, Pencil, Play, Plus, RotateCcw, Search, Send, Server, ShieldAlert, Timer, UserRound } from 'lucide-react';
 import { SLA_POLICIES, formatWAT, priorityFor } from '@/lib/itsm';
 import { useNow, useStore } from '@/lib/store';
-import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, RECURRENCE_WINDOW_DAYS, REQUEST_TEMPLATES, closeResolvedTicket, isOpen, nextTicketId, recurringIncidents, nowIso, priorityTone, resolveTicket, statusTone, ticketSla, uid, withTicketEvent } from '@/lib/domain';
+import { KINDS, LEVEL_LABEL, PRIORITIES, STATUSES, RECURRENCE_WINDOW_DAYS, REQUEST_TEMPLATES, closeResolvedTicket, fmtMinutes, isOpen, nextTicketId, recurringIncidents, nowIso, priorityTone, resolveTicket, statusTone, ticketSla, uid, withTicketEvent } from '@/lib/domain';
 import { consumeDiagnosticTicketHandoff, diagnosticTicketPrefill } from '@/lib/diagnostic-assistant';
 import type { Level, Ticket } from '@/lib/types';
 import { Badge, Button, dialogStickyActionsCls, EmptyState, Field, Modal, pad2, SearchBox, Warning, textareaCls } from '@/components/kit';
-import { SlaBar, TicketForm, emptyDraft, fmtMinutes, type TicketDraft } from '@/components/ticket-parts';
+import { SlaBar, TicketForm, emptyDraft, type TicketDraft } from '@/components/ticket-parts';
 import { usePeople } from '@/hooks/use-people';
 import './tickets.css';
 

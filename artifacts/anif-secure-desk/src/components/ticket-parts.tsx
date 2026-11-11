@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Check } from 'lucide-react';
 import { SLA_POLICIES, formatWAT, priorityFor, slaProgress } from '@/lib/itsm';
-import { ASSIGNEES, CATEGORIES, KINDS, LEVEL_LABEL, fmtDuration } from '@/lib/domain';
+import { ASSIGNEES, CATEGORIES, KINDS, LEVEL_LABEL, fmtDuration, fmtMinutes } from '@/lib/domain';
 import type { Asset, Level, Service, TicketKind } from '@/lib/types';
 import { Badge, Button, dialogStickyActionsCls, Field, inputCls, textareaCls } from './kit';
 
@@ -30,7 +30,6 @@ export function PriorityPreview({ impact, urgency }: { impact: Level; urgency: L
   const p = priorityFor(impact, urgency); const pol = SLA_POLICIES[p];
   return <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/70 px-3 py-2.5 text-[10px] text-muted-foreground"><Badge tone={p === 'P1' ? 'red' : p === 'P2' ? 'amber' : p === 'P3' ? 'blue' : 'neutral'}>{p} · {pol.label}</Badge><span>Prise en charge {fmtMinutes(pol.acknowledgeMinutes)} · résolution {fmtMinutes(pol.resolveMinutes)}</span></div>;
 }
-export const fmtMinutes = (m: number) => (m >= 60 ? `${m / 60} h` : `${m} min`);
 
 export function TicketForm({ initial, services, assets, submitLabel, onSubmit, onCancel, lockKind = false }: { initial: TicketDraft; services: Service[]; assets: Asset[]; submitLabel: string; onSubmit: (d: TicketDraft) => void; onCancel: () => void; lockKind?: boolean }) {
   const [d, setD] = useState(initial);

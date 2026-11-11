@@ -193,6 +193,8 @@ export function recurringIncidents(tickets: Ticket[], now: number): Recurrence[]
     .sort((a, b) => b.incidentIds.length - a.incidentIds.length || a.serviceId.localeCompare(b.serviceId));
 }
 
+export const fmtMinutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}` : `${m} min`);
+
 export function fmtDuration(ms: number) {
   const a = Math.abs(ms); const h = Math.floor(a / 3_600_000); const m = Math.floor((a % 3_600_000) / 60_000); const s = Math.floor((a % 60_000) / 1000);
   if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;
