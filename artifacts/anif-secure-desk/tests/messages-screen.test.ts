@@ -31,7 +31,7 @@ function conversations() {
   ];
 }
 
-async function mountMessages({ clearance = 'N2 · Interne', search = '' } = {}) {
+async function mountMessages({ clearance = 'N2 · Interne', search = '', extra = [] as Array<Record<string, unknown>> } = {}) {
   ui.calls.length = 0;
   ui.logs.length = 0;
   ui.resyncs.count = 0;
@@ -40,7 +40,7 @@ async function mountMessages({ clearance = 'N2 · Interne', search = '' } = {}) 
   ui.router.history.length = 0;
   ui.clock.now = Date.now();
   ui.handlers.getItsmWorkspaceVersion = async () => ({ version: 7 });
-  const store = ui.testStore([], conversations());
+  const store = ui.testStore([], [...conversations(), ...extra]);
   store.profile = { ...store.profile, name: 'user_me', clearance };
   const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement('div');
@@ -261,4 +261,45 @@ test('recherche, filtre par type et lien vers un message disparu', async () => {
   assert.deepEqual(rows(), ['row-conversation-C-TMP']);
   await click('filter-conv-Toutes');
   assert.equal(rows().length, 4);
+});
+
+test('l’auteur corrige un message pendant 5 minutes et le supprime ensuite, par l’API ; les autres messages restent intouchables', async () => {
+  const mineRoom = { id: 'C-MINE', title: 'Mes échanges', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 5, messages: [
+    message('e1', 'user_me', 'Réunion à 10 h', { at: at(1) }),
+    message('e2', 'user_me', 'Ancien message', { at: at(30) }),
+    message('e3', 'user_me', 'Texte corrigé', { at: at(40), editedAt: at(38), revisions: [{ body: 'Texte initial', at: at(40) }] }),
+    message('e4', 'user_me', '', { deleted: true, deletedAt: at(20) }),
+    message('e5', 'user_agent', 'Message d’un collègue', { at: at(1) }),
+  ] };
+  await mountMessages({ extra: [mineRoom] });
+  await openConversation('C-MINE');
+  assert.ok($('button-edit-message-e1'), 'message récent : modifiable');
+  assert.equal($('button-edit-message-e2'), null, 'plus de 5 minutes : plus modifiable');
+  assert.ok($('button-delete-message-e2'), 'mais toujours supprimable');
+  assert.equal($('button-delete-message-e5'), null, 'pas d’action sur le message d’un autre');
+  assert.equal($('button-delete-message-e4'), null, 'un message supprimé n’a plus d’action');
+  assert.match($('message-deleted-e4')!.textContent!, /Message supprimé par son auteur/u);
+  assert.match($('message-edited-e3')!.textContent!, /Modifié.*Texte initial/su);
+
+  ui.handlers.editItsmMessage = async () => ({ revised: true });
+  await click('button-edit-message-e1');
+  assert.equal(($('button-confirm-revision') as HTMLButtonElement).disabled, true, 'texte inchangé : rien à enregistrer');
+  await fill('input-edit-message', ' Réunion à 11 h ');
+  await click('button-confirm-revision');
+  await settle();
+  assert.deepEqual(ui.calls.find((entry: { name: string }) => entry.name === 'editItsmMessage')!.args, ['C-MINE', 'e1', { body: 'Réunion à 11 h' }]);
+  assert.equal(ui.resyncs.count, 1, 'l’espace est rechargé depuis le serveur');
+  assert.equal($('input-edit-message'), null);
+  assert.equal(conversation('C-MINE').messages[0].body, 'Réunion à 10 h', 'le navigateur ne réécrit pas l’historique lui-même');
+
+  ui.handlers.deleteItsmMessage = async () => { throw new Error('Le délai est dépassé.'); };
+  await click('button-delete-message-e2');
+  await click('button-confirm-revision');
+  await settle();
+  assert.match(text(), /Le délai est dépassé\./u, 'le refus du serveur est affiché');
+  ui.handlers.deleteItsmMessage = async () => ({ revised: true });
+  await click('button-confirm-revision');
+  await settle();
+  assert.deepEqual(ui.calls.filter((entry: { name: string }) => entry.name === 'deleteItsmMessage').at(-1)!.args, ['C-MINE', 'e2']);
+  assert.equal(ui.resyncs.count, 2);
 });

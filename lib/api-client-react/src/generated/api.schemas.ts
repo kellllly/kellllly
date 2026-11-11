@@ -339,6 +339,10 @@ export interface ItsmTemporaryMessagePosted {
   posted: boolean;
 }
 
+export interface ItsmMessageRevised {
+  revised: boolean;
+}
+
 export interface ItsmSessionMarker {
   accountId: string;
   ip: string;

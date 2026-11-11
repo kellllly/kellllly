@@ -25,6 +25,8 @@ export const getGetItsmUserDirectoryQueryKey = (params?: unknown) => (params ? [
 export const getItsmContacts = call('getItsmContacts');
 export const getItsmWorkspaceVersion = call('getItsmWorkspaceVersion');
 export const postItsmTemporaryMessage = call('postItsmTemporaryMessage');
+export const editItsmMessage = call('editItsmMessage');
+export const deleteItsmMessage = call('deleteItsmMessage');
 export const getItsmSessionMarker = call('getItsmSessionMarker');
 export const getHealthCheckQueryKey = () => ['/api/healthz'];
 /** Health check seen by the diagnostic assistant: tests set what the next refetch returns. */

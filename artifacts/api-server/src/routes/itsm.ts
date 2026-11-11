@@ -11,6 +11,9 @@ import {
   GetItsmWorkspaceVersionResponse,
   GetItsmSessionMarkerResponse,
   PostItsmTemporaryMessageBody,
+  EditItsmMessageBody,
+  EditItsmMessageResponse,
+  DeleteItsmMessageResponse,
   PostItsmTemporaryMessageResponse,
   GetItsmPeopleResponse,
   GetItsmContactsResponse,
@@ -52,6 +55,7 @@ import {
   recordItsmSlaBreaches,
   purgeExpiredMessages,
   postTemporaryChannelMessage,
+  reviseMessage,
 } from "../lib/itsm-workspace";
 import type { SlaBreach, SlaEscalation } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
@@ -646,6 +650,50 @@ router.post("/itsm/conversations/:conversationId/messages", requireAuth, async (
     req.log.error({ err: error }, "Could not post a temporary channel message");
     res.status(503).json({ error: "Impossible d’enregistrer le message. Réessayez plus tard." });
   }
+});
+
+/**
+ * The author corrects (within 5 minutes) or deletes one of their messages.
+ * The whole-workspace save keeps refusing history rewrites; this narrow
+ * command is the only way to change a sent message, and it is journaled.
+ */
+async function reviseMessageRoute(req: Request, res: Response, change: { body: unknown } | { delete: true }): Promise<void> {
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  const conversationId = String(req.params.conversationId ?? "");
+  const messageId = String(req.params.messageId ?? "");
+  try {
+    await withAdminChangeLock(async (store, saveStore) => {
+      await saveStore(reviseMessage(store, conversationId, messageId, change, actor));
+      return true;
+    });
+    const body = { revised: true };
+    res.json("delete" in change ? DeleteItsmMessageResponse.parse(body) : EditItsmMessageResponse.parse(body));
+  } catch (error) {
+    if (error instanceof ItsmAuthorizationError) {
+      res.status(403).json({ error: error.message });
+      return;
+    }
+    if (error instanceof Error && /clos|délai|n’existe plus|converti|vide ou trop long|identique/.test(error.message)) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    req.log.error({ err: error }, "Could not revise a message");
+    res.status(503).json({ error: "Impossible d’enregistrer la modification. Réessayez plus tard." });
+  }
+}
+
+router.patch("/itsm/conversations/:conversationId/messages/:messageId", requireAuth, async (req, res): Promise<void> => {
+  const parsed = EditItsmMessageBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Message invalide." });
+    return;
+  }
+  await reviseMessageRoute(req, res, { body: parsed.data.body });
+});
+
+router.delete("/itsm/conversations/:conversationId/messages/:messageId", requireAuth, async (req, res): Promise<void> => {
+  await reviseMessageRoute(req, res, { delete: true });
 });
 
 router.get("/itsm/session", requireAuth, async (req, res): Promise<void> => {

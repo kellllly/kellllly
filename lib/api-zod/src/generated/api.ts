@@ -94,6 +94,52 @@ export const PostItsmTemporaryMessageResponse = zod.object({
 
 
 /**
+ * @summary The author corrects a message within 5 minutes; the journal keeps hashes of both versions
+ */
+export const editItsmMessagePathConversationIdMax = 64;
+
+export const editItsmMessagePathMessageIdMax = 64;
+
+
+
+export const EditItsmMessageParams = zod.object({
+  "conversationId": zod.coerce.string().max(editItsmMessagePathConversationIdMax),
+  "messageId": zod.coerce.string().max(editItsmMessagePathMessageIdMax)
+})
+
+export const editItsmMessageBodyBodyMax = 5000;
+
+
+
+export const EditItsmMessageBody = zod.object({
+  "body": zod.string().min(1).max(editItsmMessageBodyBodyMax)
+})
+
+export const EditItsmMessageResponse = zod.object({
+  "revised": zod.boolean()
+})
+
+
+/**
+ * @summary The author deletes a message; its text is erased and the deletion is journaled
+ */
+export const deleteItsmMessagePathConversationIdMax = 64;
+
+export const deleteItsmMessagePathMessageIdMax = 64;
+
+
+
+export const DeleteItsmMessageParams = zod.object({
+  "conversationId": zod.coerce.string().max(deleteItsmMessagePathConversationIdMax),
+  "messageId": zod.coerce.string().max(deleteItsmMessagePathMessageIdMax)
+})
+
+export const DeleteItsmMessageResponse = zod.object({
+  "revised": zod.boolean()
+})
+
+
+/**
  * @summary Account and network address shown in the on-screen watermark
  */
 export const GetItsmSessionMarkerResponse = zod.object({

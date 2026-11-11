@@ -40,6 +40,7 @@ import type {
   ItsmAuditTimestamps,
   ItsmContacts,
   ItsmImportInput,
+  ItsmMessageRevised,
   ItsmPeople,
   ItsmRoleArchiveCheckFailureResponse,
   ItsmRoleArchiveCheckResponse,
@@ -551,6 +552,173 @@ export const usePostItsmTemporaryMessage = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getPostItsmTemporaryMessageMutationOptions(options), queryClient);
+    }
+
+export const getEditItsmMessageUrl = (conversationId: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/itsm/conversations/${conversationId}/messages/${messageId}`
+}
+
+/**
+ * @summary The author corrects a message within 5 minutes; the journal keeps hashes of both versions
+ */
+export const editItsmMessage = async (conversationId: string,
+    messageId: string,
+    itsmTemporaryMessage: ItsmTemporaryMessage, options?: Parameters<typeof customFetch>[1]): Promise<ItsmMessageRevised> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmMessageRevised>(getEditItsmMessageUrl(conversationId,messageId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmTemporaryMessage)
+  }
+);}
+
+
+
+
+
+export const getEditItsmMessageMutationKey = () => ['editItsmMessage'] as const;
+
+export const getEditItsmMessageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editItsmMessage>>, TError,EditItsmMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof editItsmMessage>>, TError,EditItsmMessageMutationVariables, TContext> => {
+
+const mutationKey = getEditItsmMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof editItsmMessage>>, EditItsmMessageMutationVariables> = (props) => {
+          const {conversationId,messageId,data} = props ?? {};
+
+          return  editItsmMessage(conversationId,messageId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EditItsmMessageMutationResult = NonNullable<Awaited<ReturnType<typeof editItsmMessage>>>
+    export type EditItsmMessageMutationBody = BodyType<ItsmTemporaryMessage>
+    export type EditItsmMessageMutationError = ErrorType<void>
+    export type EditItsmMessageMutationVariables = {conversationId: string;messageId: string;data: BodyType<ItsmTemporaryMessage>}
+
+    /**
+ * @summary The author corrects a message within 5 minutes; the journal keeps hashes of both versions
+ */
+export const useEditItsmMessage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof editItsmMessage>>, TError,EditItsmMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof editItsmMessage>>,
+        TError,
+        EditItsmMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEditItsmMessageMutationOptions(options), queryClient);
+    }
+
+export const getDeleteItsmMessageUrl = (conversationId: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/itsm/conversations/${conversationId}/messages/${messageId}`
+}
+
+/**
+ * @summary The author deletes a message; its text is erased and the deletion is journaled
+ */
+export const deleteItsmMessage = async (conversationId: string,
+    messageId: string, options?: Parameters<typeof customFetch>[1]): Promise<ItsmMessageRevised> => {
+
+  return customFetch<ItsmMessageRevised>(getDeleteItsmMessageUrl(conversationId,messageId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteItsmMessageMutationKey = () => ['deleteItsmMessage'] as const;
+
+export const getDeleteItsmMessageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteItsmMessage>>, TError,DeleteItsmMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteItsmMessage>>, TError,DeleteItsmMessageMutationVariables, TContext> => {
+
+const mutationKey = getDeleteItsmMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteItsmMessage>>, DeleteItsmMessageMutationVariables> = (props) => {
+          const {conversationId,messageId} = props ?? {};
+
+          return  deleteItsmMessage(conversationId,messageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteItsmMessageMutationResult = NonNullable<Awaited<ReturnType<typeof deleteItsmMessage>>>
+
+    export type DeleteItsmMessageMutationError = ErrorType<void>
+    export type DeleteItsmMessageMutationVariables = {conversationId: string;messageId: string}
+
+    /**
+ * @summary The author deletes a message; its text is erased and the deletion is journaled
+ */
+export const useDeleteItsmMessage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteItsmMessage>>, TError,DeleteItsmMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteItsmMessage>>,
+        TError,
+        DeleteItsmMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteItsmMessageMutationOptions(options), queryClient);
     }
 
 export const getGetItsmSessionMarkerUrl = () => {

@@ -126,6 +126,58 @@ paths:
           description: The channel is not accessible to this account
         "409":
           description: The channel is closed
+  /itsm/conversations/{conversationId}/messages/{messageId}:
+    parameters:
+      - in: path
+        name: conversationId
+        required: true
+        schema: { type: string, maxLength: 64 }
+      - in: path
+        name: messageId
+        required: true
+        schema: { type: string, maxLength: 64 }
+    patch:
+      operationId: editItsmMessage
+      tags: [itsm]
+      summary: The author corrects a message within 5 minutes; the journal keeps hashes of both versions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmTemporaryMessage"
+      responses:
+        "200":
+          description: Message corrected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmMessageRevised"
+        "400":
+          description: Invalid message
+        "401":
+          description: Authentication required
+        "403":
+          description: Only the author may change the message
+        "409":
+          description: Deadline passed, message gone, converted into an incident, or channel closed
+    delete:
+      operationId: deleteItsmMessage
+      tags: [itsm]
+      summary: The author deletes a message; its text is erased and the deletion is journaled
+      responses:
+        "200":
+          description: Message deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmMessageRevised"
+        "401":
+          description: Authentication required
+        "403":
+          description: Only the author may delete the message
+        "409":
+          description: Message gone, converted into an incident, or channel closed
   /itsm/session:
     get:
       operationId: getItsmSessionMarker
@@ -851,6 +903,11 @@ components:
       properties:
         posted: { type: boolean }
       required: [posted]
+    ItsmMessageRevised:
+      type: object
+      properties:
+        revised: { type: boolean }
+      required: [revised]
     ItsmSessionMarker:
       type: object
       properties:

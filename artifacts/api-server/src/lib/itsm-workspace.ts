@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sanitizeAttachment } from "./itsm-attachments.ts";
 import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
@@ -812,6 +812,80 @@ export function postTemporaryChannelMessage(
   return next;
 }
 
+/** CDC-ANIF-MSG § 4.1: a message can be corrected for 5 minutes; deletion has no deadline. */
+export const MESSAGE_EDIT_WINDOW_MS = 5 * 60_000;
+const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+/**
+ * The author corrects or deletes one of their messages. The journal keeps the
+ * SHA-256 of the text before and after, not the text itself (§ 10.1); earlier
+ * versions stay in the message, visible to the conversation's members only.
+ * A message converted into an incident is frozen, so the ticket keeps its source.
+ */
+export function reviseMessage(
+  current: JsonRecord,
+  conversationId: string,
+  messageId: string,
+  change: { body: unknown } | { delete: true },
+  actor: WorkspaceActor,
+  now = new Date(),
+): JsonRecord {
+  const conversations = records(current.conversations);
+  const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+  const conversation = conversations[index];
+  if (!conversation || !canSeeConversation(actor, conversation, now)) {
+    throw new ItsmAuthorizationError("Cette conversation n’est pas accessible à ce compte.");
+  }
+  const messages = records(conversation.messages);
+  const position = messages.findIndex((message) => message.id === messageId);
+  const message = messages[position];
+  if (!message || message.system === true || message.author !== actor.id) {
+    throw new ItsmAuthorizationError("Seul l’auteur peut modifier ou supprimer son message.");
+  }
+  if (message.deleted === true || message.expired === true) throw new Error("Ce message n’existe plus.");
+  if (isClosedConversation(conversation, now)) throw new Error("Ce canal temporaire est clos.");
+  if (records(current.tickets).some((ticket) => ticket.sourceMessageId === messageId)) {
+    throw new Error("Ce message a été converti en incident : il est conservé tel quel.");
+  }
+  const before = String(message.body ?? "");
+  const at = newStamp(now);
+  let revised: JsonRecord;
+  if ("delete" in change) {
+    revised = { id: message.id, author: message.author, at: message.at, time: message.time, ...(typeof message.isInstruction === "boolean" ? { isInstruction: message.isInstruction } : {}), deleted: true, deletedAt: at, body: "" };
+  } else {
+    const sent = Date.parse(String(message.at ?? ""));
+    if (!Number.isFinite(sent) || now.getTime() - sent > MESSAGE_EDIT_WINDOW_MS) {
+      throw new Error("Le délai de modification de 5 minutes est dépassé.");
+    }
+    if (typeof change.body !== "string" || !change.body.trim() || change.body.length > 5000) throw new Error("Le message est vide ou trop long.");
+    const body = change.body.trim();
+    if (body === before) throw new Error("Le message est identique.");
+    const revisions = Array.isArray(message.revisions) ? message.revisions : [];
+    revised = { ...message, body, editedAt: at, revisions: [...revisions, { body: before, at: message.editedAt ?? message.at }] };
+  }
+  const next = structuredClone(current);
+  const nextMessages = [...messages];
+  nextMessages[position] = revised;
+  const nextConversations = records(next.conversations);
+  nextConversations[index] = { ...conversation, messages: nextMessages };
+  next.conversations = nextConversations;
+  const deleted = "delete" in change;
+  next.audit = retainItsmAuditEvents([{
+    id: randomUUID(),
+    type: deleted ? "itsm.message.deleted" : "itsm.message.edited",
+    action: `Message ${deleted ? "supprimé" : "modifié"} dans la conversation ${conversationId}`,
+    actor: actor.id,
+    scope: "Messagerie",
+    conversationId,
+    messageId,
+    beforeSha256: sha256(before),
+    ...(deleted ? {} : { afterSha256: sha256(String(revised.body)) }),
+    at,
+    time: shortTime(now),
+  }, ...records(next.audit)]);
+  return next;
+}
+
 /**
  * Applies a client snapshot as a constrained command. The authenticated actor,
  * workflow timestamps, ticket IDs, and KEDB entries are always server-owned.
@@ -894,7 +968,7 @@ export function applyWorkspaceUpdate(
       if (sourceMessageId || conversationId) {
         const conversation = oldConversations.find((item) => String(item.id) === conversationId);
         const sourceExists = records(conversation?.messages)
-          .some((message) => String(message.id) === sourceMessageId);
+          .some((message) => String(message.id) === sourceMessageId && message.deleted !== true);
         if (proposed.kind !== "Incident" || !sourceMessageId || !conversationId
           || conversation?.kind !== "Support" || !sourceExists) {
           throw new Error("La conversion doit référencer un message existant du canal support.");

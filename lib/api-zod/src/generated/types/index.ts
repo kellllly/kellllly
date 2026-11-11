@@ -37,6 +37,7 @@ export * from './itsmContact';
 export * from './itsmContactRole';
 export * from './itsmContacts';
 export * from './itsmImportInput';
+export * from './itsmMessageRevised';
 export * from './itsmPeople';
 export * from './itsmPerson';
 export * from './itsmRoleArchiveCheckFailureResponse';
