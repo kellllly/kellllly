@@ -21,7 +21,7 @@
 - **Détection de récurrence (§ 6.3) :** à partir de 3 incidents sur un même service et une même catégorie en 7 jours, la file des tickets propose d’ouvrir un ticket Problème prérempli ; le serveur enregistre les incidents liés à la création et ne les laisse plus modifier.
 - **Demandes préformatées (§ 6.5) :** trois modèles (réinitialisation de mot de passe, création de compte, installation de logiciel) préremplissent le formulaire. Seule la réinitialisation de mot de passe est une demande standard prise en compte automatiquement ; le serveur tient la liste des modèles autorisés et vérifie la catégorie.
 - **Base de connaissances :** article KEDB créé à la clôture, assistant de diagnostic qui propose les fiches, et suggestion des erreurs connues proches pendant la saisie du sujet d’un nouveau ticket (§ 6.5).
-- **Messagerie :** conversations de groupe et bilatérales, salons restreints, annonces réservées à la Direction, canaux temporaires pour les externes, messages éphémères, pièces jointes simulées avec contrôle des formats, saisie hors ligne, correction d’un message par son auteur pendant 5 minutes et suppression à tout moment (§ 4.1, § 10.1) : le serveur seul applique ces changements, la conversation garde les versions précédentes et le journal enregistre l’empreinte SHA-256 du texte avant et après, sans copier le contenu. Un message converti en incident ne peut plus changer.
+- **Messagerie :** conversations de groupe et bilatérales, salons restreints, annonces réservées à la Direction, canaux temporaires pour les externes, messages éphémères, pièces jointes simulées avec contrôle des formats, saisie hors ligne, correction d’un message par son auteur pendant 5 minutes et suppression à tout moment (§ 4.1, § 10.1) : le serveur seul applique ces changements, la conversation garde les versions précédentes et le journal enregistre l’empreinte SHA-256 du texte avant et après, sans copier le contenu. Un message converti en incident ne peut plus changer. Réponse avec citation (§ 4.1) : le serveur ne garde que la référence au message cité, qui s’affiche selon son état actuel (un message supprimé n’est plus cité).
 - **Audit (§ 10.1) :** journal en ajout seul, chaîné par empreintes, arbre de Merkle, horodatage RFC 3161, flux SIEM, export CSV.
 - **Interface :** mode clair et sombre, raccourcis clavier listés dans les Préférences (Ctrl+K pour la recherche ; Alt+Maj+T, M et D à la place de Ctrl+N et Ctrl+T, réservés par le navigateur ; § 8.3), choix de la police, taille du texte réglable (100 %, 115 %, 130 % ; § 8.5), icônes Lucide, mise en page utilisable sur téléphone.
 
@@ -31,7 +31,7 @@ Classé par valeur pour le pilote, du plus utile au moins utile.
 
 | Exigence | Section | Ce qu'il faudrait faire |
 | --- | --- | --- |
-| **Réponse avec citation, épinglage, transfert** | § 4.1 | Fonctions de messagerie absentes. |
+| **Épinglage, transfert** | § 4.1 | Fonctions de messagerie absentes. |
 | **Accusés de réception (envoyé, délivré, lu)** | § 4.1 | Seul un compteur de non-lus existe. |
 | **Mentions @utilisateur et @tous, fils de discussion** | § 4.1 | Absents. |
 | **Statuts de présence, heures silencieuses** | § 4.1, § 4.4 | Absents. |

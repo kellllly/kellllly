@@ -16,6 +16,8 @@ export type Message = {
   ttlSeconds?: number; expiresAt?: string; expired?: boolean;
   /** Set by the server only: correction within 5 minutes (earlier texts kept) or deletion by the author. */
   editedAt?: string; revisions?: { body: string; at?: string }[]; deleted?: boolean; deletedAt?: string;
+  /** Reply: the quoted message of the same conversation, shown from its current state. */
+  replyToId?: string;
   /** Simulated attachment: description only (no file content), checked by the API. */
   attachment?: { name: string; type: string; size: number; sha256: string; warnings: string[]; acknowledged?: boolean };
 };

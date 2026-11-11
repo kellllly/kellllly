@@ -680,7 +680,7 @@ function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
  * server only: a client copy of one is dropped, so nobody can post an official-
  * looking notice without an author.
  */
-function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set()): JsonRecord {
+function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set(), quotable: ReadonlySet<string> = new Set()): JsonRecord {
   if (typeof message.body !== "string" || !message.body.trim() || message.body.length > 5000) {
     throw new Error("Le message simulé est vide ou trop long.");
   }
@@ -690,6 +690,8 @@ function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, li
   if (message.attachment !== undefined) allowed.attachment = message.attachment;
   // A ticket comment mirrored in its discussion may point to that ticket only.
   if (typeof message.ticketId === "string" && linkedTicketIds.has(message.ticketId)) allowed.ticketId = message.ticketId;
+  // A reply points to an earlier message of the same conversation; the quoted text is never copied.
+  if (typeof message.replyToId === "string" && quotable.has(message.replyToId)) allowed.replyToId = message.replyToId;
   return { ...messageExpiry(allowed, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now) };
 }
 const isClientSystemNotice = (message: JsonRecord) => message.system === true;
@@ -1265,6 +1267,7 @@ export function applyWorkspaceUpdate(
       throw new Error("L’historique de messagerie ne peut pas être réécrit.");
     }
     const appended = incomingMessages.slice(oldMessages.length).filter((message) => !isClientSystemNotice(message));
+    const quotableIds = new Set(oldMessages.filter((message) => message.system !== true && message.deleted !== true && message.expired !== true).map((message) => String(message.id)));
     if (appended.length > 0 && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
       throw new ItsmAuthorizationError("Seule la Direction (N1) publie dans les annonces.");
     }
@@ -1273,7 +1276,7 @@ export function applyWorkspaceUpdate(
     }
     const messages = [
       ...oldMessages,
-      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id))),
+      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds)),
     ];
     conversations.push({ ...old, messages });
     const readStates = isRecord(next.readStates) ? next.readStates : {};

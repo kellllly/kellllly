@@ -79,3 +79,19 @@ test("the workspace save still refuses to rewrite a message; a revised history i
   assert.equal(message(saved).body, "Corrigé");
   assert.equal(message(saved).revisions.length, 1);
 });
+
+test("a reply keeps a reference to an earlier message of the conversation, never a copy of its text", () => {
+  const { store, id } = sent();
+  const reply = (replyToId: unknown, base: Rec = store) => {
+    const next = structuredClone(base);
+    next.conversations[0].messages.push({ body: "D’accord", replyToId });
+    return (applyWorkspaceUpdate(base, next, other, later(1)) as Rec).conversations[0].messages.at(-1);
+  };
+  const answer = reply(id);
+  assert.equal(answer.replyToId, id);
+  assert.ok(!JSON.stringify(answer).includes("Réunion"), "the quoted text is not copied");
+  assert.equal("replyToId" in reply("inconnu"), false, "unknown message: reference dropped");
+  assert.equal("replyToId" in reply(42), false);
+  const gone = reviseMessage(store, "C-1", id, { delete: true }, analyst, later(1)) as Rec;
+  assert.equal("replyToId" in reply(id, gone), false, "a deleted message cannot be quoted");
+});

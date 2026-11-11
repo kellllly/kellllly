@@ -303,3 +303,26 @@ test('l’auteur corrige un message pendant 5 minutes et le supprime ensuite, pa
   assert.deepEqual(ui.calls.filter((entry: { name: string }) => entry.name === 'deleteItsmMessage').at(-1)!.args, ['C-MINE', 'e2']);
   assert.equal(ui.resyncs.count, 2);
 });
+
+test('répondre à un message le cite au-dessus de la réponse ; la citation suit l’état du message d’origine', async () => {
+  const room = { id: 'C-REP', title: 'Réponses', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 3, messages: [
+    message('r1', 'user_agent', 'Le serveur de fichiers redémarre à 18 h.'),
+    message('r2', 'user_agent', '', { deleted: true }),
+    message('r3', 'user_me', 'Bien noté', { replyToId: 'r2' }),
+  ] };
+  await mountMessages({ extra: [room] });
+  await openConversation('C-REP');
+  assert.match($('message-quote-r3')!.textContent!, /Message supprimé par son auteur/u, 'un message cité puis supprimé n’est plus affiché');
+  assert.equal($('button-reply-r2'), null, 'on ne répond pas à un message supprimé');
+  await click('button-reply-r1');
+  assert.match($('panel-reply')!.textContent!, /Le serveur de fichiers redémarre/u);
+  await click('button-cancel-reply');
+  assert.equal($('panel-reply'), null);
+  await click('button-reply-r1');
+  await fill('input-message', 'Je préviens l’équipe.');
+  await submitForm('button-send');
+  const sent = conversation('C-REP').messages.at(-1);
+  assert.deepEqual([sent.body, sent.replyToId], ['Je préviens l’équipe.', 'r1']);
+  assert.equal($('panel-reply'), null, 'la réponse envoyée, la citation disparaît du champ de saisie');
+  assert.match($(`message-quote-${sent.id}`)!.textContent!, /Le serveur de fichiers redémarre à 18 h\./u);
+});
