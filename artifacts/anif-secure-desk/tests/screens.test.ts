@@ -15,7 +15,7 @@ const { createRoot } = await import('react-dom/client');
 const ui = await loadComponents();
 
 const roots: Array<() => Promise<void>> = [];
-async function mountTickets(search = '') {
+async function mountTickets(search = '', initial = ui.testStore()) {
   ui.router.path = '/tickets';
   ui.router.search = search;
   ui.router.history.length = 0;
@@ -24,7 +24,7 @@ async function mountTickets(search = '') {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () => { root.render(createElement(ui.TestStoreProvider, { initial: ui.testStore() }, createElement(ui.TicketsPage))); });
+  await act(async () => { root.render(createElement(ui.TestStoreProvider, { initial }, createElement(ui.TicketsPage))); });
   roots.push(async () => { await act(async () => root.unmount()); container.remove(); });
   return container;
 }
@@ -585,4 +585,18 @@ test('une demande préformatée préremplit le formulaire ; seule la demande sta
   await submitForm('button-submit-ticket');
   [created] = tickets();
   assert.deepEqual([created!.status, 'template' in created!], ['Nouveau', false]);
+});
+
+test('la saisie du sujet propose les erreurs connues proches, sans quitter le formulaire', async () => {
+  const store = ui.testStore();
+  store.kedb = [{ id: 'KB-0001', title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible', rootCause: 'Certificat du relais expiré', resolution: 'Renouvellement du certificat', ticketId: 'INC-2400', category: 'Applications', createdAt: new Date().toISOString(), author: 'user_n3' }];
+  await mountTickets('', store);
+  await click('button-create-ticket');
+  assert.equal($('kedb-suggestions'), null, 'rien avant la saisie');
+  await fill('input-title', 'Imprimante bloquée');
+  assert.equal($('kedb-suggestions'), null, 'aucune fiche proche');
+  await fill('input-title', 'Messagerie bloquée, certificat refusé');
+  assert.match($('kedb-suggestion-KB-0001')?.textContent ?? '', /Renouvellement du certificat/u);
+  await submitForm('button-submit-ticket');
+  assert.equal(tickets()[0]!.title, 'Messagerie bloquée, certificat refusé', 'la suggestion n’empêche pas la création');
 });

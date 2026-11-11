@@ -204,3 +204,29 @@ export function diagnosticTicketPrefill(
     ].join('\n'),
   };
 }
+
+const SUGGESTION_STOP_WORDS = new Set(['pour', 'dans', 'avec', 'sans', 'plus', 'depuis', 'apres', 'avant', 'sous', 'vers', 'chez', 'entre', 'cette', 'votre', 'notre', 'leur', 'sont', 'fait', 'impossible', 'probleme']);
+// shortcut: a 6-letter prefix stands in for French stemming ("certificats" ≈ "certificat"); switch to a real stemmer if suggestions get noisy.
+const suggestionStems = (text: string) => new Set(text.toLocaleLowerCase('fr-FR').normalize('NFD').replace(/\p{M}/gu, '')
+  .split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4 && !SUGGESTION_STOP_WORDS.has(w)).map(w => w.slice(0, 6)));
+
+/** Known errors close to a ticket being written: the title must share a word with the article. */
+export function findKedbSuggestionsForDraft(
+  articles: readonly KedbArticle[],
+  draft: { title: string; category: string; serviceId: string },
+  limit = 3,
+): KedbArticle[] {
+  const terms = suggestionStems(draft.title);
+  if (!terms.size) return [];
+  return articles
+    .map((article) => {
+      const text = suggestionStems([article.title, article.symptom, article.rootCause, article.resolution].join(' '));
+      const hits = [...terms].filter(t => text.has(t)).length;
+      const score = hits * 2 + (draft.serviceId && article.serviceId === draft.serviceId ? 3 : 0) + (article.category === draft.category ? 1 : 0);
+      return { article, hits, score };
+    })
+    .filter(({ hits }) => hits > 0)
+    .sort((a, b) => b.score - a.score || b.article.createdAt.localeCompare(a.article.createdAt))
+    .slice(0, limit)
+    .map(({ article }) => article);
+}

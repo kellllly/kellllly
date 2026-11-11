@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Check } from 'lucide-react';
 import { SLA_POLICIES, formatWAT, priorityFor, slaProgress } from '@/lib/itsm';
 import { ASSIGNEES, CATEGORIES, KINDS, LEVEL_LABEL, fmtDuration, fmtMinutes } from '@/lib/domain';
-import type { Asset, Level, Service, TicketKind } from '@/lib/types';
+import { findKedbSuggestionsForDraft } from '@/lib/diagnostic-assistant';
+import type { Asset, KedbArticle, Level, Service, TicketKind } from '@/lib/types';
 import { Badge, Button, dialogStickyActionsCls, Field, inputCls, textareaCls } from './kit';
 
 export type TicketDraft = { kind: TicketKind; title: string; description: string; category: string; impact: Level; urgency: Level; supportLevel: Level; assignee: string; serviceId: string; assetId: string };
@@ -31,8 +32,9 @@ export function PriorityPreview({ impact, urgency }: { impact: Level; urgency: L
   return <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/70 px-3 py-2.5 text-[10px] text-muted-foreground"><Badge tone={p === 'P1' ? 'red' : p === 'P2' ? 'amber' : p === 'P3' ? 'blue' : 'neutral'}>{p} · {pol.label}</Badge><span>Prise en charge {fmtMinutes(pol.acknowledgeMinutes)} · résolution {fmtMinutes(pol.resolveMinutes)}</span></div>;
 }
 
-export function TicketForm({ initial, services, assets, submitLabel, onSubmit, onCancel, lockKind = false }: { initial: TicketDraft; services: Service[]; assets: Asset[]; submitLabel: string; onSubmit: (d: TicketDraft) => void; onCancel: () => void; lockKind?: boolean }) {
+export function TicketForm({ initial, services, assets, submitLabel, onSubmit, onCancel, lockKind = false, articles }: { initial: TicketDraft; services: Service[]; assets: Asset[]; submitLabel: string; onSubmit: (d: TicketDraft) => void; onCancel: () => void; lockKind?: boolean; articles?: readonly KedbArticle[] }) {
   const [d, setD] = useState(initial);
+  const suggestions = useMemo(() => (articles ? findKedbSuggestionsForDraft(articles, d) : []), [articles, d]);
   const set = <K extends keyof TicketDraft>(k: K, v: TicketDraft[K]) => setD(x => ({ ...x, [k]: v }));
   const submit = (e: FormEvent) => { e.preventDefault(); if (!d.title.trim()) return; onSubmit({ ...d, title: d.title.trim(), description: d.description.trim() }); };
   const lvlSel = (k: 'impact' | 'urgency' | 'supportLevel', label: string, opts: [Level, string][]) => <Field label={label}><select data-testid={`select-${k}`} value={d[k]} onChange={e => set(k, Number(e.target.value) as Level)} className={inputCls}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>;
@@ -42,6 +44,7 @@ export function TicketForm({ initial, services, assets, submitLabel, onSubmit, o
       <Field label="Catégorie"><select data-testid="select-category" value={d.category} onChange={e => set('category', e.target.value)} className={inputCls}>{CATEGORIES.map(x => <option key={x}>{x}</option>)}</select></Field>
     </div>
     <Field label="Sujet"><input data-testid="input-title" required autoFocus value={d.title} onChange={e => set('title', e.target.value)} className={inputCls} placeholder="Symptôme technique en quelques mots" /></Field>
+    <div aria-live="polite">{suggestions.length > 0 && <div data-testid="kedb-suggestions" className="rounded-lg border border-border bg-muted/40 p-3"><div className="eyebrow">ERREURS CONNUES PROCHES · KEDB</div><p className="mt-1 text-[10px] text-muted-foreground">Une résolution validée existe peut-être déjà : vérifiez-la avant de créer le ticket.</p><div className="mt-2 space-y-1.5">{suggestions.map(a => <details key={a.id} data-testid={`kedb-suggestion-${a.id}`} className="rounded-md bg-card px-2.5 py-2 text-[11px]"><summary className="cursor-pointer font-semibold"><span className="mono text-muted-foreground">{a.id}</span> · {a.title}</summary><p className="mt-1.5 whitespace-pre-wrap leading-relaxed text-muted-foreground"><strong className="text-foreground">Résolution :</strong> {a.resolution}</p></details>)}</div></div>}</div>
     <Field label="Description technique"><textarea data-testid="input-description" rows={3} value={d.description} onChange={e => set('description', e.target.value)} className={textareaCls} placeholder="N’incluez aucune information sensible, personnelle ou d’enquête." /></Field>
     <div className="grid gap-3 sm:grid-cols-3">
       {lvlSel('impact', 'Impact', [[1, LEVEL_LABEL[1]], [2, LEVEL_LABEL[2]], [3, LEVEL_LABEL[3]]])}
