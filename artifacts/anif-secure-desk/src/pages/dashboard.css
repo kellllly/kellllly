@@ -552,11 +552,11 @@
 }
 
 /* Indicateurs ITIL */
-.ops-kpis { display: grid; gap: 11px; margin-bottom: 18px; }
+.ops-kpis { display: grid; gap: 11px; margin-top: 26px; }
 .ops-metrics-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ops-kpi-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
-.ops-kpi-lists h3 { margin: 5px 0 10px; color: var(--ops-ink); font-size: 15px; letter-spacing: -.03em; }
-.ops-kpi-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.ops-kpi-list li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--ops-line); padding-bottom: 6px; color: var(--ops-ink); font-size: 13px; }
+.ops-kpi-lists h3 { margin: 5px 0 9px; color: var(--ops-ink); font-size: 14px; letter-spacing: -.03em; }
+.ops-kpi-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ops-kpi-list li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--ops-line); padding-bottom: 4px; color: var(--ops-ink); font-size: 11px; }
 .ops-kpi-list li span { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .ops-kpi-lists, .ops-metrics-kpi { grid-template-columns: minmax(0, 1fr); } }

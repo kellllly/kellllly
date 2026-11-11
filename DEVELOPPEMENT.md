@@ -68,8 +68,15 @@ pnpm --filter @workspace/anif-secure-desk run test
 DATABASE_URL=postgresql://postgres@localhost:5432/anif pnpm --filter @workspace/api-server run test
 ```
 
-Sans `DATABASE_URL`, trois tests API échouent au chargement du module `@workspace/db`
-et le test d’intégration PostgreSQL est ignoré.
+Sans `DATABASE_URL`, les tests API passent (les routes se chargent avec une adresse
+factice, `tests/helpers/database-bootstrap.ts`) et les 4 tests d’intégration PostgreSQL
+sont ignorés. Pour les exécuter, une base jetable suffit :
+
+```bash
+docker run -d --rm --name anif-test-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=anif -p 55432:5432 postgres:16
+DATABASE_URL=postgresql://postgres@localhost:55432/anif pnpm --filter @workspace/db run push
+DATABASE_URL=postgresql://postgres@localhost:55432/anif pnpm --filter @workspace/api-server run test
+```
 
 ## Lancer l’application
 
