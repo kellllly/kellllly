@@ -90,6 +90,51 @@ export function ticketSla(t: Ticket, now: number) {
   };
 }
 
+export type KpiCount = { label: string; count: number };
+
+const countBy = (tickets: Ticket[], key: (t: Ticket) => string): KpiCount[] => {
+  const counts = new Map<string, number>();
+  for (const t of tickets) {
+    const label = key(t) || 'Non renseigné';
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
+};
+
+/**
+ * ITIL indicators of the dashboard (CDC-ANIF-MSG-2025): MTTR, resolution SLA rate,
+ * volume per category and per assignee. Rejected tickets are not support work and are left out.
+ * Same continuous-time rules as ticketSla (no business hours).
+ */
+export function ticketKpis(tickets: Ticket[], now: number) {
+  const counted = tickets.filter(t => t.status !== 'Rejeté');
+  // Older closed tickets may carry only closedAt: it then marks the end of the resolution.
+  const endOf = (t: Ticket) => t.resolvedAt ?? t.closedAt;
+  const durations = counted.flatMap(t => {
+    const end = endOf(t);
+    const ms = end ? Date.parse(end) - Date.parse(t.openedAt) : Number.NaN;
+    return Number.isFinite(ms) && ms >= 0 ? [ms] : [];
+  });
+  let met = 0, decided = 0;
+  for (const t of counted) {
+    const due = Date.parse(getDeadlines(t.openedAt, t.priority).resolveBy);
+    const end = endOf(t);
+    // An open ticket counts only once its deadline has passed; before that the outcome is unknown.
+    if (end) { decided++; if (Date.parse(end) <= due) met++; } else if (now > due) decided++;
+  }
+  return {
+    total: counted.length,
+    resolved: durations.length,
+    mttrMs: durations.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null,
+    slaRate: decided ? met / decided : null,
+    slaMet: met,
+    slaDecided: decided,
+    byCategory: countBy(counted, t => t.category),
+    byAssignee: countBy(counted, t => t.assignee),
+  };
+}
+
 export function fmtDuration(ms: number) {
   const a = Math.abs(ms); const h = Math.floor(a / 3_600_000); const m = Math.floor((a % 3_600_000) / 60_000); const s = Math.floor((a % 60_000) / 1000);
   if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;

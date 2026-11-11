@@ -20,7 +20,7 @@ import { useNow, useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { usePeople } from '@/hooks/use-people';
 import { formatWAT } from '@/lib/itsm';
-import { isOpen, messageTime, priorityTone, statusTone, ticketSla, unreadOf } from '@/lib/domain';
+import { isOpen, messageTime, priorityTone, statusTone, ticketKpis, ticketSla, unreadOf } from '@/lib/domain';
 import { Badge, Warning, pad2 } from '@/components/kit';
 import type { Ticket } from '@/lib/types';
 import './dashboard.css';
@@ -115,6 +115,7 @@ export default function Dashboard() {
     }).slice(0, 4);
     return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked, recentActivity };
   }, [store, now]);
+  const kpis = useMemo(() => ticketKpis(store.tickets, now), [store.tickets, now]);
 
   const date = new Date(now).toLocaleDateString('fr-FR', {
     weekday: 'long',
@@ -161,6 +162,18 @@ export default function Dashboard() {
         <div className="ops-inline-links"><Link href="/services">Consulter la base KEDB <ArrowRight size={13} /></Link><Link href="/audit">Ouvrir le journal <ArrowRight size={13} /></Link></div>
       </section>
     </div> : <>
+      <section className="ops-kpis" aria-label="Indicateurs ITIL" data-testid="dashboard-kpis">
+        <div className="ops-metrics ops-metrics-limited">
+          <OpsMetric testId="kpi-mttr" label="MTTR · temps moyen de résolution" value={kpis.mttrMs === null ? '—' : shortDuration(kpis.mttrMs)} detail={`${kpis.resolved} ticket(s) résolu(s) sur ${kpis.total}`} icon={Clock3} tone="blue" />
+          <OpsMetric testId="kpi-sla" label="Taux de respect du SLA de résolution" value={kpis.slaRate === null ? '—' : `${Math.round(kpis.slaRate * 100)} %`} detail={`${kpis.slaMet}/${kpis.slaDecided} dans le délai · échéances passées seulement`} icon={ShieldCheck} tone={kpis.slaRate === null || kpis.slaRate >= 0.9 ? 'mint' : kpis.slaRate >= 0.7 ? 'amber' : 'rose'} />
+        </div>
+        <div className="ops-kpi-lists">
+          {([['Volume par catégorie', kpis.byCategory, 'kpi-category'], ['Volume par technicien', kpis.byAssignee, 'kpi-assignee']] as const).map(([title, rows, testId]) => <section key={testId} className="ops-panel ops-panel-pad" data-testid={testId}>
+            <div className="ops-kicker">INDICATEUR ITIL</div><h3>{title}</h3>
+            {rows.length ? <ol className="ops-kpi-list">{rows.map(row => <li key={row.label}><span>{testId === 'kpi-assignee' ? person(row.label) : row.label}</span><strong>{row.count}</strong></li>)}</ol> : <div className="ops-empty">Aucun ticket.</div>}
+          </section>)}
+        </div>
+      </section>
       <div className="ops-brief-grid">
         <section className="ops-brief-main">
           <div className="ops-queue-head">

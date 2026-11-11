@@ -98,6 +98,10 @@ test('le tableau de bord classe la file de travail, filtre par priorité et éta
   assert.equal(byText('button', 'Quitter la vue de garde')!.getAttribute('aria-pressed'), 'true');
   assert.deepEqual(queue(), ['INC-2410'], 'la garde ne garde que P1 et P2');
 
+  assert.match($('kpi-mttr')!.textContent!, /3 j 10 h\s*1 ticket\(s\) résolu\(s\) sur 3/u, 'ticket clos : résolution datée par normalizeTicket ~30 min avant maintenant');
+  assert.match($('kpi-sla')!.textContent!, /0 %\s*0\/2 dans le délai/u, 'clos hors délai et P1 ouvert dépassé ; la demande P4 n’est pas encore due');
+  assert.match($('kpi-category')!.textContent!, /3/u);
+  assert.ok($('kpi-assignee')!.querySelector('li'), 'volume par technicien');
   assert.match(text(), /3\/4 opérationnel\(s\) · 1 vigilance/u);
   assert.match(text(), /1 conversation\(s\) · 2 message\(s\) non lu\(s\)/u);
   assert.match(text(), /Activité récente/u);
