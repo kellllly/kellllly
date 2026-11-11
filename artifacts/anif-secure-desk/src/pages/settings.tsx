@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useReverification, useUser } from '@clerk/react';
-import { BadgeCheck, ChevronLeft, ChevronRight, Moon, RefreshCw, Search, ShieldCheck, Sun, UserCog } from 'lucide-react';
+import { BadgeCheck, ChevronLeft, ChevronRight, Eye, EyeOff, Moon, RefreshCw, Search, ShieldCheck, Sun, Type, UserCog } from 'lucide-react';
 import {
   attestItsmRole,
   assignItsmRole,
@@ -16,7 +16,9 @@ import { useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
 import { roleRequestError, roleServiceIds } from '@/lib/role-administration';
 import { isStepUpHint, stepUpMessage, withStepUpHint } from '@/lib/step-up';
-import { Button, Field, inputCls, SectionTitle, Warning } from '@/components/kit';
+import { APP_FONT_OPTIONS, setAppFontPreference, useAppFontPreference } from '@/lib/font-preference';
+import { setWatermarkEnabled, useWatermarkEnabled } from '@/lib/watermark-preference';
+import { Button, Field, inputCls, PageIntro, SectionTitle, Warning } from '@/components/kit';
 
 type PilotServiceOption = { id: string; name: string };
 
@@ -32,6 +34,8 @@ function pilotServiceOptions(value: unknown): PilotServiceOption[] {
 export default function SettingsPage() {
   const { store, setStore, log } = useStore();
   const { name: displayName } = useDisplayName();
+  const appFont = useAppFontPreference();
+  const watermarkEnabled = useWatermarkEnabled();
   const { user: currentUser } = useUser();
   const [targetUserId, setTargetUserId] = useState('');
   const [directorySearch, setDirectorySearch] = useState('');
@@ -279,7 +283,7 @@ export default function SettingsPage() {
       setArchiveCheckPending(false);
     }
   };
-  return <div className="page-enter min-w-0"><Warning /><div className="mb-5"><div className="eyebrow">COMPTE & CONFIGURATION</div><h2 className="serif mt-1 text-[27px]">Préférences</h2><p className="mt-1 text-[12px] text-muted-foreground">Le compte authentifié accède à l’espace ITSM fictif partagé.</p></div>
+  return <div className="page-enter min-w-0"><Warning /><PageIntro kicker="COMPTE & CONFIGURATION" title="Préférences" description="Le compte authentifié accède à l’espace ITSM fictif partagé." />
     <div className="grid min-w-0 gap-5 xl:grid-cols-[1fr_.8fr]"><div className="min-w-0 space-y-5">
       <section className="panel p-5 md:p-6"><SectionTitle kicker="COMPTE AUTHENTIFIÉ" title="Identité de la session" />
         <div className="rounded-lg bg-muted/60 p-4"><div className="eyebrow">COMPTE</div><div className="mt-2 text-[13px] font-semibold">{displayName}</div><div className="eyebrow mt-3">IDENTIFIANT DE COMPTE</div><div className="mono mt-2 break-all text-[12px] font-semibold">{store.profile.name}</div><div className="mt-2 text-[11px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div>
@@ -394,6 +398,63 @@ export default function SettingsPage() {
           </div>
        </section>}
       <section className="panel min-w-0 p-5 md:p-6"><SectionTitle kicker="APPARENCE" title="Thème de l’interface" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{([{ value: 'light', label: 'Clair', Icon: Sun }, { value: 'dark', label: 'Sombre', Icon: Moon }]).map(({ value, label, Icon }) => <button key={value} data-testid={`button-theme-${value}`} onClick={() => { setStore(s => ({ ...s, theme: value })); log(`Thème ${label} activé`, 'Préférences'); }} className={`flex min-w-0 items-center gap-3 rounded-xl border p-4 text-left ${store.theme === value ? 'border-primary bg-muted/60' : 'border-border hover:bg-muted/50'}`}><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-primary"><Icon size={17} /></span><span className="min-w-0"><span className="block text-[12px] font-semibold">{label}</span><span className="mt-1 block text-[10px] text-muted-foreground">{store.theme === value ? 'Thème actif' : 'Sélectionner'}</span></span></button>)}</div></section>
+      <section className="panel min-w-0 p-5 md:p-6">
+        <SectionTitle kicker="TYPOGRAPHIE" title="Police de l’interface" />
+        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+          Plus Jakarta Sans reprend la police du titre de l’écran d’accueil. Votre choix s’applique à toute l’application et reste enregistré dans ce navigateur.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {APP_FONT_OPTIONS.map((font) => (
+            <button
+              key={font.id}
+              type="button"
+              data-testid={`button-font-${font.id}`}
+              aria-pressed={appFont === font.id}
+              onClick={() => {
+                setAppFontPreference(font.id);
+                log(`Police ${font.label} sélectionnée`, 'Préférences');
+              }}
+              className={`min-w-0 rounded-xl border p-3 text-left transition-colors ${appFont === font.id ? 'border-primary bg-muted/60 ring-1 ring-primary/30' : 'border-border hover:bg-muted/50'}`}
+            >
+              <span className="block text-xl font-semibold tracking-tight" style={{ fontFamily: font.family }}>Aa 123</span>
+              <span className="mt-1 block text-[11px] font-semibold">{font.label}</span>
+              <span className="mt-1 block text-[10px] text-muted-foreground">{appFont === font.id ? 'Police active' : 'Sélectionner'}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="panel min-w-0 p-5 md:p-6">
+        <SectionTitle kicker="CONFIDENTIALITÉ" title="Filigrane de l’écran" />
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-muted/60 p-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-card text-primary">
+              {watermarkEnabled ? <Eye size={17} /> : <EyeOff size={17} />}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold">{watermarkEnabled ? 'Filigrane activé' : 'Filigrane désactivé'}</div>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                Le filigrane aide à attribuer une capture d’écran. Ce réglage ne concerne que ce navigateur et reste activé par défaut.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={watermarkEnabled}
+            aria-label={watermarkEnabled ? 'Désactiver le filigrane' : 'Activer le filigrane'}
+            data-testid="button-watermark-toggle"
+            onClick={() => {
+              const next = !watermarkEnabled;
+              setWatermarkEnabled(next);
+              log(`Filigrane ${next ? 'activé' : 'désactivé'}`, 'Préférences');
+            }}
+            className={`focus-ring inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-semibold transition-colors ${watermarkEnabled ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-foreground hover:bg-muted'}`}
+          >
+            {watermarkEnabled ? <Eye size={14} /> : <EyeOff size={14} />}
+            {watermarkEnabled ? 'Désactiver' : 'Activer'}
+          </button>
+        </div>
+      </section>
     </div><div className="min-w-0 space-y-5">
       <section className="panel p-5 md:p-6"><SectionTitle kicker="PERSISTANCE" title="Espace ITSM partagé" /><div className="flex items-start gap-3 rounded-lg bg-muted/60 p-4"><div className="grid h-9 w-9 place-items-center rounded-lg bg-card text-primary"><ShieldCheck size={17} /></div><div><div className="text-[12px] font-semibold">Données fictives partagées entre comptes</div><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Les tickets, historiques, décisions CAB simulées et articles KEDB sont enregistrés côté serveur pour l’espace pilote. Les changements d’autres sessions apparaissent automatiquement. Les exemples précédemment enregistrés dans ce navigateur sont conservés et importés sans écraser les données partagées.</p></div></div></section>
       <section className="overflow-hidden rounded-xl bg-[#213b42] p-5 text-[#eef3eb]"><div className="flex items-center gap-2 text-[12px] font-semibold"><ShieldCheck size={16} className="text-[#9ac6ad]" />Limites du pilote</div><p className="mt-3 text-[11px] leading-relaxed text-[#c1d1cc]">Prototype non homologué, réservé aux données fictives non sensibles. Aucune promesse de chiffrement de bout en bout, WORM, conformité, certification ou hébergement souverain. La messagerie et la confirmation du demandeur sont simulées.</p><div className="mt-4 border-t border-[#476065] pt-3 text-[10px] text-[#a9c2b8]">ANIF Gabon <span className="mx-1">·</span> Pilote d’évaluation</div></section>

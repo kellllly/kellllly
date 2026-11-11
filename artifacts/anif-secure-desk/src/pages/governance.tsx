@@ -3,7 +3,7 @@ import { Link } from 'wouter';
 import { AlertTriangle, Landmark, ShieldCheck, Target } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { ROLES } from '@/lib/seed';
-import { Badge, SectionTitle, Warning } from '@/components/kit';
+import { Badge, PageIntro, SectionTitle, Warning } from '@/components/kit';
 
 type Cap = 'Oui' | 'Partiel' | 'Lecture' | 'Non';
 const MATRIX: { cap: string; domain: string; v: [Cap, Cap, Cap, Cap, Cap] }[] = [
@@ -55,7 +55,7 @@ export default function GovernancePage() {
   const [view, setView] = useState(initial);
   const r = ROLES[view];
   return <div className="page-enter min-w-0"><Warning />
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><div className="eyebrow">GOUVERNANCE · RÉFÉRENTIEL</div><h2 className="serif mt-1 text-[27px]">Qui fait quoi, et ce qui reste à prouver.</h2><p className="mt-1 max-w-2xl text-[12px] text-muted-foreground">Matrice de capacités et état de préparation à la production. Les droits de chaque compte attribué sont contrôlés par l’API; les périmètres partiels N3/N4 dépendent des services associés au compte.</p></div><Link href="/settings" className="text-[11px] font-semibold text-primary hover:underline">Compte authentifié</Link></div>
+    <PageIntro kicker="GOUVERNANCE · RÉFÉRENTIEL" title="Qui fait quoi, et ce qui reste à prouver." description="Matrice de capacités et état de préparation à la production. Les droits de chaque compte attribué sont contrôlés par l’API; les périmètres partiels N3/N4 dépendent des services associés au compte." action={<Link href="/settings" className="text-[11px] font-semibold text-primary hover:underline">Compte authentifié</Link>} />
 
     <div role="note" className="mb-5 flex items-start gap-3 rounded-xl border border-[#bfd0d1] bg-[#e8f0ef] px-4 py-3 text-[11px] leading-relaxed text-[#365456] dark:bg-[#24383b] dark:text-[#bdd3d1]"><ShieldCheck size={15} className="mt-0.5 shrink-0" /><div><strong>Les rôles sont appliqués côté serveur.</strong> L’API relit les métadonnées Clerk à chaque requête; un compte sans attribution reçoit un refus d’accès. L’interface ne peut ni choisir ni modifier le rôle de sa propre session.</div></div>
 

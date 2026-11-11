@@ -131,6 +131,7 @@ test('canal support : seul un signalement se convertit ; les données nominative
 
 test('envoi d’un message éphémère, brouillon effacé, et marquage lu / non lu', async () => {
   await mountMessages();
+  assert.ok(document.querySelector('[data-testid="page-intro"]'), 'la Messagerie utilise le gabarit d’en-tête partagé');
   assert.ok($('badge-unread-C-GRP'), 'la conversation de groupe a un message non lu');
   await openConversation('C-GRP');
   assert.equal($('badge-unread-C-GRP'), null, 'ouvrir la conversation la marque lue');

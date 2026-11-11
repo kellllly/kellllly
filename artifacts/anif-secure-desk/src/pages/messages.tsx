@@ -15,7 +15,7 @@ import { useNow, useStore } from '@/lib/store';
 import { LEVEL_LABEL, isOpen, messageTime, nextTicketId, nowIso, priorityTone, statusTone, ticketSla, uid, unreadOf, withTicketEvent } from '@/lib/domain';
 import { createIncidentFromMessage, filterSupportMessages, isConvertibleSupportMessage } from '@/lib/message-conversion';
 import type { Conversation, Level, Message, SupportMessageFilter, Ticket } from '@/lib/types';
-import { Avatar, Badge, Button, Field, Modal, SearchBox, Warning, inputCls, textareaCls } from '@/components/kit';
+import { Avatar, Badge, Button, Field, Modal, PageIntro, SearchBox, Warning, inputCls, textareaCls } from '@/components/kit';
 import { PriorityPreview, SlaBar } from '@/components/ticket-parts';
 import { usePeople } from '@/hooks/use-people';
 
@@ -134,6 +134,7 @@ export default function MessagesPage() { const { person } = usePeople();
   const ticketFor = (m: Message) => store.tickets.find(t => t.sourceMessageId === m.id || t.id === m.ticketId);
 
   return <div className="page-enter min-w-0"><Warning />
+    <PageIntro kicker="MESSAGERIE · ESPACE PARTAGÉ" title="Échanges de travail" description="Retrouvez les conversations fictives du pilote et leurs informations de visibilité." />
     <div role="note" className="mb-4 rounded-xl border border-[#bfd0d1] bg-[#e8f0ef] px-4 py-3 text-[11px] leading-relaxed text-[#365456] dark:bg-[#24383b] dark:text-[#bdd3d1]"><strong>Messagerie simulée.</strong> Les conversations fictives sont partagées dans le pilote, mais aucun message n’est envoyé à une personne ni à un service externe.</div>
     <div className="panel grid min-h-[650px] min-w-0 overflow-hidden lg:grid-cols-[300px_1fr] 2xl:grid-cols-[300px_1fr_330px]">
       <aside className="min-w-0 border-b border-border lg:border-b-0 lg:border-r"><div className="p-4"><div className="mb-3 flex items-center justify-between"><div><div className="eyebrow">ESPACE DE TRAVAIL</div><h2 className="mt-1 text-[15px] font-semibold">Conversations</h2></div>{!isAuditor && <button data-testid="button-new-conversation" aria-label="Nouvelle conversation" onClick={() => setCreating(true)} className="focus-ring rounded-lg border border-border p-2 hover:bg-muted"><Plus size={16} /></button>}</div>

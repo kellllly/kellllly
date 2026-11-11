@@ -753,9 +753,10 @@ const isMember = (actor: Pick<WorkspaceActor, "id">, conversation: JsonRecord) =
 
 /** A temporary channel is closed once its end date has passed. */
 export function isClosedConversation(conversation: JsonRecord, now = new Date()): boolean {
-  if (conversation.kind !== TEMPORARY_CONVERSATION_KIND || typeof conversation.expiresAt !== "string") return false;
+  if (conversation.kind !== TEMPORARY_CONVERSATION_KIND) return false;
+  if (typeof conversation.expiresAt !== "string" || conversation.expiresAt.trim() === "") return true;
   const end = Date.parse(conversation.expiresAt);
-  return Number.isFinite(end) && end <= now.getTime();
+  return !Number.isFinite(end) || end <= now.getTime();
 }
 
 export function canSeeConversation(actor: Pick<WorkspaceActor, "id" | "role">, conversation: JsonRecord, now = new Date()): boolean {

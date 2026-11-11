@@ -71,7 +71,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-4 backdrop-blur md:px-8">
         <div className="flex h-[70px] items-center gap-3">
           <button onClick={() => setMobileNav(v => !v)} className="focus-ring rounded-lg p-2 lg:hidden" aria-label="Ouvrir le menu" data-testid="button-mobile-nav"><Menu size={19} /></button>
-          <div className="min-w-0 flex-1"><div className="eyebrow hidden sm:block">ANIF / GABON <span className="mx-1">·</span> DÉMONSTRATEUR NON HOMOLOGUÉ</div><h1 className="mt-0.5 truncate text-[18px] font-semibold tracking-[-.02em]">{page.title}</h1></div>
+          <div className="min-w-0 flex-1"><div className="eyebrow hidden sm:block">ANIF / GABON <span className="mx-1">·</span> DÉMONSTRATEUR NON HOMOLOGUÉ</div><h1 className="mt-0.5 truncate text-[18px] font-semibold tracking-[-.02em]">Poste de pilotage</h1></div>
           <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground md:flex"><span className="h-2 w-2 rounded-full bg-[#4f9d80]" /><span>Environnement simulé</span></div>
           <NotificationBell />
           <Link href="/settings" className="grid h-9 w-9 place-items-center rounded-full bg-[#d7c7a6] text-[11px] font-bold text-[#24313b]" aria-label="Profil" data-testid="link-profile">{initials(displayName)}</Link>

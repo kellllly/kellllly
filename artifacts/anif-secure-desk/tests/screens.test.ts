@@ -62,6 +62,7 @@ const actionsShown = () => [...document.querySelectorAll('[data-testid="panel-ti
 
 test('un incident suit tout son cycle : création, prise en charge, attente, escalade, résolution documentée et clôture KEDB', async () => {
   await mountTickets();
+  assert.ok(document.querySelector('.td-heading'), 'la page Tickets suit le gabarit de titre commun');
   assert.match(document.body.textContent ?? '', /Aucun ticket pour cette sélection/u);
 
   await createTicket({ 'select-kind': 'Incident', 'input-title': 'Messagerie inaccessible au 3e étage', 'select-impact': '1', 'select-urgency': '2', 'input-description': 'Plusieurs postes signalent une erreur de connexion.' });
@@ -265,6 +266,25 @@ async function mountSettings(clearance: string) {
   lastClient = client;
   return container;
 }
+async function mountWatermark() {
+  ui.handlers.getItsmSessionMarker = async () => ({
+    accountId: 'user_n1',
+    ip: '127.0.0.1',
+    serverTime: '2026-11-11T10:00:00.000Z',
+  });
+  const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(ui.QueryClientProvider, { client },
+      createElement(ui.TestStoreProvider, { initial: ui.testStore() },
+        createElement(ui.Watermark, { name: 'Compte de test' }))));
+  });
+  roots.push(async () => { await act(async () => root.unmount()); container.remove(); client.clear(); });
+  await settle();
+  return container;
+}
 let lastClient: any = null;
 /** Directory data still held in the React Query cache (e-mails, roles). */
 const cachedDirectories = () => lastClient.getQueryCache().findAll({ queryKey: ['/api/itsm/users'] }).filter((query: any) => query.state.data !== undefined);
@@ -303,6 +323,52 @@ test('un compte non N1 ne voit pas l’administration des habilitations, et chan
   assert.equal(FakeEventSource.last, null, 'aucun flux ouvert');
   await click('button-theme-dark');
   assert.equal(ui.current.store!.theme, 'dark');
+});
+
+test('Plus Jakarta Sans est la police par défaut et les Préférences peuvent la changer', async () => {
+  window.localStorage.removeItem('anif-app-font-v1');
+  defaultHandlers();
+  const settings = await mountSettings('N2 · Interne');
+  assert.ok(settings.querySelector('[data-testid="page-intro"]'), 'Préférences utilisent le gabarit d’en-tête partagé');
+  const plusJakarta = settings.querySelector('[data-testid="button-font-plus-jakarta"]') as HTMLButtonElement;
+  assert.equal(plusJakarta.getAttribute('aria-pressed'), 'true');
+  assert.equal(document.documentElement.dataset.appFont, 'plus-jakarta');
+
+  await click('button-font-inter');
+  assert.equal(document.documentElement.dataset.appFont, 'inter');
+  assert.equal(window.localStorage.getItem('anif-app-font-v1'), 'inter');
+  assert.equal(settings.querySelector('[data-testid="button-font-inter"]')?.getAttribute('aria-pressed'), 'true');
+
+  await click('button-font-dm-sans');
+  assert.equal(document.documentElement.dataset.appFont, 'dm-sans');
+  assert.equal(window.localStorage.getItem('anif-app-font-v1'), 'dm-sans');
+
+  await click('button-font-plus-jakarta');
+  assert.equal(document.documentElement.dataset.appFont, 'plus-jakarta');
+  assert.equal(window.localStorage.getItem('anif-app-font-v1'), 'plus-jakarta');
+});
+
+test('les Préférences activent et désactivent le filigrane pour ce navigateur', async () => {
+  window.localStorage.removeItem('anif-watermark-enabled');
+  defaultHandlers();
+  const settings = await mountSettings('N2 · Interne');
+  const watermark = await mountWatermark();
+
+  const toggle = settings.querySelector('[data-testid="button-watermark-toggle"]') as HTMLButtonElement;
+  assert.equal(toggle.getAttribute('aria-checked'), 'true', 'activé par défaut');
+  assert.ok(watermark.querySelector('[data-testid="watermark"]'), 'visible à l’écran');
+
+  await click('button-watermark-toggle');
+  await settle();
+  assert.equal(toggle.getAttribute('aria-checked'), 'false');
+  assert.equal(window.localStorage.getItem('anif-watermark-enabled'), 'false');
+  assert.equal(watermark.querySelector('[data-testid="watermark"]'), null, 'masqué après désactivation');
+
+  await click('button-watermark-toggle');
+  await settle();
+  assert.equal(toggle.getAttribute('aria-checked'), 'true');
+  assert.equal(window.localStorage.getItem('anif-watermark-enabled'), 'true');
+  assert.ok(watermark.querySelector('[data-testid="watermark"]'), 'réaffiché après réactivation');
 });
 
 test('un N1 attribue N3 sur un service : catalogue relu, appel envoyé, répertoire rechargé', async () => {

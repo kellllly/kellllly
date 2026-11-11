@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useUser, ClerkProvider, Show, SignIn, SignUp } from '@clerk/react';
 import { publishableKeyFromHost } from '@clerk/react/internal';
@@ -8,6 +8,7 @@ import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
 import { clearSyncRecoveryDraft, StoreProvider } from '@/lib/store';
 import { missingLocalClerkKey } from '@/lib/clerk-config';
+import { applyAppFontPreference, useAppFontPreference } from '@/lib/font-preference';
 import { Shell } from '@/components/shell';
 // Each page is its own chunk: the first load only fetches the shell and the
 // page being opened; the others download when the user navigates to them.
@@ -56,7 +57,7 @@ const clerkAppearance = {
     colorInput: '#182630',
     colorInputForeground: '#e5f0ef',
     colorNeutral: '#3a4d57',
-    fontFamily: '"DM Sans", sans-serif',
+    fontFamily: 'var(--app-font-sans)',
     borderRadius: '0.85rem',
   },
   elements: {
@@ -220,6 +221,8 @@ function AuthSetupPage() {
 }
 
 function App() {
+  const appFont = useAppFontPreference();
+  useLayoutEffect(() => applyAppFontPreference(appFont), [appFont]);
   if (clerkKeyMissing) return <AuthSetupPage />;
   return <WouterRouter base={basePath}><ClerkRouter /></WouterRouter>;
 }

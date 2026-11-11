@@ -4,7 +4,7 @@ import { useDisplayName } from '@/hooks/use-display-name';
 import { Activity, AlertTriangle, ArrowRight, Download, LoaderCircle } from 'lucide-react';
 import { AUDIT_EMPTY_STATE_MESSAGE, createAuditExportRunner, formatWAT, getAuditCalendarDayRange, getAuditExportFilename, getAuditFilterResult, getRecentAuditDateRange, hasAuditExportSelection, readAuditCsvResponse } from '@/lib/itsm';
 import { useStore } from '@/lib/store';
-import { Avatar, Button, SearchBox, Warning } from '@/components/kit';
+import { Avatar, Button, PageIntro, SearchBox, Warning } from '@/components/kit';
 import { usePeople } from '@/hooks/use-people';
 import { AuditIntegrityPanel } from '@/components/audit-integrity';
 import { AuditSiemPanel } from '@/components/audit-siem';
@@ -67,7 +67,7 @@ export default function AuditPage() {
   };
 
   return <div className="page-enter min-w-0"><Warning />
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><div className="eyebrow">JOURNAL ITSM · HABILITATIONS CÔTÉ SERVEUR</div><h2 className="serif mt-1 text-[27px]">Journal d’activité</h2><p className="mt-1 text-[12px] text-muted-foreground">Les changements d’habilitation sont enregistrés par le serveur à partir du compte authentifié. Les autres événements restent des traces de démonstration; ce journal ne remplace pas une archive WORM ; un SIEM peut le collecter via le flux NDJSON. Les contenus de messages n’y sont pas copiés.</p></div>{canExport && <div className="flex items-center gap-2"><Button testId="button-export-csv" onClick={() => void exportCsv()} disabled={isExporting || !hasAuditExportSelection(events)}>{isExporting ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}{isExporting ? 'Export en cours…' : `Exporter la sélection (${events.length})`}</Button>{isExporting && <button type="button" data-testid="button-cancel-export" onClick={() => exportRunner.current.cancel()} className="focus-ring h-9 rounded-lg border border-border bg-card px-3 text-[11px] font-semibold text-foreground hover:bg-muted">Annuler</button>}</div>}</div>
+    <PageIntro kicker="JOURNAL ITSM · HABILITATIONS CÔTÉ SERVEUR" title="Journal d’activité" description="Les changements d’habilitation sont enregistrés par le serveur à partir du compte authentifié. Les autres événements restent des traces de démonstration; ce journal ne remplace pas une archive WORM ; un SIEM peut le collecter via le flux NDJSON. Les contenus de messages n’y sont pas copiés." action={canExport && <div className="flex items-center gap-2"><Button testId="button-export-csv" onClick={() => void exportCsv()} disabled={isExporting || !hasAuditExportSelection(events)}>{isExporting ? <LoaderCircle size={14} className="animate-spin" /> : <Download size={14} />}{isExporting ? 'Export en cours…' : `Exporter la sélection (${events.length})`}</Button>{isExporting && <button type="button" data-testid="button-cancel-export" onClick={() => exportRunner.current.cancel()} className="focus-ring h-9 rounded-lg border border-border bg-card px-3 text-[11px] font-semibold text-foreground hover:bg-muted">Annuler</button>}</div>} />
     {exportError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{exportError}</p>}
      {filterError && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{filterError}</p>}
      <div className="grid min-w-0 gap-5 lg:grid-cols-[1.35fr_.65fr]">

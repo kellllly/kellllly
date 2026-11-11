@@ -6,6 +6,17 @@ export function SectionTitle({ kicker, title, action }: { kicker?: string; title
   return <div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div>{kicker && <div className="eyebrow mb-1">{kicker}</div>}<h2 className="text-[16px] font-semibold tracking-[-.02em]">{title}</h2></div>{action}</div>;
 }
 
+export function PageIntro({ kicker, title, description, action }: { kicker: string; title: string; description?: ReactNode; action?: ReactNode }) {
+  return <header className="page-intro" data-testid="page-intro">
+    <div className="page-intro-copy">
+      <div className="eyebrow">{kicker}</div>
+      <h2 className="page-intro-title">{title}</h2>
+      {description && <p className="page-intro-description">{description}</p>}
+    </div>
+    {action && <div className="page-intro-actions">{action}</div>}
+  </header>;
+}
+
 export function Badge({ children, tone = 'neutral', testId }: { children: ReactNode; tone?: string; testId?: string }) {
   return <span data-testid={testId} className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${tone === 'green' ? 'bg-[#e1efe7] text-[#28674f] dark:bg-[#214238] dark:text-[#b7dfc7]' : tone === 'amber' ? 'bg-[#f4ead5] text-[#805a20] dark:bg-[#483b25] dark:text-[#e5c78e]' : tone === 'red' ? 'bg-[#f5e2df] text-[#98483d] dark:bg-[#4c302d] dark:text-[#e7aaa1]' : tone === 'blue' ? 'bg-[#e1eaf0] text-[#3b6177] dark:bg-[#263c4a] dark:text-[#a8c8d8]' : 'bg-muted text-muted-foreground'}`}>{children}</span>;
 }

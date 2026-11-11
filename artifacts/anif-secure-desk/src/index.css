@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @layer theme, base, clerk, components, utilities;
 @import 'tailwindcss';
 @import '@clerk/themes/shadcn.css';
@@ -33,7 +33,7 @@
   --muted: 210 25% 92%; --muted-foreground: 211 13% 47%; --accent: 193 46% 90%; --accent-foreground: 211 30% 17%;
   --destructive: 4 56% 47%; --destructive-foreground: 0 0% 100%; --input: 210 20% 83%; --ring: 166 62% 32%;
   --chart-1: 166 62% 32%; --chart-2: 190 57% 43%; --chart-3: 258 43% 56%; --chart-4: 36 70% 51%; --chart-5: 4 56% 47%;
-  --app-font-sans: 'DM Sans', sans-serif; --app-font-display: 'Plus Jakarta Sans', sans-serif; --app-font-serif: 'Plus Jakarta Sans', sans-serif; --app-font-mono: 'IBM Plex Mono', monospace;
+  --app-font-sans: 'Plus Jakarta Sans', sans-serif; --app-font-display: var(--app-font-sans); --app-font-serif: var(--app-font-sans); --app-font-mono: 'IBM Plex Mono', monospace;
   --radius: .75rem; --button-outline: rgba(18, 43, 57, .12); --badge-outline: rgba(18, 43, 57, .07); --opaque-button-border-intensity: -6;
   --elevate-1: rgba(15, 42, 55, .035); --elevate-2: rgba(15, 42, 55, .075);
   --primary-border: hsl(var(--primary)); --secondary-border: hsl(var(--secondary)); --muted-border: hsl(var(--muted)); --accent-border: hsl(var(--accent)); --destructive-border: hsl(var(--destructive));
@@ -55,6 +55,8 @@
   --primary-border: hsl(var(--primary)); --secondary-border: hsl(var(--secondary)); --muted-border: hsl(var(--muted)); --accent-border: hsl(var(--accent)); --destructive-border: hsl(var(--destructive));
   --sidebar-primary-border: hsl(var(--sidebar-primary)); --sidebar-accent-border: hsl(var(--sidebar-accent));
 }
+:root[data-app-font='dm-sans'] { --app-font-sans: 'DM Sans', sans-serif; }
+:root[data-app-font='inter'] { --app-font-sans: 'Inter', sans-serif; }
 
 @layer base {
   * { @apply border-border; box-sizing: border-box; }
@@ -79,8 +81,18 @@
 .eyebrow { font: 500 10px var(--app-font-mono); letter-spacing: .11em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .serif { font-family: var(--app-font-display); letter-spacing: -.045em; }
 .mono { font-family: var(--app-font-mono); }
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 0 0 20px; }
+.page-intro-copy { flex: 1 1 30rem; min-width: 0; }
+.page-intro-title { margin: 4px 0 0; max-width: 52rem; font-family: var(--app-font-display); font-size: clamp(1.5rem, 2vw, 1.8rem); font-weight: 600; line-height: 1.18; letter-spacing: -.045em; text-wrap: balance; }
+.page-intro-description { max-width: 62rem; margin: 6px 0 0; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.65; }
+.page-intro-actions { display: flex; flex: 0 1 auto; align-items: center; gap: 8px; }
 .page-enter { animation: enter .3s cubic-bezier(.2,.7,.25,1) both; }
 @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+.page-enter > * { min-width: 0; }
+@media (max-width: 640px) {
+  .page-intro { align-items: flex-start; flex-direction: column; }
+  .page-intro-actions { width: 100%; flex-wrap: wrap; }
+}
 .nav-link { transition: background-color .18s ease, color .18s ease, transform .18s ease; }
 .nav-link:hover { transform: translateX(2px); }
 .focus-ring:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; }

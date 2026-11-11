@@ -79,6 +79,7 @@ const byText = (selector: string, needle: string) => [...document.querySelectorA
 
 test('le tableau de bord classe la file de travail, filtre par priorité et état, et signale le SLA dépassé', async () => {
   await mount(ui.DashboardPage);
+  assert.ok(document.querySelector('.ops-welcome'), 'le tableau de bord conserve son en-tête opérationnel harmonisé');
   const queue = () => [...document.querySelectorAll('[data-testid^="link-dashboard-ticket-"]')].map((link) => (link as HTMLElement).dataset.testid!.replace('link-dashboard-ticket-', ''));
   assert.match(text(), /File de travail\s*02 ouverts/u, 'le ticket clos est ignoré');
   assert.deepEqual(queue(), ['INC-2410'], 'seul le premier ticket est montré par défaut');
@@ -339,4 +340,14 @@ test('un journal vide affiche l’état vide sans pagination', async () => {
   await mount(ui.AuditPage, { audit: [] });
   assert.ok($('empty-audit-state'));
   assert.equal($('text-audit-page-range'), null);
+});
+
+test('les onglets de consultation partagent le gabarit de titre', async () => {
+  for (const page of [ui.AssetsPage, ui.ServicesPage, ui.GovernancePage, ui.AuditPage]) {
+    await mount(page);
+    const intro = $('page-intro');
+    assert.ok(intro, 'un en-tête de page commun est présent');
+    assert.ok(intro.querySelector('h2')?.textContent?.trim(), 'le titre de la page est renseigné');
+    await roots.pop()!();
+  }
 });

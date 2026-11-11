@@ -42,6 +42,26 @@ test("an invited auditor sees only its temporary channel, until the end date", (
   assert.equal(canSeeConversation(n1, room, hours(49)), true, "N1 keeps the record after closure");
 });
 
+test("a temporary channel without a valid expiry is closed to auditors but retained for N1", () => {
+  const missingExpiry = { ...channel };
+  delete (missingExpiry as Partial<typeof channel> & { expiresAt?: string }).expiresAt;
+  const invalidExpiries = [
+    missingExpiry,
+    { ...channel, expiresAt: "not-a-date" },
+    { ...channel, expiresAt: "" },
+  ];
+  for (const room of invalidExpiries) {
+    const store = { ...empty(), conversations: [room] };
+    assert.equal(canSeeConversation(auditor, room, hours(1)), false);
+    assert.deepEqual(userStoreView(store, auditor, hours(1)).conversations, []);
+    assert.equal(canSeeConversation(n1, room, hours(1)), true, "N1 retains access to the record");
+    assert.throws(
+      () => postTemporaryChannelMessage(store, "C-T1", "Message refusé", auditor, hours(1)),
+      /pas accessible/,
+    );
+  }
+});
+
 test("an auditor posts through the dedicated command; the post is journaled; closed channels refuse messages", () => {
   const store = open();
   const posted = postTemporaryChannelMessage(store, "C-T1", "  Pièce reçue, analyse en cours.  ", auditor, hours(1));
