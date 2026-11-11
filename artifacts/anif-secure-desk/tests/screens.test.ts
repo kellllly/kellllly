@@ -470,3 +470,29 @@ test('le contrôle de l’archive des habilitations affiche le résultat et l’
   await settle();
   assert.match(text(), /résultat : archive indisponible\./u);
 });
+
+test('trois incidents sur un même service ouvrent un problème lié, puis l’alerte disparaît', async () => {
+  await mountTickets();
+  assert.equal($('recurrence-alerts'), null, 'aucune alerte sans incident');
+  for (const n of [1, 2, 3]) {
+    await createTicket({ 'select-kind': 'Incident', 'input-title': `Portail lent ${n}`, 'select-service': 'SVC-02', 'select-category': 'Applications' });
+  }
+  assert.match($('recurrence-alerts')?.textContent ?? '', /Portail de services · Applications · 3 incidents \(INC-2401, INC-2402, INC-2403\)/u);
+
+  await click('button-open-problem-0');
+  assert.equal(($('select-kind') as HTMLSelectElement).value, 'Problème');
+  assert.equal(($('select-service') as HTMLSelectElement).value, 'SVC-02');
+  await submitForm('button-submit-ticket');
+  const problem = tickets()[0]!;
+  assert.deepEqual([problem.id, problem.kind, problem.incidentIds], ['PRB-2404', 'Problème', ['INC-2401', 'INC-2402', 'INC-2403']]);
+  assert.equal(ui.logs.at(-1)!.action, 'Ticket PRB-2404 créé (Problème, P3) depuis 3 incidents récurrents');
+  assert.equal($('recurrence-alerts'), null, 'incidents rattachés : plus d’alerte');
+  assert.match($('text-linked-incidents')?.textContent ?? '', /INC-2401, INC-2402, INC-2403/u);
+
+  await click('row-ticket-INC-2402');
+  assert.match($('text-linked-problem')?.textContent ?? '', /Rattaché au problème PRB-2404/u);
+
+  // A plain creation afterwards carries no link.
+  await createTicket({ 'select-kind': 'Problème', 'input-title': 'Autre problème' });
+  assert.ok(!('incidentIds' in tickets()[0]!));
+});

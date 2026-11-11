@@ -156,6 +156,30 @@ export function ticketKpis(tickets: Ticket[], now: number) {
   };
 }
 
+export const RECURRENCE_WINDOW_DAYS = 7;
+export const RECURRENCE_THRESHOLD = 3;
+export type Recurrence = { serviceId: string; category: string; incidentIds: string[] };
+
+/**
+ * Recurring incidents (CDC-ANIF-MSG-2025 §6.3): at least RECURRENCE_THRESHOLD incidents on the same
+ * service and category opened in the last RECURRENCE_WINDOW_DAYS days, not yet attached to a problem.
+ */
+export function recurringIncidents(tickets: Ticket[], now: number): Recurrence[] {
+  const since = now - RECURRENCE_WINDOW_DAYS * 86_400_000;
+  const attached = new Set(tickets.filter(t => t.kind === 'Problème' && t.status !== 'Rejeté').flatMap(t => t.incidentIds ?? []));
+  const groups = new Map<string, Recurrence>();
+  for (const t of tickets) {
+    if (t.kind !== 'Incident' || t.status === 'Rejeté' || !t.serviceId || attached.has(t.id) || !(Date.parse(t.openedAt) >= since)) continue;
+    const key = `${t.serviceId}|${t.category}`;
+    const group = groups.get(key) ?? { serviceId: t.serviceId, category: t.category, incidentIds: [] };
+    group.incidentIds.push(t.id);
+    groups.set(key, group);
+  }
+  return [...groups.values()].filter(g => g.incidentIds.length >= RECURRENCE_THRESHOLD)
+    .map(g => ({ ...g, incidentIds: [...g.incidentIds].sort() }))
+    .sort((a, b) => b.incidentIds.length - a.incidentIds.length || a.serviceId.localeCompare(b.serviceId));
+}
+
 export function fmtDuration(ms: number) {
   const a = Math.abs(ms); const h = Math.floor(a / 3_600_000); const m = Math.floor((a % 3_600_000) / 60_000); const s = Math.floor((a % 60_000) / 1000);
   if (h >= 24) return `${Math.floor(h / 24)} j ${h % 24} h`;

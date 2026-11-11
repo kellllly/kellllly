@@ -907,6 +907,16 @@ export function applyWorkspaceUpdate(
       requirePermission(actor, createPermission);
       if (proposed.serviceId && !serviceIds.has(String(proposed.serviceId))) throw new Error("Service associé introuvable.");
       if (proposed.assetId && !assetIds.has(String(proposed.assetId))) throw new Error("Équipement associé introuvable.");
+      // A problem opened from recurring incidents keeps their ids; fixed here and never editable afterwards.
+      const incidentIds = proposed.incidentIds ?? null;
+      if (incidentIds !== null) {
+        const incidents = new Set(oldTickets.filter((ticket) => ticket.kind === "Incident").map((ticket) => String(ticket.id)));
+        if (proposed.kind !== "Problème" || !Array.isArray(incidentIds) || !incidentIds.length || incidentIds.length > 50
+          || new Set(incidentIds).size !== incidentIds.length
+          || !incidentIds.every((ticketId) => typeof ticketId === "string" && incidents.has(ticketId))) {
+          throw new Error("Un problème ne peut référencer que des incidents existants, sans doublon (50 au plus).");
+        }
+      }
       const id = nextTicketId(proposed.kind, [...oldTickets, ...nextTickets]);
       const priority = PRIORITY[String(proposed.impact)]![Number(proposed.urgency) - 1];
       const at = newStamp(now);
@@ -936,6 +946,7 @@ export function applyWorkspaceUpdate(
         closedAt: null,
         cab: null,
         kedbId: null,
+        ...(incidentIds ? { incidentIds } : {}),
         updates: [],
       };
       nextTickets.push(eventFor(created, `Ticket créé en ${priority} (impact ${proposed.impact}, urgence ${proposed.urgency}).`, actor, now));

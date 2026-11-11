@@ -39,6 +39,8 @@ export type Ticket = {
   conversationId?: string | null; sourceMessageId?: string | null; kedbId?: string | null;
   /** Requester satisfaction 1–5, given only when confirming the closure. */
   satisfaction?: number | null;
+  /** Problème only: the incidents it was opened from, fixed by the server at creation. */
+  incidentIds?: string[];
   updates: TicketUpdate[];
 };
 export type Service = { id: string; name: string; category: string; status: string; owner: string; sla: string; description: string };

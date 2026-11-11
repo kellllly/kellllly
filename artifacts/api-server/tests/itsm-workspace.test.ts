@@ -1327,3 +1327,27 @@ test("two accounts see a version conflict, resume independent changes, and retai
     "the rejected value must remain readable in the recovery panel",
   );
 });
+
+test("a problem keeps the recurring incidents it was opened from, fixed at creation", () => {
+  let store = applyWorkspaceUpdate(empty(), {
+    ...empty(), tickets: [candidateTicket("INC-1"), candidateTicket("INC-2"), candidateTicket("REQ-3", "Demande")],
+  }, actor("user-a"), at);
+  const [inc1, inc2, req] = store.tickets.map((ticket) => String((ticket as Record<string, unknown>).id));
+  const withProblem = (incidentIds: unknown, kind = "Problème") => ({
+    ...store, tickets: [{ ...candidateTicket("PRB-new", kind), incidentIds }, ...store.tickets],
+  });
+  for (const invalid of [[inc1, inc1], [inc1, "INC-9999"], [inc1, req], [], "INC-1", [42]]) {
+    assert.throws(() => applyWorkspaceUpdate(store, withProblem(invalid), actor("user-a"), at), /incidents existants/);
+  }
+  assert.throws(() => applyWorkspaceUpdate(store, withProblem([inc1], "Incident"), actor("user-a"), at), /incidents existants/, "réservé aux problèmes");
+
+  store = applyWorkspaceUpdate(store, withProblem([inc1, inc2]), actor("user-a"), at);
+  const problem = store.tickets.find((ticket) => (ticket as Record<string, unknown>).kind === "Problème") as Record<string, any>;
+  assert.deepEqual(problem.incidentIds, [inc1, inc2]);
+  assert.ok(!("incidentIds" in (store.tickets.find((ticket) => (ticket as Record<string, unknown>).id === inc1) as object)), "aucune clé ajoutée aux autres tickets");
+
+  const edited = applyWorkspaceUpdate(store, {
+    ...store, tickets: store.tickets.map((ticket) => (ticket === problem ? { ...problem, incidentIds: [inc1] } : ticket)),
+  }, actor("user-a"), at);
+  assert.deepEqual((edited.tickets.find((ticket) => (ticket as Record<string, unknown>).id === problem.id) as Record<string, any>).incidentIds, [inc1, inc2], "liste figée");
+});
