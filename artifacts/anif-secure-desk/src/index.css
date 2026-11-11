@@ -57,6 +57,8 @@
 }
 :root[data-app-font='dm-sans'] { --app-font-sans: 'DM Sans', sans-serif; }
 :root[data-app-font='inter'] { --app-font-sans: 'Inter', sans-serif; }
+:root[data-text-size='grand'] body { zoom: 1.15; }
+:root[data-text-size='tres-grand'] body { zoom: 1.3; }
 
 @layer base {
   * { @apply border-border; box-sizing: border-box; }

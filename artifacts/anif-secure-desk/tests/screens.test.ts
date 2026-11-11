@@ -336,6 +336,12 @@ test('Plus Jakarta Sans est la police par défaut et les Préférences peuvent l
 
   await click('button-font-inter');
   assert.equal(document.documentElement.dataset.appFont, 'inter');
+  assert.equal(document.documentElement.dataset.textSize, 'standard');
+  await click('button-text-size-tres-grand');
+  assert.equal(document.documentElement.dataset.textSize, 'tres-grand');
+  assert.equal(settings.querySelector('[data-testid="button-text-size-tres-grand"]')!.getAttribute('aria-pressed'), 'true');
+  assert.equal(window.localStorage.getItem('anif-text-size-v1'), 'tres-grand');
+  await click('button-text-size-standard');
   assert.equal(window.localStorage.getItem('anif-app-font-v1'), 'inter');
   assert.equal(settings.querySelector('[data-testid="button-font-inter"]')?.getAttribute('aria-pressed'), 'true');
 

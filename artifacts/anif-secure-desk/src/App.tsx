@@ -9,6 +9,7 @@ import { Link, Redirect, Route, Switch, Router as WouterRouter, useLocation } fr
 import { clearSyncRecoveryDraft, StoreProvider } from '@/lib/store';
 import { missingLocalClerkKey } from '@/lib/clerk-config';
 import { applyAppFontPreference, useAppFontPreference } from '@/lib/font-preference';
+import '@/lib/text-size-preference';
 import { Shell } from '@/components/shell';
 // Each page is its own chunk: the first load only fetches the shell and the
 // page being opened; the others download when the user navigates to them.
