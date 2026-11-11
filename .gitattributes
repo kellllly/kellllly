@@ -1,2 +1,7 @@
 # Empreintes figées par tests/itsm-tsa-trusted-root.test.ts : octets exacts, jamais de conversion CRLF.
 *.pem -text
+
+# Code produit par orval en LF : sans cette règle, core.autocrlf=true (Windows) le sort en CRLF
+# et chaque régénération le marque modifié.
+lib/api-zod/src/generated/** text eol=lf
+lib/api-client-react/src/generated/** text eol=lf
