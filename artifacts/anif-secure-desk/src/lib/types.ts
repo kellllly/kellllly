@@ -37,6 +37,8 @@ export type Ticket = {
   createdAt?: string; dueAt?: string; description: string;
   rootCause?: string; resolution?: string; cab?: CabDecision | null;
   conversationId?: string | null; sourceMessageId?: string | null; kedbId?: string | null;
+  /** Requester satisfaction 1–5, given only when confirming the closure. */
+  satisfaction?: number | null;
   updates: TicketUpdate[];
 };
 export type Service = { id: string; name: string; category: string; status: string; owner: string; sla: string; description: string };

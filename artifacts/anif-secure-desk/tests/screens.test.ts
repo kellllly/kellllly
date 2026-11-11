@@ -103,8 +103,11 @@ test('un incident suit tout son cycle : création, prise en charge, attente, esc
   await click('button-confirm-close');
   assert.equal(($('button-submit-close') as HTMLButtonElement).disabled, true, 'la confirmation du demandeur est exigée');
   await click('checkbox-confirm-requester');
+  await click('radio-satisfaction-4');
+  assert.match(document.body.textContent!, /4\/5 · Satisfait/u);
   await click('button-submit-close');
   assert.equal(tickets()[0]!.status, 'Clos');
+  assert.equal(tickets()[0]!.satisfaction, 4, 'note transmise avec la clôture');
   assert.equal(ui.current.store!.kedb.length, 1);
   assert.equal(ui.current.store!.kedb[0]!.ticketId, 'INC-2401');
   // Un ticket clos sort de la vue « Ouverts » : on l'affiche avec le filtre « Tous ».

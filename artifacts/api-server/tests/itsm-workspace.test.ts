@@ -483,9 +483,18 @@ test("server enforces maker-checker CAB, requester confirmation, escalation step
   }), actor("user-b"), at);
   ticket = store.tickets[0] as Record<string, any>;
   assert.throws(() => applyWorkspaceUpdate(store, proposed({ status: "Clos" }), actor("user-b"), at), /demandeur authentifié/);
-  store = applyWorkspaceUpdate(store, proposed({ status: "Clos" }), actor("user-a"), at);
+  assert.ok(!("satisfaction" in ticket), "aucun null ajouté tant que le ticket n’est pas noté");
+  assert.throws(() => applyWorkspaceUpdate(store, proposed({ satisfaction: 5 }), actor("user-b"), at), /en confirmant la clôture/);
+  assert.throws(() => applyWorkspaceUpdate(store, proposed({ satisfaction: 4 }), actor("user-a"), at), /en confirmant la clôture/, "noter sans clore");
+  assert.throws(() => applyWorkspaceUpdate(store, proposed({ status: "Clos", satisfaction: 5 }), actor("user-b"), at), /demandeur authentifié/);
+  for (const invalid of [0, 6, 3.5, "4"]) {
+    assert.throws(() => applyWorkspaceUpdate(store, proposed({ status: "Clos", satisfaction: invalid }), actor("user-a"), at), /note entière de 1 à 5/);
+  }
+  store = applyWorkspaceUpdate(store, proposed({ status: "Clos", satisfaction: 4 }), actor("user-a"), at);
   ticket = store.tickets[0] as Record<string, any>;
   assert.equal(ticket.status, "Clos");
+  assert.equal(ticket.satisfaction, 4);
+  assert.throws(() => applyWorkspaceUpdate(store, proposed({ satisfaction: 1 }), actor("user-a"), at), /clos ou rejeté/, "note figée après clôture");
   assert.equal(ticket.closedAt, at.toISOString());
   assert.equal(store.kedb.length, 1);
   assert.equal(store.kedb[0].author, "user-a");

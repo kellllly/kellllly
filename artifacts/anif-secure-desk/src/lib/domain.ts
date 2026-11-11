@@ -56,7 +56,7 @@ export function resolveTicket(s: Store, id: string, rootCause: string, resolutio
 }
 
 /** Requester agreement is simulated in the UI, not authenticated authorization. */
-export function closeResolvedTicket(s: Store, id: string): Store {
+export function closeResolvedTicket(s: Store, id: string, satisfaction: number | null = null): Store {
   const ticket = s.tickets.find(t => t.id === id);
   if (ticket?.status === 'Clos') return s;
   if (!ticket || ticket.status !== 'Résolu' || !ticket.resolvedAt
@@ -66,8 +66,8 @@ export function closeResolvedTicket(s: Store, id: string): Store {
   const existing = s.kedb.find(a => a.ticketId === id);
   const kedbId = existing?.id ?? nextKedbId(s);
   const at = nowIso();
-  const next = withTicketEvent(s, id, `Confirmation du demandeur simulée. Ticket clos ; article ${kedbId} disponible dans la base d’erreurs connues.`, {
-    status: 'Clos', closedAt: at, kedbId,
+  const next = withTicketEvent(s, id, `Confirmation du demandeur simulée${satisfaction ? ` · satisfaction ${satisfaction}/5` : ''}. Ticket clos ; article ${kedbId} disponible dans la base d’erreurs connues.`, {
+    status: 'Clos', closedAt: at, kedbId, ...(satisfaction ? { satisfaction } : {}),
   });
   if (existing) return next;
   return {
@@ -123,7 +123,10 @@ export function ticketKpis(tickets: Ticket[], now: number) {
     // An open ticket counts only once its deadline has passed; before that the outcome is unknown.
     if (end) { decided++; if (Date.parse(end) <= due) met++; } else if (now > due) decided++;
   }
+  const ratings = counted.map(t => t.satisfaction).filter((n): n is number => Number.isInteger(n) && n! >= 1 && n! <= 5);
   return {
+    satisfactionAvg: ratings.length ? ratings.reduce((sum, n) => sum + n, 0) / ratings.length : null,
+    satisfactionCount: ratings.length,
     total: counted.length,
     resolved: durations.length,
     mttrMs: durations.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null,

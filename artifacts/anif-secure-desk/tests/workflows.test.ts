@@ -116,6 +116,18 @@ test('requester confirmation creates one KEDB article, once, and mirrors the lin
   assert.equal(store.kedb.filter(a => a.ticketId === ticket.id).length, 1);
   assert.ok(store.conversations.find(c => c.id === 'C-SUP')?.messages.some(m => m.ticketId === ticket.id && m.body.includes('Ticket clos')));
   assert.equal(closeResolvedTicket(store, ticket.id), store);
+  assert.ok(!('satisfaction' in store.tickets.find(t => t.id === ticket.id)!), 'sans note, aucun champ ajouté');
+});
+
+test('requester confirmation can carry a 1–5 satisfaction, kept by normalization', () => {
+  let store = migrate(null);
+  const ticket = store.tickets.find(t => t.status === 'En cours' && t.kind === 'Incident')!;
+  store = resolveTicket(store, ticket.id, 'Cause technique de test.', 'Correction de test appliquée.');
+  store = closeResolvedTicket(store, ticket.id, 4);
+  const closed = store.tickets.find(t => t.id === ticket.id)!;
+  assert.equal(closed.satisfaction, 4);
+  assert.match(closed.updates.at(-1)!.body, /satisfaction 4\/5/);
+  assert.equal(migrate(JSON.parse(JSON.stringify(store))).tickets.find(t => t.id === ticket.id)!.satisfaction, 4);
 });
 
 test('ticket comments and status events stay linked to their conversation', () => {

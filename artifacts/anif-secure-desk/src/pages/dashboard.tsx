@@ -163,9 +163,10 @@ export default function Dashboard() {
       </section>
     </div> : <>
       <section className="ops-kpis" aria-label="Indicateurs ITIL" data-testid="dashboard-kpis">
-        <div className="ops-metrics ops-metrics-limited">
+        <div className="ops-metrics ops-metrics-kpi">
           <OpsMetric testId="kpi-mttr" label="MTTR · temps moyen de résolution" value={kpis.mttrMs === null ? '—' : shortDuration(kpis.mttrMs)} detail={`${kpis.resolved} ticket(s) résolu(s) sur ${kpis.total}`} icon={Clock3} tone="blue" />
           <OpsMetric testId="kpi-sla" label="Taux de respect du SLA de résolution" value={kpis.slaRate === null ? '—' : `${Math.round(kpis.slaRate * 100)} %`} detail={`${kpis.slaMet}/${kpis.slaDecided} dans le délai · échéances passées seulement`} icon={ShieldCheck} tone={kpis.slaRate === null || kpis.slaRate >= 0.9 ? 'mint' : kpis.slaRate >= 0.7 ? 'amber' : 'rose'} />
+          <OpsMetric testId="kpi-satisfaction" label="Satisfaction des demandeurs" value={kpis.satisfactionAvg === null ? '—' : `${kpis.satisfactionAvg.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} / 5`} detail={kpis.satisfactionCount ? `${kpis.satisfactionCount} note(s) à la clôture` : 'Aucune note pour l’instant'} icon={Sparkles} tone={kpis.satisfactionAvg === null || kpis.satisfactionAvg >= 4 ? 'mint' : kpis.satisfactionAvg >= 3 ? 'amber' : 'rose'} />
         </div>
         <div className="ops-kpi-lists">
           {([['Volume par catégorie', kpis.byCategory, 'kpi-category'], ['Volume par technicien', kpis.byAssignee, 'kpi-assignee']] as const).map(([title, rows, testId]) => <section key={testId} className="ops-panel ops-panel-pad" data-testid={testId}>

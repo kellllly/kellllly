@@ -1035,8 +1035,20 @@ export function applyWorkspaceUpdate(
     }
     if (proposed.serviceId && !serviceIds.has(String(proposed.serviceId))) throw new Error("Service associé introuvable.");
     if (proposed.assetId && !assetIds.has(String(proposed.assetId))) throw new Error("Équipement associé introuvable.");
+    // Satisfaction (1–5) is given only with the closure confirmation; the checks above decide who may confirm.
+    const satisfaction = proposed.satisfaction ?? null;
+    if (!jsonEqual(old.satisfaction ?? null, satisfaction)) {
+      if (requestedStatus !== "Clos" || oldStatus !== "Résolu") {
+        throw new ItsmAuthorizationError("La satisfaction se note uniquement en confirmant la clôture.");
+      }
+      if (!Number.isInteger(satisfaction) || (satisfaction as number) < 1 || (satisfaction as number) > 5) {
+        throw new Error("La satisfaction doit être une note entière de 1 à 5.");
+      }
+    }
 
     const updated: JsonRecord = { ...old };
+    // Key present only once rated: closed tickets are compared byte for byte, so no `null` is added to older ones.
+    if (satisfaction !== null) updated.satisfaction = satisfaction;
     for (const field of TICKET_FIELDS) {
       if (field === "cab") continue;
       updated[field] = proposed[field];

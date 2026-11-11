@@ -50,6 +50,8 @@ export function normalizeTicket(t: any): Ticket {
     createdAt: t.createdAt, dueAt: t.dueAt, description: t.description ?? '',
     rootCause: t.rootCause, resolution: t.resolution, cab: t.cab ?? null,
     conversationId: t.conversationId ?? null, sourceMessageId: t.sourceMessageId ?? null, kedbId: t.kedbId ?? null,
+    // Only when rated: the server compares closed tickets exactly and stores no `null` here.
+    ...(t.satisfaction != null ? { satisfaction: t.satisfaction } : {}),
     updates: Array.isArray(t.updates) ? t.updates : [],
   };
 }

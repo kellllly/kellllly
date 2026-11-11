@@ -30,6 +30,14 @@ test('ITIL indicators: MTTR, resolution SLA rate and volumes', () => {
   assert.deepEqual(kpis.byAssignee, [{ label: 'Olivier Nguema', count: 3 }, { label: 'Non renseigné', count: 1 }]);
 });
 
+test('satisfaction average counts only valid 1–5 ratings', () => {
+  const closed = (id: string, satisfaction: unknown) => ticket({ id, status: 'Clos', openedAt: ago(60), closedAt: ago(30), satisfaction });
+  // 9 and 3.5 can only come from a tampered store: ignored.
+  const kpis = ticketKpis([closed('INC-1', 2), closed('INC-2', 5), closed('INC-3', 9), closed('INC-4', 3.5), closed('INC-5', null)], NOW);
+  assert.equal(kpis.satisfactionAvg, 3.5);
+  assert.equal(kpis.satisfactionCount, 2);
+});
+
 test('ITIL indicators stay empty without data', () => {
   const kpis = ticketKpis([ticket({ id: 'INC-1', status: 'Nouveau', openedAt: ago(5) })], NOW);
   assert.equal(kpis.mttrMs, null);

@@ -181,9 +181,9 @@ export default function TicketsPage() { const { person } = usePeople();
      {dialog === 'create' && <Modal wide title="Créer un ticket" description={diagnosticNotice || "Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence."} onClose={() => setDialog(null)}><TicketForm initial={prefill} services={store.services} assets={store.assets} submitLabel="Créer le ticket" onSubmit={create} onCancel={() => { setDialog(null); setDiagnosticNotice(''); }} /></Modal>}
     {dialog === 'edit' && ticket && <Modal wide title={`Modifier ${ticket.id}`} description="L’heure d’ouverture est conservée : les échéances SLA sont recalculées sans remettre le temps écoulé à zéro." onClose={() => setDialog(null)}><TicketForm lockKind={ticket.status !== 'Nouveau' || !!ticket.cab} initial={emptyDraft({ kind: ticket.kind, title: ticket.title, description: ticket.description, category: ticket.category, impact: ticket.impact, urgency: ticket.urgency, supportLevel: ticket.supportLevel, assignee: ticket.assignee, serviceId: ticket.serviceId ?? '', assetId: ticket.assetId ?? '' })} services={store.services} assets={store.assets} submitLabel="Enregistrer" onSubmit={edit} onCancel={() => setDialog(null)} /></Modal>}
     {dialog === 'resolve' && ticket && <ResolveDialog ticket={ticket} onClose={() => setDialog(null)} onDone={(rootCause, resolution) => { setStore(s => resolveTicket(s, ticket.id, rootCause, resolution)); log(`Ticket ${ticket.id} résolu (en attente de confirmation)`, `Ticket ${ticket.id}`); setDialog(null); }} />}
-    {dialog === 'confirm' && ticket && <ConfirmDialog ticket={ticket} onClose={() => setDialog(null)} onDone={() => {
-      setStore(s => closeResolvedTicket(s, ticket.id));
-      log(`Ticket ${ticket.id} clos après confirmation simulée ; article KEDB créé`, `Ticket ${ticket.id}`);
+    {dialog === 'confirm' && ticket && <ConfirmDialog ticket={ticket} onClose={() => setDialog(null)} onDone={satisfaction => {
+      setStore(s => closeResolvedTicket(s, ticket.id, satisfaction));
+      log(`Ticket ${ticket.id} clos après confirmation simulée${satisfaction ? ` (satisfaction ${satisfaction}/5)` : ''} ; article KEDB créé`, `Ticket ${ticket.id}`);
       setDialog(null);
     }} />}
     {dialog === 'cab' && ticket && <CabDialog ticket={ticket} onClose={() => setDialog(null)} onDecision={(decision, reason) => {
@@ -304,12 +304,20 @@ function ResolveDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: (
   </Modal>;
 }
 
-function ConfirmDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: () => void; onDone: () => void }) { const { person } = usePeople();
+const SATISFACTION_LABEL = ['', 'Très insatisfait', 'Insatisfait', 'Correct', 'Satisfait', 'Très satisfait'];
+
+function ConfirmDialog({ ticket, onClose, onDone }: { ticket: Ticket; onClose: () => void; onDone: (satisfaction: number | null) => void }) { const { person } = usePeople();
   const [checked, setChecked] = useState(false);
+  const [rating, setRating] = useState<number | null>(null);
   return <Modal title={`Clôturer ${ticket.id}`} description="Confirmation du demandeur simulée : aucun message n’est réellement envoyé ou reçu." onClose={onClose}>
     <div className="space-y-3 text-[11px]"><div className="rounded-lg bg-muted/70 p-3"><div className="eyebrow">DEMANDEUR</div><div className="mt-1 font-semibold">{person(ticket.requester)}</div></div><div className="rounded-lg border border-border p-3"><div className="eyebrow">RÉSOLUTION</div><p className="mt-1 leading-relaxed text-muted-foreground">{ticket.resolution}</p></div>
       <label className="flex items-start gap-2.5 rounded-lg border border-border p-3"><input data-testid="checkbox-confirm-requester" type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} className="mt-0.5 accent-[hsl(var(--primary))]" /><span>Je simule l’accord explicite de {person(ticket.requester)} sur la résolution. Un seul article sera ajouté à la base d’erreurs connues, lié à ce ticket.</span></label>
-      <div className="flex justify-end gap-2 pt-1"><Button variant="outline" onClick={onClose}>Annuler</Button><Button disabled={!checked} onClick={onDone} testId="button-submit-close"><CheckCheck size={14} />Clore et publier dans la KEDB</Button></div></div>
+      <fieldset className="rounded-lg border border-border p-3"><legend className="eyebrow px-1">SATISFACTION DU DEMANDEUR · FACULTATIF</legend>
+        <div className="mt-1 flex flex-wrap gap-1.5">{[1, 2, 3, 4, 5].map(n => <label key={n} className={`inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border px-2 font-semibold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[hsl(var(--primary))] ${rating === n ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-primary-foreground' : 'border-border'}`}>
+          <input type="radio" name="satisfaction" value={n} checked={rating === n} onChange={() => setRating(n)} className="sr-only" data-testid={`radio-satisfaction-${n}`} aria-label={`${n} sur 5 · ${SATISFACTION_LABEL[n]}`} />{n}</label>)}
+          {rating !== null && <button type="button" className="text-muted-foreground underline" onClick={() => setRating(null)}>Ne pas noter</button>}</div>
+        <p className="mt-1.5 text-muted-foreground" aria-live="polite">{rating ? `${rating}/5 · ${SATISFACTION_LABEL[rating]}` : 'Aucune note : la clôture reste possible.'}</p></fieldset>
+      <div className="flex justify-end gap-2 pt-1"><Button variant="outline" onClick={onClose}>Annuler</Button><Button disabled={!checked} onClick={() => onDone(rating)} testId="button-submit-close"><CheckCheck size={14} />Clore et publier dans la KEDB</Button></div></div>
   </Modal>;
 }
 
