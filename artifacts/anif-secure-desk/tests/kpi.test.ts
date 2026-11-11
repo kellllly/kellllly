@@ -38,9 +38,28 @@ test('satisfaction average counts only valid 1–5 ratings', () => {
   assert.equal(kpis.satisfactionCount, 2);
 });
 
+test('MTBF: mean uptime between incidents of the same service', () => {
+  const t = (id: string, fields: Record<string, unknown>) => ticket({ id, kind: 'Incident', status: 'Clos', ...fields });
+  const kpis = ticketKpis([
+    // SVC-A: restored at -900, next incident at -600 → 300 min; restored at -500, next at -100 → 400 min.
+    t('INC-1', { serviceId: 'SVC-A', openedAt: ago(1000), resolvedAt: ago(900) }),
+    t('INC-2', { serviceId: 'SVC-A', openedAt: ago(600), resolvedAt: ago(500) }),
+    t('INC-3', { serviceId: 'SVC-A', openedAt: ago(100), resolvedAt: null, status: 'En cours' }),
+    // SVC-B: the second incident opens before the first is restored → no uptime counted.
+    t('INC-4', { serviceId: 'SVC-B', openedAt: ago(800), resolvedAt: ago(200) }),
+    t('INC-5', { serviceId: 'SVC-B', openedAt: ago(700), resolvedAt: ago(650) }),
+    // Not counted: a request on SVC-A, an incident with no service.
+    t('REQ-6', { kind: 'Demande', serviceId: 'SVC-A', openedAt: ago(50) }),
+    t('INC-7', { serviceId: null, openedAt: ago(40) }),
+  ], NOW);
+  assert.equal(kpis.mtbfIntervals, 2);
+  assert.equal(kpis.mtbfMs, 350 * 60_000);
+});
+
 test('ITIL indicators stay empty without data', () => {
   const kpis = ticketKpis([ticket({ id: 'INC-1', status: 'Nouveau', openedAt: ago(5) })], NOW);
   assert.equal(kpis.mttrMs, null);
+  assert.equal(kpis.mtbfMs, null);
   assert.equal(kpis.slaRate, null);
   assert.deepEqual(ticketKpis([], NOW).byCategory, []);
 });

@@ -103,8 +103,8 @@ const countBy = (tickets: Ticket[], key: (t: Ticket) => string): KpiCount[] => {
 };
 
 /**
- * ITIL indicators of the dashboard (CDC-ANIF-MSG-2025): MTTR, resolution SLA rate,
- * volume per category and per assignee. Rejected tickets are not support work and are left out.
+ * ITIL indicators of the dashboard (CDC-ANIF-MSG-2025 §6.5): MTTR, MTBF, resolution SLA rate,
+ * volume per category and per assignee, requester satisfaction. Rejected tickets are not support work and are left out.
  * Same continuous-time rules as ticketSla (no business hours).
  */
 export function ticketKpis(tickets: Ticket[], now: number) {
@@ -123,10 +123,28 @@ export function ticketKpis(tickets: Ticket[], now: number) {
     // An open ticket counts only once its deadline has passed; before that the outcome is unknown.
     if (end) { decided++; if (Date.parse(end) <= due) met++; } else if (now > due) decided++;
   }
+  // MTBF (ITIL): per service, time from an incident's restoration to the next incident's opening.
+  const uptimes: number[] = [];
+  const incidentsByService = new Map<string, Ticket[]>();
+  for (const t of counted) {
+    if (t.kind !== 'Incident' || !t.serviceId) continue;
+    incidentsByService.set(t.serviceId, [...(incidentsByService.get(t.serviceId) ?? []), t]);
+  }
+  for (const incidents of incidentsByService.values()) {
+    incidents.sort((a, b) => Date.parse(a.openedAt) - Date.parse(b.openedAt));
+    for (let i = 1; i < incidents.length; i++) {
+      const restored = endOf(incidents[i - 1]!);
+      // Overlapping incidents (the next one opened before restoration) add no uptime.
+      const uptime = restored ? Date.parse(incidents[i]!.openedAt) - Date.parse(restored) : Number.NaN;
+      if (Number.isFinite(uptime) && uptime >= 0) uptimes.push(uptime);
+    }
+  }
   const ratings = counted.map(t => t.satisfaction).filter((n): n is number => Number.isInteger(n) && n! >= 1 && n! <= 5);
   return {
     satisfactionAvg: ratings.length ? ratings.reduce((sum, n) => sum + n, 0) / ratings.length : null,
     satisfactionCount: ratings.length,
+    mtbfMs: uptimes.length ? uptimes.reduce((sum, ms) => sum + ms, 0) / uptimes.length : null,
+    mtbfIntervals: uptimes.length,
     total: counted.length,
     resolved: durations.length,
     mttrMs: durations.length ? durations.reduce((sum, ms) => sum + ms, 0) / durations.length : null,

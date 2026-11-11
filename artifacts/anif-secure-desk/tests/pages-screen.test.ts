@@ -100,6 +100,7 @@ test('le tableau de bord classe la file de travail, filtre par priorité et éta
 
   assert.match($('kpi-mttr')!.textContent!, /3 j 10 h\s*1 ticket\(s\) résolu\(s\) sur 3/u, 'ticket clos : résolution datée par normalizeTicket ~30 min avant maintenant');
   assert.match($('kpi-sla')!.textContent!, /0 %\s*0\/2 dans le délai/u, 'clos hors délai et P1 ouvert dépassé ; la demande P4 n’est pas encore due');
+  assert.match($('kpi-mtbf')!.textContent!, /—\s*Pas encore deux incidents/u, 'un seul incident rattaché à un service');
   assert.match($('kpi-satisfaction')!.textContent!, /—\s*Aucune note pour l’instant/u);
   assert.match($('kpi-category')!.textContent!, /3/u);
   assert.ok($('kpi-assignee')!.querySelector('li'), 'volume par technicien');
