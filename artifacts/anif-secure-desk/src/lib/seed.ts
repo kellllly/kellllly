@@ -1,4 +1,5 @@
 import { priorityFor } from './itsm';
+import { parsePresence } from './presence';
 import type { Conversation, Level, Store, Ticket, TicketKind, TicketStatus } from './types';
 
 const MIN = 60_000;
@@ -183,5 +184,6 @@ export function migrate(raw: any): Store {
     notifications: Array.isArray(src.notifications) ? src.notifications : [],
     notifRead: Array.isArray(src.notifRead) ? src.notifRead : [],
     seeded,
+    ...(src.presence ? { presence: parsePresence(src.presence) } : {}),
   };
 }

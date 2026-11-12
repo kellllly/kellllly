@@ -13,6 +13,9 @@ import { SyncRecoveryActions } from './sync-recovery-actions';
 import { offlineMessage } from '@/lib/offline';
 import { runShortcut } from '@/lib/shortcuts';
 import { isQuietTime, useQuietHours } from '@/lib/quiet-hours';
+import { PRESENCE_OPTIONS, presenceOf } from '@/lib/presence';
+import { setItsmPresence } from '@workspace/api-client-react';
+import type { PresenceStatus } from '@/lib/types';
 
 
 const navItems = [
@@ -77,6 +80,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2 text-[11px] font-semibold text-[#d2e6db]"><LockKeyhole size={14} />Espace ITSM partagé</div>
         <p className="mt-2 text-[11px] leading-relaxed text-[#a9bdbe]">Données fictives du pilote, visibles aux comptes authentifiés. Prototype non homologué.</p>
         <div className="mt-3 flex items-center gap-2 border-t border-[#3b5659] pt-3"><div className="grid h-8 w-8 place-items-center rounded-full bg-[#d8c6a1] text-[11px] font-bold text-[#24313b]">{initials(displayName)}</div><div className="min-w-0"><div className="truncate text-xs font-semibold">{displayName}</div><div className="text-[10px] text-[#adc1c1]">{store.profile.role} · {store.profile.clearance}</div></div></div>
+        <PresencePicker />
       </div>
     </aside>
     {mobileNav && <button aria-label="Fermer la navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-30 bg-black/30 lg:hidden" />}
@@ -124,6 +128,25 @@ export function Shell({ children }: { children: ReactNode }) {
       </div>
     </main>
   </div>;
+}
+
+/** The agent's own presence: shown at once, recorded by the server, restored from it if refused. */
+function PresencePicker() {
+  const { store, setStore, log, resync } = useStore();
+  const me = store.profile.name;
+  const current = presenceOf(store, me);
+  const choose = (status: PresenceStatus) => {
+    setStore(s => ({ ...s, presence: { ...s.presence, [me]: { status, at: new Date().toISOString() } } }));
+    setItsmPresence({ status }).then(
+      () => log(`Statut de présence : ${PRESENCE_OPTIONS.find(o => o.id === status)!.label}`, 'Messagerie'),
+      () => { log('Statut de présence non enregistré', 'Messagerie'); resync(); },
+    );
+  };
+  return <label className="mt-2 flex items-center gap-2 text-[10px] text-[#adc1c1]"><span className={`h-2 w-2 shrink-0 rounded-full ${current?.dot ?? 'bg-transparent ring-1 ring-[#adc1c1]'}`} aria-hidden="true" />
+    <select data-testid="select-presence" aria-label="Mon statut de présence" value={current?.id ?? ''} onChange={e => { if (e.target.value) choose(e.target.value as PresenceStatus); }} className="focus-ring min-w-0 flex-1 rounded-md border border-[#3b5659] bg-transparent px-1.5 py-1 text-[11px] text-white">
+      {!current && <option value="" className="text-black">Statut non indiqué</option>}
+      {PRESENCE_OPTIONS.map(o => <option key={o.id} value={o.id} className="text-black">{o.label}</option>)}
+    </select></label>;
 }
 
 function NotificationBell() {

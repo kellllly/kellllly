@@ -1504,6 +1504,29 @@ export function mergeLocalExamples(
   return importMerge(current, imported, actor, now);
 }
 
+export const PRESENCE_STATUSES = ["disponible", "occupe", "absent"] as const;
+
+/** The actor sets their own presence status (CDC-ANIF-MSG § 4.1); not journaled, it is not a security event. */
+export function setPresence(current: JsonRecord, status: string, actor: WorkspaceActor, now = new Date()): JsonRecord {
+  if (!(PRESENCE_STATUSES as readonly string[]).includes(status)) throw new Error("Statut de présence inconnu.");
+  const next = structuredClone(current);
+  next.presence = { ...(isRecord(current.presence) ? current.presence : {}), [actor.id]: { status, at: now.toISOString() } };
+  return next;
+}
+
+/** Statuses of the people this account shares a visible conversation with, and its own. */
+function visiblePresence(presence: unknown, conversations: JsonRecord[], actor: WorkspaceActor): JsonRecord {
+  if (!isRecord(presence)) return {};
+  const people = new Set<string>([actor.id]);
+  for (const conversation of conversations) {
+    for (const id of [...(Array.isArray(conversation.participants) ? conversation.participants : []), ...(Array.isArray(conversation.memberIds) ? conversation.memberIds : [])]) {
+      if (typeof id === "string") people.add(id);
+    }
+    for (const message of records(conversation.messages)) if (typeof message.author === "string") people.add(message.author);
+  }
+  return Object.fromEntries(Object.entries(presence).filter(([id]) => people.has(id)));
+}
+
 /** Who read up to when, shown only to people who wrote in the conversation (receipts serve the sender). */
 function readByFor(readReceipts: unknown, conversation: JsonRecord, actor: WorkspaceActor): { readBy?: JsonRecord } {
   const byReader = isRecord(readReceipts) && isRecord(readReceipts[String(conversation.id)]) ? readReceipts[String(conversation.id)] as JsonRecord : {};
@@ -1513,7 +1536,7 @@ function readByFor(readReceipts: unknown, conversation: JsonRecord, actor: Works
 }
 
 export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = new Date()): JsonRecord {
-  const { readStates, readReceipts, ...visibleStore } = store;
+  const { readStates, readReceipts, presence, ...visibleStore } = store;
   const actorReads = isRecord(readStates) && isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
   const scopedTickets = records(store.tickets).filter((ticket) =>
     actor.role !== "N4" || actor.serviceIds.includes(String(ticket.serviceId ?? "")));
@@ -1523,10 +1546,12 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = ne
   const scopedServices = records(store.services).filter((service) =>
     actor.role !== "N4" || actor.serviceIds.includes(String(service.id)));
   const hiddenCollections = actor.role === "N5";
+  const visibleConversations = records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation, now));
   return {
     ...visibleStore,
+    presence: visiblePresence(presence, visibleConversations, actor),
     tickets: hiddenCollections ? [] : scopedTickets,
-    conversations: records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation, now)).map((conversation) => ({
+    conversations: visibleConversations.map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
       ...readByFor(readReceipts, conversation, actor),

@@ -126,6 +126,28 @@ paths:
           description: The channel is not accessible to this account
         "409":
           description: The channel is closed
+  /itsm/presence:
+    put:
+      operationId: setItsmPresence
+      tags: [itsm]
+      summary: The signed-in agent sets their own presence status, shown to the people they share a conversation with
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmPresenceInput"
+      responses:
+        "200":
+          description: Status recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmPresence"
+        "400":
+          description: Unknown status
+        "401":
+          description: Authentication required
   /itsm/conversations/{conversationId}/messages/{messageId}:
     parameters:
       - in: path
@@ -903,6 +925,18 @@ components:
       properties:
         posted: { type: boolean }
       required: [posted]
+    ItsmPresenceInput:
+      type: object
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [disponible, occupe, absent] }
+      required: [status]
+    ItsmPresence:
+      type: object
+      properties:
+        status: { type: string, enum: [disponible, occupe, absent] }
+        at: { type: string }
+      required: [status, at]
     ItsmMessageRevised:
       type: object
       properties:

@@ -339,6 +339,33 @@ export interface ItsmTemporaryMessagePosted {
   posted: boolean;
 }
 
+export type ItsmPresenceInputStatus = typeof ItsmPresenceInputStatus[keyof typeof ItsmPresenceInputStatus];
+
+
+export const ItsmPresenceInputStatus = {
+  disponible: 'disponible',
+  occupe: 'occupe',
+  absent: 'absent',
+} as const;
+
+export interface ItsmPresenceInput {
+  status: ItsmPresenceInputStatus;
+}
+
+export type ItsmPresenceStatus = typeof ItsmPresenceStatus[keyof typeof ItsmPresenceStatus];
+
+
+export const ItsmPresenceStatus = {
+  disponible: 'disponible',
+  occupe: 'occupe',
+  absent: 'absent',
+} as const;
+
+export interface ItsmPresence {
+  status: ItsmPresenceStatus;
+  at: string;
+}
+
 export interface ItsmMessageRevised {
   revised: boolean;
 }

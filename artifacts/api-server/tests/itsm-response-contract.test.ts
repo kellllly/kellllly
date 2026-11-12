@@ -12,6 +12,8 @@ import {
   GetItsmWorkspaceResponse,
   ImportItsmExamplesResponse,
   SaveItsmWorkspaceResponse,
+  SetItsmPresenceBody,
+  SetItsmPresenceResponse,
 } from "../../../lib/api-zod/src/generated/api.ts";
 import {
   ITSM_WORKSPACE_VERSION_CONFLICT_MESSAGE,
@@ -73,6 +75,12 @@ test("generated ITSM response schemas accept complete values and reject incomple
     role: "N2",
     serviceIds: [],
   }).success, false);
+
+  const presence = { status: "occupe", at: "2026-11-12T10:00:00.000Z" };
+  assert.deepEqual(SetItsmPresenceResponse.parse(presence), presence);
+  assert.equal(SetItsmPresenceResponse.safeParse({ status: "occupe" }).success, false);
+  assert.equal(SetItsmPresenceBody.safeParse({ status: "invisible" }).success, false, "only the three statuses are accepted");
+  assert.equal(SetItsmPresenceBody.safeParse({ status: "absent" }).success, true);
 });
 
 test("stale workspace PUT returns a valid current snapshot and conflict identifiers without PostgreSQL", async () => {

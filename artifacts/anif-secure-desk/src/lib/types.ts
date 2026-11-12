@@ -76,10 +76,14 @@ export type KedbArticle = {
 };
 export type StoredNotification = { id: string; ticketId: string; title: string; body: string; at: string };
 
+export type PresenceStatus = 'disponible' | 'occupe' | 'absent';
+
 export type Store = {
   schema: 2;
   profile: DemoProfile; theme: string;
   conversations: Conversation[]; tickets: Ticket[]; services: Service[]; assets: Asset[]; audit: AuditEvent[];
   kedb: KedbArticle[]; drafts: Record<string, string>;
   notifications: StoredNotification[]; notifRead: string[]; seeded: string[];
+  /** Presence chosen by each colleague sharing a conversation (from the server). */
+  presence?: Record<string, { status: PresenceStatus; at: string }>;
 };

@@ -94,6 +94,19 @@ export const PostItsmTemporaryMessageResponse = zod.object({
 
 
 /**
+ * @summary The signed-in agent sets their own presence status, shown to the people they share a conversation with
+ */
+export const SetItsmPresenceBody = zod.object({
+  "status": zod.enum(['disponible', 'occupe', 'absent'])
+})
+
+export const SetItsmPresenceResponse = zod.object({
+  "status": zod.enum(['disponible', 'occupe', 'absent']),
+  "at": zod.string()
+})
+
+
+/**
  * @summary The author corrects a message within 5 minutes; the journal keeps hashes of both versions
  */
 export const editItsmMessagePathConversationIdMax = 64;

@@ -12,6 +12,8 @@ import {
   GetItsmSessionMarkerResponse,
   PostItsmTemporaryMessageBody,
   EditItsmMessageBody,
+  SetItsmPresenceBody,
+  SetItsmPresenceResponse,
   EditItsmMessageResponse,
   DeleteItsmMessageResponse,
   PostItsmTemporaryMessageResponse,
@@ -56,6 +58,7 @@ import {
   purgeExpiredMessages,
   postTemporaryChannelMessage,
   reviseMessage,
+  setPresence,
 } from "../lib/itsm-workspace";
 import type { SlaBreach, SlaEscalation } from "../lib/itsm-sla";
 import { toItsmDirectoryAccount } from "../lib/itsm-user-directory";
@@ -694,6 +697,27 @@ router.patch("/itsm/conversations/:conversationId/messages/:messageId", requireA
 
 router.delete("/itsm/conversations/:conversationId/messages/:messageId", requireAuth, async (req, res): Promise<void> => {
   await reviseMessageRoute(req, res, { delete: true });
+});
+
+router.put("/itsm/presence", requireAuth, async (req, res): Promise<void> => {
+  const parsed = SetItsmPresenceBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Statut de présence inconnu." });
+    return;
+  }
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  const at = new Date();
+  try {
+    await withAdminChangeLock(async (store, saveStore) => {
+      await saveStore(setPresence(store, parsed.data.status, actor, at));
+      return true;
+    });
+    res.json(SetItsmPresenceResponse.parse({ status: parsed.data.status, at: at.toISOString() }));
+  } catch (error) {
+    req.log.error({ err: error }, "Could not record a presence status");
+    res.status(503).json({ error: "Impossible d’enregistrer le statut. Réessayez plus tard." });
+  }
 });
 
 router.get("/itsm/session", requireAuth, async (req, res): Promise<void> => {

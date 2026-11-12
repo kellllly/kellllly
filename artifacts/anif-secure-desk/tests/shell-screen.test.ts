@@ -58,3 +58,42 @@ test('une mention de mon nom ou de @tous arrive dans la cloche et mène au messa
     container.remove();
   }
 });
+
+test('mon statut de présence : affiché tout de suite, enregistré par l’API, rétabli depuis le serveur en cas de refus', async () => {
+  ui.router.path = '/messages';
+  ui.clock.now = Date.now();
+  ui.calls.length = 0;
+  ui.logs.length = 0;
+  const resyncsBefore = ui.resyncs.count;
+  const store = ui.testStore([], []);
+  store.profile = { ...store.profile, name: 'user_n1' };
+  const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => { root.render(createElement(ui.QueryClientProvider, { client }, createElement(ui.TestStoreProvider, { initial: store }, createElement(ui.Shell, null, 'contenu')))); });
+  const choose = async (value: string) => {
+    const select = $('select-presence') as HTMLSelectElement;
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(select, value);
+    await act(async () => { select.dispatchEvent(new window.Event('change', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 10)); });
+  };
+  try {
+    assert.equal(($('select-presence') as HTMLSelectElement).value, '', 'aucun statut choisi au départ');
+    ui.handlers.setItsmPresence = async () => ({ status: 'occupe', at: new Date().toISOString() });
+    await choose('occupe');
+    assert.deepEqual(ui.calls.find(c => c.name === 'setItsmPresence')?.args, [{ status: 'occupe' }]);
+    assert.equal(ui.current.store!.presence!.user_n1!.status, 'occupe');
+    assert.equal(ui.logs.at(-1)?.action, 'Statut de présence : Ne pas déranger');
+    assert.equal([...($('select-presence') as HTMLSelectElement).options].some(o => o.value === ''), false, 'le choix vide disparaît une fois un statut choisi');
+
+    ui.handlers.setItsmPresence = async () => { throw new Error('503'); };
+    await choose('absent');
+    assert.equal(ui.logs.at(-1)?.action, 'Statut de présence non enregistré');
+    assert.equal(ui.resyncs.count, resyncsBefore + 1, 'l’espace est rechargé pour retrouver le statut enregistré');
+  } finally {
+    delete ui.handlers.setItsmPresence;
+    await act(async () => root.unmount());
+    client.clear();
+    container.remove();
+  }
+});

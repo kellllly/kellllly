@@ -31,7 +31,7 @@ function conversations() {
   ];
 }
 
-async function mountMessages({ clearance = 'N2 · Interne', search = '', extra = [] as Array<Record<string, unknown>> } = {}) {
+async function mountMessages({ clearance = 'N2 · Interne', search = '', extra = [] as Array<Record<string, unknown>>, presence = undefined as Record<string, { status: string; at: string }> | undefined } = {}) {
   ui.calls.length = 0;
   ui.logs.length = 0;
   ui.resyncs.count = 0;
@@ -42,6 +42,7 @@ async function mountMessages({ clearance = 'N2 · Interne', search = '', extra =
   ui.handlers.getItsmWorkspaceVersion = async () => ({ version: 7 });
   const store = ui.testStore([], [...conversations(), ...extra]);
   store.profile = { ...store.profile, name: 'user_me', clearance };
+  if (presence) store.presence = presence as never;
   const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement('div');
   document.body.append(container);
@@ -404,4 +405,14 @@ test('accusés de lecture : sous mes messages seulement, d’après le dernier m
   assert.equal($('message-receipt-r1')!.getAttribute('title'), 'Lu par user_agent, user_b, user_c, user_d, user_e');
   assert.equal($('message-receipt-r3')!.textContent, 'Lu par user_b, user_c, user_d et 1 autre(s)', 'user_agent s’est arrêté avant ce message');
   assert.equal($('message-receipt-r2'), null, 'pas d’accusé sous le message d’un autre');
+});
+
+test('présence : une pastille devant chaque membre qui a choisi un statut, précisé s’il n’est pas disponible', async () => {
+  const room = { id: 'C-PRES', title: 'Astreinte', kind: 'Équipe', classification: 'Interne', participants: ['user_me', 'user_busy', 'user_free', 'user_unknown'], readCount: 0, messages: [] };
+  await mountMessages({ extra: [room], presence: { user_busy: { status: 'occupe', at: at(5) }, user_free: { status: 'disponible', at: at(5) } } });
+  await openConversation('C-PRES');
+  assert.equal($('conversation-members')!.textContent, 'user_me · user_busy (ne pas déranger) · user_free · user_unknown');
+  assert.equal($('presence-user_busy')!.getAttribute('aria-label'), 'Ne pas déranger');
+  assert.equal($('presence-user_free')!.getAttribute('aria-label'), 'Disponible');
+  assert.equal($('presence-user_unknown'), null, 'rien pour qui n’a pas choisi de statut');
 });
