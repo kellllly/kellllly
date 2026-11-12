@@ -122,7 +122,7 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
         {!recovery && <button onClick={dismissIssue} aria-label="Masquer l’alerte de synchronisation" className="focus-ring rounded p-1 hover:bg-black/5"><X size={14} /></button>}
       </div>}
-      <div className="px-4 pb-10 pt-5 md:px-8 md:pt-7">
+      <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-5 md:px-8 md:pt-7">
         <div className="mb-6 flex items-start justify-between gap-3"><div className="eyebrow">{page.sub}</div><div className="hidden items-center gap-2 text-[11px] text-muted-foreground sm:flex"><span className="mono">LIBREVILLE</span><span className="h-1 w-1 rounded-full bg-[#bc965f]" /><span>Fuseau WAT</span></div></div>
         {children}
       </div>
