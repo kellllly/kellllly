@@ -18,6 +18,9 @@ export type Message = {
   editedAt?: string; revisions?: { body: string; at?: string }[]; deleted?: boolean; deletedAt?: string;
   /** Reply: the quoted message of the same conversation, shown from its current state. */
   replyToId?: string;
+  /** Forward request sent by the browser; the server answers with forwardedFrom when it certifies the original. */
+  forwardOf?: { conversationId: string; messageId: string };
+  forwardedFrom?: { conversationId: string; messageId: string; author: string; at?: string };
   /** Simulated attachment: description only (no file content), checked by the API. */
   attachment?: { name: string; type: string; size: number; sha256: string; warnings: string[]; acknowledged?: boolean };
 };

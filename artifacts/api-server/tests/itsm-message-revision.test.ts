@@ -142,3 +142,37 @@ test("a deleted or expired message is unpinned; only the Direction pins announce
   const director = { id: "user_director", role: "N1" as const, serviceIds: [] };
   assert.deepEqual((applyWorkspaceUpdate(announcements, proposal, director, later(1)) as Rec).conversations[0].pinnedIds, ["a1"]);
 });
+
+test("a forward is certified only from an internal conversation, with the original text and author", () => {
+  const room = (id: string, extra: Rec = {}) => ({ id, title: id, kind: "Équipe", classification: "Interne", participants: [], readCount: 0, messages: [], ...extra });
+  const original = (id: string, extra: Rec = {}) => ({ id, author: "user_other", body: `Texte ${id}`, at: t0.toISOString(), time: "10:00", ...extra });
+  const base: Rec = { tickets: [], services: [], assets: [], kedb: [], notifications: [], audit: [], conversations: [
+    room("C-SRC", { messages: [original("o1"), original("o2", { expiresAt: later(60).toISOString(), ttlSeconds: 3600 }), original("o3", { deleted: true, body: "" })] }),
+    room("C-DST"),
+    room("C-RES", { classification: "Restreint", messages: [original("r1")] }),
+    room("C-TMP", { kind: "Temporaire", classification: "Restreint", memberIds: ["user_analyst"], expiresAt: later(600).toISOString() }),
+  ] };
+  const forward = (target: string, conversationId: string, messageId: string) => {
+    const next = structuredClone(base);
+    next.conversations.find((c: Rec) => c.id === target).messages.push({ body: "texte forgé par le navigateur", forwardOf: { conversationId, messageId } });
+    const saved = applyWorkspaceUpdate(base, next, analyst, later(1)) as Rec;
+    return { message: saved.conversations.find((c: Rec) => c.id === target).messages.at(-1), audit: saved.audit as Rec[] };
+  };
+  const { message: ok, audit } = forward("C-DST", "C-SRC", "o1");
+  assert.equal(ok.body, "Texte o1", "the text comes from the original, not from the browser");
+  assert.deepEqual(ok.forwardedFrom, { conversationId: "C-SRC", messageId: "o1", author: "user_other", at: t0.toISOString() });
+  assert.equal("forwardOf" in ok, false);
+  assert.deepEqual([audit[0].type, audit[0].sourceConversationId, audit[0].sourceMessageId, audit[0].conversationId], ["itsm.message.forwarded", "C-SRC", "o1", "C-DST"]);
+  assert.ok(!JSON.stringify(audit[0]).includes("Texte o1"), "the journal does not copy the text");
+
+  for (const [target, from, id, why] of [
+    ["C-DST", "C-RES", "r1", "restricted source"], ["C-TMP", "C-SRC", "o1", "temporary target open to external members"],
+    ["C-DST", "C-SRC", "o2", "ephemeral original"], ["C-DST", "C-SRC", "o3", "deleted original"],
+    ["C-SRC", "C-SRC", "o1", "same conversation"], ["C-DST", "C-SRC", "inconnu", "unknown message"],
+  ]) {
+    const { message, audit: events } = forward(target!, from!, id!);
+    assert.equal("forwardedFrom" in message, false, why);
+    assert.equal(message.body, "texte forgé par le navigateur", `${why}: an ordinary message, not certified`);
+    assert.ok(!events.some((event) => event.type === "itsm.message.forwarded"), why);
+  }
+});

@@ -345,3 +345,31 @@ test('épingler un message l’affiche en tête de conversation ; cinq au plus, 
   assert.equal('pinnedIds' in conversation('C-PIN'), false, 'plus d’épingle : la clé disparaît');
   assert.equal($('panel-pinned'), null);
 });
+
+test('transférer un message interne vers une autre conversation, jamais depuis ou vers un canal temporaire', async () => {
+  const room = { id: 'C-FWD', title: 'Transferts reçus', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 2, messages: [
+    message('f1', 'user_me', 'Point d’équipe à 10 h.', { forwardedFrom: { conversationId: 'C-GRP', messageId: 'g1', author: 'user_agent' } }),
+    message('f2', 'user_me', 'Disparaît bientôt', { ttlSeconds: 3600, expiresAt: new Date(Date.now() + 3_600_000).toISOString() }),
+  ] };
+  await mountMessages({ extra: [room] });
+  await openConversation('C-FWD');
+  assert.match($('message-forwarded-f1')!.textContent!, /Transféré · message de .*\(Équipe réseau\)/u);
+  assert.equal($('button-forward-f2'), null, 'un message éphémère ne se transfère pas');
+  await openConversation('C-TMP');
+  assert.equal($('button-forward-t1'), null, 'rien ne sort d’un canal temporaire');
+
+  await openConversation('C-GRP');
+  await click('button-forward-g1');
+  const options = [...($('select-forward-target') as HTMLSelectElement).options].map(o => o.value);
+  assert.ok(options.includes('C-SUP') && options.includes('C-FWD'));
+  assert.ok(!options.includes('C-TMP'), 'pas vers un canal ouvert à des externes');
+  assert.ok(!options.includes('C-ANN'), 'les annonces sont réservées à la Direction');
+  assert.ok(!options.includes('C-GRP'), 'pas vers la même conversation');
+  assert.equal(($('button-confirm-forward') as HTMLButtonElement).disabled, true);
+  await fill('select-forward-target', 'C-FWD');
+  await click('button-confirm-forward');
+  const sent = conversation('C-FWD').messages.at(-1);
+  assert.deepEqual([sent.body, sent.forwardOf], ['Point d’équipe à 10 h.', { conversationId: 'C-GRP', messageId: 'g1' }]);
+  assert.equal(ui.logs.at(-1)!.action, 'Message transféré de la conversation C-GRP vers C-FWD');
+  assert.ok($('message-forwarded-f1'), 'la conversation de destination est ouverte');
+});

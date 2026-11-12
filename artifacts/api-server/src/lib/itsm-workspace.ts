@@ -680,7 +680,7 @@ function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
  * server only: a client copy of one is dropped, so nobody can post an official-
  * looking notice without an author.
  */
-function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set(), quotable: ReadonlySet<string> = new Set()): JsonRecord {
+function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set(), quotable: ReadonlySet<string> = new Set(), forwardSource: (ref: unknown) => JsonRecord | null = () => null): JsonRecord {
   if (typeof message.body !== "string" || !message.body.trim() || message.body.length > 5000) {
     throw new Error("Le message simulé est vide ou trop long.");
   }
@@ -692,6 +692,13 @@ function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, li
   if (typeof message.ticketId === "string" && linkedTicketIds.has(message.ticketId)) allowed.ticketId = message.ticketId;
   // A reply points to an earlier message of the same conversation; the quoted text is never copied.
   if (typeof message.replyToId === "string" && quotable.has(message.replyToId)) allowed.replyToId = message.replyToId;
+  // A forward is certified only when the server finds the original: its text and author then come from it.
+  const forwarded = message.forwardOf === undefined ? null : forwardSource(message.forwardOf);
+  if (forwarded) {
+    allowed.body = forwarded.body;
+    allowed.forwardedFrom = forwarded.forwardedFrom;
+    delete allowed.attachment;
+  }
   return { ...messageExpiry(allowed, now), id: randomUUID(), author: actor.id, at: newStamp(now), time: shortTime(now) };
 }
 const isClientSystemNotice = (message: JsonRecord) => message.system === true;
@@ -1207,7 +1214,7 @@ export function applyWorkspaceUpdate(
     throw new Error("La suppression des conversations est désactivée dans le pilote.");
   }
   const conversations: JsonRecord[] = [];
-  const pinEvents: JsonRecord[] = [];
+  const messageEvents: JsonRecord[] = [];
   for (const proposed of proposedConversations) {
     const id = String(proposed.id ?? "");
     const old = oldConversations.find((conversation) => conversation.id === id);
@@ -1276,6 +1283,18 @@ export function applyWorkspaceUpdate(
       throw new Error("L’historique de messagerie ne peut pas être réécrit.");
     }
     const appended = incomingMessages.slice(oldMessages.length).filter((message) => !isClientSystemNotice(message));
+    // Forwarding (§ 4.1): from an internal, non-temporary conversation the actor can read, to another
+    // conversation that is not open to external members; ephemeral, deleted and system messages stay put.
+    const forwardSource = (ref: unknown): JsonRecord | null => {
+      if (!isRecord(ref) || typeof ref.conversationId !== "string" || typeof ref.messageId !== "string" || ref.conversationId === id) return null;
+      if (old.kind === TEMPORARY_CONVERSATION_KIND) return null;
+      const from = oldConversations.find((conversation) => conversation.id === ref.conversationId);
+      if (!from || from.classification !== "Interne" || from.kind === TEMPORARY_CONVERSATION_KIND || !canSeeConversation(actor, from, now)) return null;
+      const original = records(from.messages).find((message) => message.id === ref.messageId);
+      if (!original || original.system === true || original.deleted === true || original.expired === true
+        || original.expiresAt !== undefined || typeof original.body !== "string" || !original.body) return null;
+      return { body: original.body, forwardedFrom: { conversationId: from.id, messageId: original.id, author: original.author, at: original.at } };
+    };
     const quotableIds = new Set(oldMessages.filter((message) => message.system !== true && message.deleted !== true && message.expired !== true).map((message) => String(message.id)));
     if (appended.length > 0 && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
       throw new ItsmAuthorizationError("Seule la Direction (N1) publie dans les annonces.");
@@ -1285,8 +1304,12 @@ export function applyWorkspaceUpdate(
     }
     const messages = [
       ...oldMessages,
-      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds)),
+      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds, forwardSource)),
     ];
+    for (const message of messages.slice(oldMessages.length)) {
+      if (!isRecord(message.forwardedFrom)) continue;
+      messageEvents.push({ id: randomUUID(), type: "itsm.message.forwarded", action: `Message ${String(message.forwardedFrom.messageId)} transféré de la conversation ${String(message.forwardedFrom.conversationId)} vers ${id}`, actor: actor.id, scope: "Messagerie", conversationId: id, messageId: message.id, sourceConversationId: message.forwardedFrom.conversationId, sourceMessageId: message.forwardedFrom.messageId, at: newStamp(now), time: shortTime(now) });
+    }
     // Pinning (§ 4.1): up to 5 live messages of the conversation, by whoever may post in it; each change is journaled.
     const oldPins = Array.isArray(old.pinnedIds) ? old.pinnedIds.map(String) : [];
     const pinnable = new Set(messages.filter((message) => message.deleted !== true && message.expired !== true).map((message) => String(message.id)));
@@ -1303,7 +1326,7 @@ export function applyWorkspaceUpdate(
       if (isClosedConversation(old, now)) throw new Error("Ce canal temporaire est clos : ses messages épinglés ne changent plus.");
       const changes = [...pins.filter((pin) => !oldPins.includes(pin)).map((pin) => [pin, "épinglé"]), ...oldPins.filter((pin) => !pins.includes(pin)).map((pin) => [pin, "désépinglé"])];
       for (const [messageId, verb] of changes) {
-        pinEvents.push({ id: randomUUID(), type: "itsm.message.pinned", action: `Message ${messageId} ${verb} dans la conversation ${id}`, actor: actor.id, scope: "Messagerie", conversationId: id, messageId, pinned: verb === "épinglé", at: newStamp(now), time: shortTime(now) });
+        messageEvents.push({ id: randomUUID(), type: "itsm.message.pinned", action: `Message ${messageId} ${verb} dans la conversation ${id}`, actor: actor.id, scope: "Messagerie", conversationId: id, messageId, pinned: verb === "épinglé", at: newStamp(now), time: shortTime(now) });
       }
     }
     const { pinnedIds: _stalePins, ...kept } = old;
@@ -1384,7 +1407,7 @@ export function applyWorkspaceUpdate(
         time: shortTime(now),
       };
     });
-  next.audit = retainItsmAuditEvents([...conversionEvents, ...pinEvents, ...additions, ...oldAudit]);
+  next.audit = retainItsmAuditEvents([...conversionEvents, ...messageEvents, ...additions, ...oldAudit]);
 
   // KEDB is generated exclusively by the server when requester confirmation closes a ticket.
   const kedb = records(current.kedb);
