@@ -680,7 +680,7 @@ function messageExpiry(message: JsonRecord, now: Date): JsonRecord {
  * server only: a client copy of one is dropped, so nobody can post an official-
  * looking notice without an author.
  */
-function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set(), quotable: ReadonlySet<string> = new Set(), forwardSource: (ref: unknown) => JsonRecord | null = () => null): JsonRecord {
+function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, linkedTicketIds: ReadonlySet<string> = new Set(), quotable: ReadonlySet<string> = new Set(), forwardSource: (ref: unknown) => JsonRecord | null = () => null, threadRoots: ReadonlySet<string> = new Set()): JsonRecord {
   if (typeof message.body !== "string" || !message.body.trim() || message.body.length > 5000) {
     throw new Error("Le message simulé est vide ou trop long.");
   }
@@ -692,6 +692,8 @@ function clientMessage(message: JsonRecord, actor: WorkspaceActor, now: Date, li
   if (typeof message.ticketId === "string" && linkedTicketIds.has(message.ticketId)) allowed.ticketId = message.ticketId;
   // A reply points to an earlier message of the same conversation; the quoted text is never copied.
   if (typeof message.replyToId === "string" && quotable.has(message.replyToId)) allowed.replyToId = message.replyToId;
+  // A thread reply points to its root message; an unknown root is dropped and the message joins the main flow.
+  if (typeof message.threadId === "string" && threadRoots.has(message.threadId)) allowed.threadId = message.threadId;
   // A forward is certified only when the server finds the original: its text and author then come from it.
   const forwarded = message.forwardOf === undefined ? null : forwardSource(message.forwardOf);
   if (forwarded) {
@@ -1298,6 +1300,8 @@ export function applyWorkspaceUpdate(
       return { body: original.body, forwardedFrom: { conversationId: from.id, messageId: original.id, author: original.author, at: original.at } };
     };
     const quotableIds = new Set(oldMessages.filter((message) => message.system !== true && message.deleted !== true && message.expired !== true).map((message) => String(message.id)));
+    // Threads have one level: a root is a member's message that is not itself a thread reply. A deleted root keeps its thread.
+    const threadRootIds = new Set(oldMessages.filter((message) => message.system !== true && typeof message.threadId !== "string").map((message) => String(message.id)));
     if (appended.length > 0 && old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
       throw new ItsmAuthorizationError("Seule la Direction (N1) publie dans les annonces.");
     }
@@ -1306,7 +1310,7 @@ export function applyWorkspaceUpdate(
     }
     const messages = [
       ...oldMessages,
-      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds, forwardSource)),
+      ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds, forwardSource, threadRootIds)),
     ];
     for (const message of messages.slice(oldMessages.length)) {
       if (!isRecord(message.forwardedFrom)) continue;

@@ -96,6 +96,23 @@ test("a reply keeps a reference to an earlier message of the conversation, never
   assert.equal("replyToId" in reply(id, gone), false, "a deleted message cannot be quoted");
 });
 
+test("a thread reply keeps its root; threads have one level and survive the deletion of their root", () => {
+  const { store, id } = sent();
+  const post = (threadId: unknown, base: Rec = store) => {
+    const next = structuredClone(base);
+    next.conversations[0].messages.push({ body: "Dans le fil", threadId });
+    return applyWorkspaceUpdate(base, next, other, later(1)) as Rec;
+  };
+  const last = (saved: Rec) => saved.conversations[0].messages.at(-1);
+  const threaded = post(id);
+  assert.equal(last(threaded).threadId, id);
+  assert.equal("threadId" in last(post("inconnu")), false, "unknown root: the message joins the main flow");
+  assert.equal("threadId" in last(post(42)), false);
+  assert.equal("threadId" in last(post(last(threaded).id, threaded)), false, "a thread reply cannot be the root of another thread");
+  const gone = reviseMessage(threaded, "C-1", id, { delete: true }, analyst, later(2)) as Rec;
+  assert.equal(last(post(id, gone)).threadId, id, "the thread stays open under a deleted root");
+});
+
 test("members pin up to 5 live messages; each pin and unpin is journaled", () => {
   const { store, id } = sent();
   const pin = (base: Rec, pinnedIds: unknown, who = analyst) => {

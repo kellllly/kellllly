@@ -305,6 +305,49 @@ test('l’auteur corrige un message pendant 5 minutes et le supprime ensuite, pa
   assert.equal(ui.resyncs.count, 2);
 });
 
+test('un fil regroupe les réponses à un message, hors du flux principal de la conversation', async () => {
+  const room = { id: 'C-FIL', title: 'Fils', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 4, messages: [
+    message('f1', 'user_agent', 'Qui prend l’astreinte samedi ?'),
+    message('f2', 'user_agent', 'Je peux la prendre.', { threadId: 'f1' }),
+    message('f3', 'user_agent', 'Rappel : inventaire lundi.'),
+    message('f4', 'user_me', 'Merci, noté pour samedi.', { threadId: 'f1', replyToId: 'f2' }),
+  ] };
+  const listed = () => [...document.querySelectorAll('[data-testid="list-messages"] [data-message-id]')].map((e) => (e as HTMLElement).dataset.messageId);
+  await mountMessages({ extra: [room] });
+  await openConversation('C-FIL');
+  assert.deepEqual(listed(), ['f1', 'f3'], 'les réponses du fil ne sont pas dans le flux principal');
+  assert.match($('button-open-thread-f1')!.textContent!, /2 réponse\(s\) dans le fil/u);
+  assert.equal($('button-thread-f1'), null, 'un fil existe déjà sur ce message');
+  await click('button-open-thread-f1');
+  assert.deepEqual(listed(), ['f1', 'f2', 'f4']);
+  assert.match($('banner-thread')!.textContent!, /2 réponse\(s\)/u);
+  assert.equal($('button-thread-f2'), null, 'pas de fil dans un fil');
+  await fill('input-message', 'Je confirme.');
+  await submitForm('button-send');
+  const sent = conversation('C-FIL').messages.at(-1);
+  assert.deepEqual([sent.body, sent.threadId], ['Je confirme.', 'f1']);
+  assert.deepEqual(listed(), ['f1', 'f2', 'f4', sent.id]);
+  await click('button-close-thread');
+  assert.deepEqual(listed(), ['f1', 'f3']);
+  assert.match($('button-open-thread-f1')!.textContent!, /3 réponse/u);
+  await click('button-thread-f3');
+  assert.deepEqual(listed(), ['f3'], 'nouveau fil : le message d’origine seul');
+  await fill('input-message', 'Je serai absent lundi.');
+  await submitForm('button-send');
+  assert.equal(conversation('C-FIL').messages.at(-1).threadId, 'f3');
+});
+
+test('un lien vers un message d’un fil ouvre ce fil', async () => {
+  const room = { id: 'C-FIL', title: 'Fils', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 2, messages: [
+    message('f1', 'user_agent', 'Qui prend l’astreinte samedi ?'),
+    message('f2', 'user_agent', 'Je peux la prendre.', { threadId: 'f1' }),
+  ] };
+  window.HTMLElement.prototype.scrollIntoView = () => {}; // absent de jsdom
+  await mountMessages({ extra: [room], search: '?c=C-FIL&m=f2' });
+  assert.ok($('banner-thread'), 'le fil du message visé est ouvert');
+  assert.ok(document.querySelector('[data-message-id="f2"]'));
+});
+
 test('répondre à un message le cite au-dessus de la réponse ; la citation suit l’état du message d’origine', async () => {
   const room = { id: 'C-REP', title: 'Réponses', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 3, messages: [
     message('r1', 'user_agent', 'Le serveur de fichiers redémarre à 18 h.'),

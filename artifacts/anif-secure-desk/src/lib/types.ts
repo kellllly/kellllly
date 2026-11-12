@@ -18,6 +18,8 @@ export type Message = {
   editedAt?: string; revisions?: { body: string; at?: string }[]; deleted?: boolean; deletedAt?: string;
   /** Reply: the quoted message of the same conversation, shown from its current state. */
   replyToId?: string;
+  /** Thread reply: the root message of the same conversation; shown in that thread, not in the main flow. */
+  threadId?: string;
   /** Forward request sent by the browser; the server answers with forwardedFrom when it certifies the original. */
   forwardOf?: { conversationId: string; messageId: string };
   forwardedFrom?: { conversationId: string; messageId: string; author: string; at?: string };
