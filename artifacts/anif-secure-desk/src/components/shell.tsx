@@ -6,6 +6,7 @@ import { useClerk } from '@clerk/react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useNow, useStore } from '@/lib/store';
 import { useDisplayName } from '@/hooks/use-display-name';
+import { usePeople } from '@/hooks/use-people';
 import { deriveNotifications, unreadOf } from '@/lib/domain';
 import { formatWAT } from '@/lib/itsm';
 import { SyncRecoveryActions } from './sync-recovery-actions';
@@ -129,7 +130,8 @@ function NotificationBell() {
   const now = useNow(15_000);
   const [open, setOpen] = useState(false);
   const { name: displayName } = useDisplayName();
-  const items = useMemo(() => deriveNotifications(store, now, [store.profile.name, displayName]), [store, now, displayName]);
+  const { person } = usePeople();
+  const items = useMemo(() => deriveNotifications(store, now, [store.profile.name, displayName], person), [store, now, displayName, person]);
   const unread = items.filter(n => !n.read).length;
   const markRead = (ids: string[]) => setStore(s => ({ ...s, notifRead: Array.from(new Set([...s.notifRead, ...ids])) }));
   return <Popover open={open} onOpenChange={setOpen}>
@@ -139,7 +141,7 @@ function NotificationBell() {
     <PopoverContent align="end" className="w-[340px] max-w-[calc(100vw-1.5rem)] rounded-[14px] border-border bg-card p-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><div className="eyebrow">NOTIFICATIONS DU PILOTE</div><div className="mt-0.5 text-[13px] font-semibold">{unread} à consulter</div></div>{unread > 0 && <button data-testid="button-notifications-read-all" onClick={() => { markRead(items.map(n => n.id)); log('Notifications marquées comme lues', 'Notifications'); }} className="focus-ring rounded-lg px-2 py-1 text-[10px] font-semibold text-primary hover:bg-muted">Tout marquer lu</button>}</div>
       <div className="max-h-[360px] overflow-y-auto">
-        {items.length === 0 && <div className="grid place-items-center px-6 py-10 text-center"><BellOff size={18} className="text-muted-foreground" /><div className="mt-2 text-[12px] font-semibold">Aucune échéance proche</div><div className="mt-1 text-[11px] text-muted-foreground">Les seuils SLA, escalades et mentions apparaîtront ici.</div></div>}
+        {items.length === 0 && <div className="grid place-items-center px-6 py-10 text-center"><BellOff size={18} className="text-muted-foreground" /><div className="mt-2 text-[12px] font-semibold">Aucune notification</div><div className="mt-1 text-[11px] text-muted-foreground">Les seuils SLA, escalades et mentions apparaîtront ici.</div></div>}
         {items.map(n => <div key={n.id} className={`flex gap-3 border-b border-border/60 px-4 py-3 ${n.read ? 'opacity-60' : ''}`}>
           <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.tone === 'red' ? 'bg-[#c0574a]' : n.tone === 'amber' ? 'bg-[#c88e43]' : 'bg-[#537b8d]'}`} />
           <div className="min-w-0 flex-1">

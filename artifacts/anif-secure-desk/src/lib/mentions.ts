@@ -15,13 +15,13 @@ export function mentionOf(body: string, myNames: readonly string[]): 'me' | 'all
 export type MentionNotification = { id: string; conversationId: string; messageId: string; title: string; body: string; at: string };
 
 /** One notification per live message from someone else that mentions me or everyone. */
-export function mentionNotifications(conversations: readonly Conversation[], me: string, myNames: readonly string[]): MentionNotification[] {
+export function mentionNotifications(conversations: readonly Conversation[], me: string, myNames: readonly string[], nameOf: (id: string) => string = id => id): MentionNotification[] {
   return conversations.flatMap(c => c.messages.flatMap(m => {
     if (m.author === me || m.system || m.deleted || m.expired || !m.at) return [];
     const kind = mentionOf(m.body, myNames);
     if (!kind) return [];
     const excerpt = m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body;
-    return [{ id: `mention:${m.id}`, conversationId: c.id, messageId: m.id, title: kind === 'all' ? `Message à tous · ${c.title}` : `Vous êtes mentionné · ${c.title}`, body: excerpt, at: m.at }];
+    return [{ id: `mention:${m.id}`, conversationId: c.id, messageId: m.id, title: kind === 'all' ? `Message à tous · ${c.title}` : `Vous êtes mentionné · ${c.title}`, body: `${nameOf(m.author)} : ${excerpt}`, at: m.at }];
   }));
 }
 

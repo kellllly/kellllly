@@ -220,7 +220,7 @@ export function fmtDuration(ms: number) {
 export type DerivedNotification = { id: string; ticketId: string; title: string; body: string; tone: 'amber' | 'red' | 'blue'; at: string; read: boolean; href?: string };
 
 /** `myNames` are the identifiers others may @mention me by (user id, display name). */
-export function deriveNotifications(s: Store, now: number, myNames: readonly string[] = [s.profile.name]): DerivedNotification[] {
+export function deriveNotifications(s: Store, now: number, myNames: readonly string[] = [s.profile.name], nameOf?: (id: string) => string): DerivedNotification[] {
   const list: DerivedNotification[] = [];
   for (const t of s.tickets) {
     if (!isOpen(t) || t.status === 'Résolu') continue;
@@ -231,7 +231,7 @@ export function deriveNotifications(s: Store, now: number, myNames: readonly str
       list.push({ id: `${t.id}:res:${res.state}`, ticketId: t.id, title: res.state === 'breach' ? `Résolution dépassée · ${t.id}` : `Résolution bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.resolveBy, 'datetime')}`, tone: res.state === 'breach' ? 'red' : 'amber', at: deadlines.resolveBy, read: false });
   }
   for (const n of s.notifications) list.push({ ...n, tone: 'blue', read: false });
-  for (const m of mentionNotifications(s.conversations, s.profile.name, myNames))
+  for (const m of mentionNotifications(s.conversations, s.profile.name, myNames, nameOf))
     list.push({ id: m.id, ticketId: '', title: m.title, body: m.body, tone: 'blue', at: m.at, read: false, href: `/messages?c=${encodeURIComponent(m.conversationId)}&m=${encodeURIComponent(m.messageId)}` });
   return list.map(n => ({ ...n, read: s.notifRead.includes(n.id) })).sort((a, b) => Number(a.read) - Number(b.read) || b.at.localeCompare(a.at));
 }

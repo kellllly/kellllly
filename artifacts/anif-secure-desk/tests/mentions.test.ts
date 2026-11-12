@@ -30,6 +30,8 @@ test('mention notifications skip my own, system, deleted and expired messages', 
   const list = mentionNotifications([conversation], 'user_me', names);
   assert.deepEqual(list.map(n => [n.id, n.title]), [['mention:a', 'Vous êtes mentionné · Équipe réseau'], ['mention:bb', 'Message à tous · Équipe réseau']]);
   assert.deepEqual([list[0]!.conversationId, list[0]!.messageId], ['C-1', 'a']);
+  assert.equal(list[0]!.body, 'user_other : @Nadia Moussavou, tu peux regarder ?');
+  assert.equal(mentionNotifications([conversation], 'user_me', names, id => (id === 'user_other' ? 'Jean Obame' : id))[0]!.body, 'Jean Obame : @Nadia Moussavou, tu peux regarder ?', 'l’auteur est nommé, utile dans un échange bilatéral');
 });
 
 test('mentions of known names are split out for highlighting', () => {

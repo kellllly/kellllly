@@ -10,6 +10,7 @@ export const clerk = {
   dialogs: 0,
 };
 const isHint = (value: unknown) => Boolean(value && typeof value === 'object' && 'clerk_error' in value);
+export const useClerk = () => ({ signOut: async () => undefined });
 export const useUser = () => ({ user: clerk.user, isLoaded: true, isSignedIn: Boolean(clerk.user) });
 export function useReverification<A extends unknown[], R>(call: (...args: A) => Promise<R>) {
   return async (...args: A) => {

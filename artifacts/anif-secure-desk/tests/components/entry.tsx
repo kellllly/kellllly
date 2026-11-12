@@ -16,3 +16,4 @@ export { default as GovernancePage } from '@/pages/governance';
 export { default as AuditPage } from '@/pages/audit';
 export { normalizeTicket } from '@/lib/seed';
 export { Watermark } from '@/components/watermark';
+export { Shell } from '@/components/shell';
