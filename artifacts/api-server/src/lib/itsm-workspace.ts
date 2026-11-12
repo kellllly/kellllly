@@ -916,6 +916,8 @@ export function applyWorkspaceUpdate(
   requirePermission(actor, "saveWorkspace");
   const next = structuredClone(current);
   const normalized = structuredClone(submitted);
+  // Read receipts are computed by the server; whatever the browser echoes back is dropped.
+  if (Array.isArray(normalized.conversations)) normalized.conversations = records(normalized.conversations).map(({ readBy: _readBy, ...conversation }) => conversation);
   const oldTickets = records(current.tickets);
   const oldConversations = records(current.conversations);
   if (actor.role === "N4") {
@@ -1331,13 +1333,24 @@ export function applyWorkspaceUpdate(
     }
     const { pinnedIds: _stalePins, ...kept } = old;
     conversations.push({ ...kept, messages, ...(pins.length ? { pinnedIds: pins } : {}) });
+    const readCount = Math.max(0, Math.min(messages.length, Number(proposed.readCount) || 0));
     const readStates = isRecord(next.readStates) ? next.readStates : {};
     const userReadStates = isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
     readStates[actor.id] = {
       ...userReadStates,
-      [id]: Math.max(0, Math.min(messages.length, Number(proposed.readCount) || 0)),
+      [id]: readCount,
     };
     next.readStates = readStates;
+    // Receipt: the time of the last message read. It only moves forward (marking unread keeps it) and,
+    // unlike the count, it stays right when expired messages are purged.
+    const lastRead = messages[readCount - 1]?.at;
+    if (typeof lastRead === "string") {
+      const receipts = isRecord(next.readReceipts) ? next.readReceipts : {};
+      const byReader = isRecord(receipts[id]) ? receipts[id] as JsonRecord : {};
+      const previous = typeof byReader[actor.id] === "string" ? byReader[actor.id] as string : "";
+      if (Date.parse(lastRead) > (Date.parse(previous) || 0)) receipts[id] = { ...byReader, [actor.id]: lastRead };
+      next.readReceipts = receipts;
+    }
   }
   // A new incident converted from a support message is announced in that
   // channel by the server (the browser's own notice is dropped above).
@@ -1491,8 +1504,16 @@ export function mergeLocalExamples(
   return importMerge(current, imported, actor, now);
 }
 
+/** Who read up to when, shown only to people who wrote in the conversation (receipts serve the sender). */
+function readByFor(readReceipts: unknown, conversation: JsonRecord, actor: WorkspaceActor): { readBy?: JsonRecord } {
+  const byReader = isRecord(readReceipts) && isRecord(readReceipts[String(conversation.id)]) ? readReceipts[String(conversation.id)] as JsonRecord : {};
+  if (!records(conversation.messages).some((message) => message.author === actor.id && !message.system)) return {};
+  const readBy = Object.fromEntries(Object.entries(byReader).filter(([reader, at]) => reader !== actor.id && typeof at === "string"));
+  return Object.keys(readBy).length ? { readBy } : {};
+}
+
 export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = new Date()): JsonRecord {
-  const { readStates, ...visibleStore } = store;
+  const { readStates, readReceipts, ...visibleStore } = store;
   const actorReads = isRecord(readStates) && isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
   const scopedTickets = records(store.tickets).filter((ticket) =>
     actor.role !== "N4" || actor.serviceIds.includes(String(ticket.serviceId ?? "")));
@@ -1508,6 +1529,7 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = ne
     conversations: records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation, now)).map((conversation) => ({
       ...conversation,
       readCount: Number(actorReads[String(conversation.id)] ?? conversation.readCount) || 0,
+      ...readByFor(readReceipts, conversation, actor),
     })),
     services: actor.role === "N5" ? [] : scopedServices,
     assets: actor.role === "N4" ? scopedAssets : hiddenCollections ? [] : records(store.assets),

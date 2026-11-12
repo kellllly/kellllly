@@ -30,6 +30,8 @@ export type Conversation = {
   readCount: number; messages: Message[];
   /** Up to 5 pinned messages, kept by the server (unknown references dropped). */
   pinnedIds?: string[];
+  /** Read receipts from the server: reader id → time of the last message they read. Sent only to authors. */
+  readBy?: Record<string, string>;
   /** Salon d’enquête : comptes invités (N1 créateur + N2), seuls autorisés avec les N1. */
   memberIds?: string[];
   /** Canal temporaire : durée demandée à la création, date de clôture fixée par le serveur. */

@@ -391,3 +391,17 @@ test('mentionner : le menu @ insère @tous ou un membre dans le brouillon, et le
   await openConversation('C-ANN');
   assert.equal($('select-mention'), null, 'pas de mention là où l’on ne peut pas écrire');
 });
+
+test('accusés de lecture : sous mes messages seulement, d’après le dernier message lu par chacun ; au-delà de trois lecteurs, un résumé', async () => {
+  const room = { id: 'C-LU', title: 'Lecture', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 3, messages: [
+    message('r1', 'user_me', 'Première consigne', { at: at(30) }),
+    message('r2', 'user_agent', 'Bien reçu', { at: at(20) }),
+    message('r3', 'user_me', 'Seconde consigne', { at: at(10) }),
+  ], readBy: { user_agent: at(20), user_b: at(10), user_c: at(10), user_d: at(10), user_e: at(10) } };
+  await mountMessages({ extra: [room] });
+  await openConversation('C-LU');
+  assert.equal($('message-receipt-r1')!.textContent, 'Lu par user_agent, user_b, user_c et 2 autre(s)');
+  assert.equal($('message-receipt-r1')!.getAttribute('title'), 'Lu par user_agent, user_b, user_c, user_d, user_e');
+  assert.equal($('message-receipt-r3')!.textContent, 'Lu par user_b, user_c, user_d et 1 autre(s)', 'user_agent s’est arrêté avant ce message');
+  assert.equal($('message-receipt-r2'), null, 'pas d’accusé sous le message d’un autre');
+});
