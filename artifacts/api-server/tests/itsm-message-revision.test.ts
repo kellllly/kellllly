@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { applyWorkspaceUpdate, reviseMessage } from "../src/lib/itsm-workspace.ts";
+import { applyWorkspaceUpdate, purgeExpiredMessages, reviseMessage } from "../src/lib/itsm-workspace.ts";
 import { ItsmAuthorizationError } from "../src/lib/itsm-rbac.ts";
 
 type Rec = Record<string, any>;
@@ -94,4 +94,51 @@ test("a reply keeps a reference to an earlier message of the conversation, never
   assert.equal("replyToId" in reply(42), false);
   const gone = reviseMessage(store, "C-1", id, { delete: true }, analyst, later(1)) as Rec;
   assert.equal("replyToId" in reply(id, gone), false, "a deleted message cannot be quoted");
+});
+
+test("members pin up to 5 live messages; each pin and unpin is journaled", () => {
+  const { store, id } = sent();
+  const pin = (base: Rec, pinnedIds: unknown, who = analyst) => {
+    const next = structuredClone(base);
+    next.conversations[0].pinnedIds = pinnedIds;
+    return applyWorkspaceUpdate(base, next, who, later(1)) as Rec;
+  };
+  const pinned = pin(store, [id]);
+  assert.deepEqual(pinned.conversations[0].pinnedIds, [id]);
+  assert.deepEqual([pinned.audit[0].type, pinned.audit[0].messageId, pinned.audit[0].pinned], ["itsm.message.pinned", id, true]);
+  assert.match(pinned.audit[0].action, /épinglé dans la conversation C-1/);
+  const kept = applyWorkspaceUpdate(pinned, structuredClone(pinned), analyst, later(2)) as Rec;
+  assert.equal(kept.audit.length, pinned.audit.length, "an unchanged pin list adds nothing to the journal");
+  const unpinned = pin(pinned, [], other);
+  assert.equal("pinnedIds" in unpinned.conversations[0], false);
+  assert.equal(unpinned.audit[0].pinned, false);
+  assert.match(unpinned.audit[0].action, /désépinglé/);
+
+  for (const bad of ["x", [42]]) assert.throws(() => pin(store, bad), /épinglés est invalide/);
+  assert.deepEqual(pin(store, [id, id, "pas-encore-enregistré"]).conversations[0].pinnedIds, [id], "duplicates and unknown references dropped");
+  const many = structuredClone(store);
+  many.conversations[0].messages.push(...Array.from({ length: 5 }, (_, i) => ({ body: `M${i}` })));
+  const six = applyWorkspaceUpdate(store, many, analyst, later(1)) as Rec;
+  assert.throws(() => pin(six, six.conversations[0].messages.map((m: Rec) => m.id)), /au plus 5/);
+});
+
+test("a deleted or expired message is unpinned; only the Direction pins announcements", () => {
+  const { store, id } = sent();
+  const next = structuredClone(store);
+  next.conversations[0].pinnedIds = [id];
+  const pinned = applyWorkspaceUpdate(store, next, analyst, later(1)) as Rec;
+  const gone = reviseMessage(pinned, "C-1", id, { delete: true }, analyst, later(2)) as Rec;
+  assert.equal("pinnedIds" in gone.conversations[0], false);
+
+  const ephemeral = structuredClone(pinned);
+  ephemeral.conversations[0].messages[0].expiresAt = later(3).toISOString();
+  const purged = purgeExpiredMessages(ephemeral, later(4)).store as Rec;
+  assert.equal("pinnedIds" in purged.conversations[0], false);
+
+  const announcements = { ...structuredClone(store), conversations: [{ id: "C-A", title: "Annonces", kind: "Annonce", classification: "Interne", participants: [], readCount: 0, messages: [{ id: "a1", author: "user_director", body: "Info", system: true, at: t0.toISOString(), time: "10:00" }] }] };
+  const proposal = structuredClone(announcements);
+  proposal.conversations[0].pinnedIds = ["a1"];
+  assert.throws(() => applyWorkspaceUpdate(announcements, proposal, analyst, later(1)), ItsmAuthorizationError);
+  const director = { id: "user_director", role: "N1" as const, serviceIds: [] };
+  assert.deepEqual((applyWorkspaceUpdate(announcements, proposal, director, later(1)) as Rec).conversations[0].pinnedIds, ["a1"]);
 });

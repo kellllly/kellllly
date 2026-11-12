@@ -62,7 +62,7 @@ export function normalizeTicket(t: any): Ticket {
 export function normalizeConversation(c: any): Conversation {
   const messages = Array.isArray(c.messages) ? c.messages : [];
   const readCount = typeof c.readCount === 'number' ? c.readCount : Math.max(0, messages.length - (Number(c.unread) || 0));
-  return { id: c.id, title: c.title, kind: c.kind ?? 'Groupe', classification: c.classification ?? 'Interne', participants: c.participants ?? [], readCount, messages, ...(Array.isArray(c.memberIds) ? { memberIds: c.memberIds } : {}), ...(typeof c.expiresAt === 'string' ? { expiresAt: c.expiresAt } : {}) };
+  return { id: c.id, title: c.title, kind: c.kind ?? 'Groupe', classification: c.classification ?? 'Interne', participants: c.participants ?? [], readCount, messages, ...(Array.isArray(c.memberIds) ? { memberIds: c.memberIds } : {}), ...(typeof c.expiresAt === 'string' ? { expiresAt: c.expiresAt } : {}), ...(Array.isArray(c.pinnedIds) && c.pinnedIds.length ? { pinnedIds: c.pinnedIds } : {}) };
 }
 
 const LEGACY_CONVERSATIONS = [

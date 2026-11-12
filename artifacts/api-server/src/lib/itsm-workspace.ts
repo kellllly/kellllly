@@ -713,7 +713,12 @@ export function purgeExpiredMessages(store: JsonRecord, now = new Date()): { sto
       changed = true;
       return { id: message.id, author: message.author, at: message.at, time: message.time, ttlSeconds: message.ttlSeconds, expiresAt: message.expiresAt, expired: true, body: "" };
     });
-    return changed ? { ...conversation, messages } : conversation;
+    if (!changed) return conversation;
+    // An erased message is no longer pinned.
+    const live = new Set(messages.filter((message) => message.expired !== true).map((message) => message.id));
+    const { pinnedIds, ...rest } = conversation;
+    const pins = Array.isArray(pinnedIds) ? pinnedIds.filter((pin) => live.has(pin)) : [];
+    return { ...rest, messages, ...(pins.length ? { pinnedIds: pins } : {}) };
   });
   if (count === 0) return { store, count };
   const event = {
@@ -816,6 +821,7 @@ export function postTemporaryChannelMessage(
 
 /** CDC-ANIF-MSG § 4.1: a message can be corrected for 5 minutes; deletion has no deadline. */
 export const MESSAGE_EDIT_WINDOW_MS = 5 * 60_000;
+export const MAX_PINNED_MESSAGES = 5;
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
 /**
@@ -869,9 +875,11 @@ export function reviseMessage(
   const nextMessages = [...messages];
   nextMessages[position] = revised;
   const nextConversations = records(next.conversations);
-  nextConversations[index] = { ...conversation, messages: nextMessages };
-  next.conversations = nextConversations;
   const deleted = "delete" in change;
+  const pinnedIds = Array.isArray(conversation.pinnedIds) ? conversation.pinnedIds.filter((pin) => !(deleted && pin === messageId)) : [];
+  const { pinnedIds: _pins, ...rest } = conversation;
+  nextConversations[index] = { ...rest, messages: nextMessages, ...(pinnedIds.length ? { pinnedIds } : {}) };
+  next.conversations = nextConversations;
   next.audit = retainItsmAuditEvents([{
     id: randomUUID(),
     type: deleted ? "itsm.message.deleted" : "itsm.message.edited",
@@ -1199,6 +1207,7 @@ export function applyWorkspaceUpdate(
     throw new Error("La suppression des conversations est désactivée dans le pilote.");
   }
   const conversations: JsonRecord[] = [];
+  const pinEvents: JsonRecord[] = [];
   for (const proposed of proposedConversations) {
     const id = String(proposed.id ?? "");
     const old = oldConversations.find((conversation) => conversation.id === id);
@@ -1257,8 +1266,8 @@ export function applyWorkspaceUpdate(
     }
     const oldMessages = records(old.messages);
     const incomingMessages = records(proposed.messages);
-    const { readCount: _oldReadCount, messages: _oldMessageContent, ...oldContent } = old;
-    const { readCount: _submittedReadCount, messages: _submittedMessageContent, ...submittedContent } = proposed;
+    const { readCount: _oldReadCount, messages: _oldMessageContent, pinnedIds: _oldPins, ...oldContent } = old;
+    const { readCount: _submittedReadCount, messages: _submittedMessageContent, pinnedIds: submittedPins, ...submittedContent } = proposed;
     if (!jsonEqual(oldContent, submittedContent)) {
       throw new Error("Les informations d’une conversation existante ne peuvent pas être réécrites.");
     }
@@ -1278,7 +1287,27 @@ export function applyWorkspaceUpdate(
       ...oldMessages,
       ...appended.map((message) => clientMessage(message, actor, now, ticketsLinkedTo(id), quotableIds)),
     ];
-    conversations.push({ ...old, messages });
+    // Pinning (§ 4.1): up to 5 live messages of the conversation, by whoever may post in it; each change is journaled.
+    const oldPins = Array.isArray(old.pinnedIds) ? old.pinnedIds.map(String) : [];
+    const pinnable = new Set(messages.filter((message) => message.deleted !== true && message.expired !== true).map((message) => String(message.id)));
+    if (submittedPins !== undefined && (!Array.isArray(submittedPins) || submittedPins.some((pin) => typeof pin !== "string"))) {
+      throw new Error("La liste des messages épinglés est invalide.");
+    }
+    // Unknown references (a message not yet saved, or since erased) are dropped, as for replies.
+    const pins = submittedPins === undefined ? oldPins : [...new Set(submittedPins as string[])].filter((pin) => pinnable.has(pin));
+    if (pins.length > MAX_PINNED_MESSAGES) throw new Error(`Une conversation épingle au plus ${MAX_PINNED_MESSAGES} messages.`);
+    if (!jsonEqual(pins, oldPins)) {
+      if (old.kind === ANNOUNCEMENT_CONVERSATION_KIND && actor.role !== "N1") {
+        throw new ItsmAuthorizationError("Seule la Direction (N1) épingle dans les annonces.");
+      }
+      if (isClosedConversation(old, now)) throw new Error("Ce canal temporaire est clos : ses messages épinglés ne changent plus.");
+      const changes = [...pins.filter((pin) => !oldPins.includes(pin)).map((pin) => [pin, "épinglé"]), ...oldPins.filter((pin) => !pins.includes(pin)).map((pin) => [pin, "désépinglé"])];
+      for (const [messageId, verb] of changes) {
+        pinEvents.push({ id: randomUUID(), type: "itsm.message.pinned", action: `Message ${messageId} ${verb} dans la conversation ${id}`, actor: actor.id, scope: "Messagerie", conversationId: id, messageId, pinned: verb === "épinglé", at: newStamp(now), time: shortTime(now) });
+      }
+    }
+    const { pinnedIds: _stalePins, ...kept } = old;
+    conversations.push({ ...kept, messages, ...(pins.length ? { pinnedIds: pins } : {}) });
     const readStates = isRecord(next.readStates) ? next.readStates : {};
     const userReadStates = isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
     readStates[actor.id] = {
@@ -1355,7 +1384,7 @@ export function applyWorkspaceUpdate(
         time: shortTime(now),
       };
     });
-  next.audit = retainItsmAuditEvents([...conversionEvents, ...additions, ...oldAudit]);
+  next.audit = retainItsmAuditEvents([...conversionEvents, ...pinEvents, ...additions, ...oldAudit]);
 
   // KEDB is generated exclusively by the server when requester confirmation closes a ticket.
   const kedb = records(current.kedb);

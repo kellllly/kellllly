@@ -25,6 +25,8 @@ export type Conversation = {
   id: string; title: string; kind: string; classification: string; participants: string[];
   /** Nombre de messages déjà lus (les non lus sont dérivés : messages.length - readCount). */
   readCount: number; messages: Message[];
+  /** Up to 5 pinned messages, kept by the server (unknown references dropped). */
+  pinnedIds?: string[];
   /** Salon d’enquête : comptes invités (N1 créateur + N2), seuls autorisés avec les N1. */
   memberIds?: string[];
   /** Canal temporaire : durée demandée à la création, date de clôture fixée par le serveur. */

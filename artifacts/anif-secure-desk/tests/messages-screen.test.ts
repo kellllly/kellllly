@@ -326,3 +326,22 @@ test('répondre à un message le cite au-dessus de la réponse ; la citation sui
   assert.equal($('panel-reply'), null, 'la réponse envoyée, la citation disparaît du champ de saisie');
   assert.match($(`message-quote-${sent.id}`)!.textContent!, /Le serveur de fichiers redémarre à 18 h\./u);
 });
+
+test('épingler un message l’affiche en tête de conversation ; cinq au plus, et on peut le désépingler', async () => {
+  const room = { id: 'C-PIN', title: 'Épingles', kind: 'Équipe', classification: 'Interne', participants: ['user_me'], readCount: 7, pinnedIds: ['p1', 'p2', 'p3', 'p4'], messages: [
+    ...['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map(id => message(id, 'user_agent', `Consigne ${id}`)),
+    message('p7', 'user_agent', '', { deleted: true }),
+  ] };
+  await mountMessages({ extra: [room] });
+  await openConversation('C-PIN');
+  assert.match($('panel-pinned')!.textContent!, /4\/5.*Consigne p1.*Consigne p4/su);
+  assert.equal($('button-pin-p7'), null, 'un message supprimé ne s’épingle pas');
+  await click('button-pin-p5');
+  assert.deepEqual(conversation('C-PIN').pinnedIds, ['p1', 'p2', 'p3', 'p4', 'p5']);
+  assert.equal(ui.logs.at(-1)!.action, 'Message épinglé dans la conversation C-PIN');
+  assert.equal($('button-pin-p6'), null, 'cinq épingles : plus d’ajout possible');
+  assert.equal($('button-pin-p1')!.getAttribute('aria-pressed'), 'true');
+  for (const id of ['p1', 'p2', 'p3', 'p4', 'p5']) await click(`button-pin-${id}`);
+  assert.equal('pinnedIds' in conversation('C-PIN'), false, 'plus d’épingle : la clé disparaît');
+  assert.equal($('panel-pinned'), null);
+});
