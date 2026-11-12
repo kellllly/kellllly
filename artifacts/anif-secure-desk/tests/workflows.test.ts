@@ -157,3 +157,13 @@ test('notifications follow active SLA state and honor locally read identifiers',
   store.notifRead.push(first.id);
   assert.equal(deriveNotifications(store, now).find(n => n.id === first.id)?.read, true);
 });
+
+test('a mention of my display name becomes a notification that links to the message', () => {
+  const store = migrate(null);
+  const conversation = store.conversations[0]!;
+  conversation.messages.push({ id: 'mx', author: 'someone_else', body: 'Peux-tu relire, @Awa Ndong ?', time: '', at: '2026-11-12T09:00:00Z' });
+  const mention = deriveNotifications(store, Date.now(), [store.profile.name, 'Awa Ndong']).find(n => n.id === 'mention:mx');
+  assert.equal(mention?.href, `/messages?c=${encodeURIComponent(conversation.id)}&m=mx`);
+  assert.equal(mention?.read, false);
+  assert.equal(deriveNotifications(store, Date.now()).some(n => n.id === 'mention:mx'), false, 'without my display name, no match');
+});

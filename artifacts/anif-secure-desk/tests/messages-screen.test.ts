@@ -373,3 +373,21 @@ test('transférer un message interne vers une autre conversation, jamais depuis 
   assert.equal(ui.logs.at(-1)!.action, 'Message transféré de la conversation C-GRP vers C-FWD');
   assert.ok($('message-forwarded-f1'), 'la conversation de destination est ouverte');
 });
+
+test('mentionner : le menu @ insère @tous ou un membre dans le brouillon, et les mentions ressortent dans les messages', async () => {
+  const room = { id: 'C-MEN', title: 'Coordination', kind: 'Équipe', classification: 'Interne', participants: ['user_me', 'user_agent', 'Équipe'], readCount: 1, messages: [
+    message('x1', 'user_agent', 'Réunion @tous à 15 h, écrire à support@tous.ga'),
+  ] };
+  await mountMessages({ extra: [room] });
+  await openConversation('C-MEN');
+  assert.deepEqual([...document.querySelectorAll('[data-testid="mention-x1"]')].map(e => e.textContent), ['@tous'], 'une adresse e-mail n’est pas une mention');
+  const options = [...($('select-mention') as HTMLSelectElement).options].map(o => o.value);
+  assert.equal(options.length, 3, 'choix vide, @tous et le seul autre membre nommé');
+  assert.ok(!options.includes('Équipe'));
+  await fill('input-message', 'Bonjour');
+  await fill('select-mention', 'tous');
+  await fill('select-mention', options[2]!);
+  assert.equal((ui.current.store!.drafts as Record<string, string>)['C-MEN'], `Bonjour @tous @${options[2]} `);
+  await openConversation('C-ANN');
+  assert.equal($('select-mention'), null, 'pas de mention là où l’on ne peut pas écrire');
+});
