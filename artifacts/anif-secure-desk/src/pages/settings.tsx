@@ -19,6 +19,7 @@ import { isStepUpHint, stepUpMessage, withStepUpHint } from '@/lib/step-up';
 import { APP_FONT_OPTIONS, setAppFontPreference, useAppFontPreference } from '@/lib/font-preference';
 import { SHORTCUTS } from '@/lib/shortcuts';
 import { TEXT_SIZE_OPTIONS, setTextSizePreference, useTextSizePreference } from '@/lib/text-size-preference';
+import { setQuietHours, useQuietHours } from '@/lib/quiet-hours';
 import { setWatermarkEnabled, useWatermarkEnabled } from '@/lib/watermark-preference';
 import { Button, Field, inputCls, PageIntro, SectionTitle, Warning } from '@/components/kit';
 
@@ -38,6 +39,7 @@ export default function SettingsPage() {
   const { name: displayName } = useDisplayName();
   const appFont = useAppFontPreference();
   const textSize = useTextSizePreference();
+  const quiet = useQuietHours();
   const watermarkEnabled = useWatermarkEnabled();
   const { user: currentUser } = useUser();
   const [targetUserId, setTargetUserId] = useState('');
@@ -428,6 +430,15 @@ export default function SettingsPage() {
         <div role="group" aria-label="Taille du texte" className="mt-4 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold">Taille du texte</span>
           {TEXT_SIZE_OPTIONS.map(size => <button key={size.id} type="button" data-testid={`button-text-size-${size.id}`} aria-pressed={textSize === size.id} onClick={() => { setTextSizePreference(size.id); log(`Taille du texte ${size.label} sélectionnée`, 'Préférences'); }} className={`focus-ring h-8 rounded-lg border px-3 text-[11px] font-semibold ${textSize === size.id ? 'border-primary bg-muted/60' : 'border-border hover:bg-muted/50'}`}>{size.label} · {Math.round(size.zoom * 100)} %</button>)}
+        </div>
+      </section>
+      <section className="panel min-w-0 p-5 md:p-6" data-testid="section-quiet-hours">
+        <SectionTitle kicker="NOTIFICATIONS" title="Heures silencieuses" />
+        <p className="text-[11px] leading-relaxed text-muted-foreground">Pendant cette plage (heure de Libreville), la cloche ne compte plus que les délais SLA dépassés. Les mentions et les autres notifications restent consultables. Réglage propre à ce navigateur.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px]">
+          <label className="inline-flex items-center gap-2 font-semibold"><input type="checkbox" data-testid="checkbox-quiet-hours" checked={quiet.enabled} onChange={e => { setQuietHours({ ...quiet, enabled: e.target.checked }); log(e.target.checked ? `Heures silencieuses activées (${quiet.start}–${quiet.end})` : 'Heures silencieuses désactivées', 'Préférences'); }} />Activer</label>
+          <label className="inline-flex items-center gap-2">De<input type="time" data-testid="input-quiet-start" value={quiet.start} onChange={e => { if (e.target.value) setQuietHours({ ...quiet, start: e.target.value }); }} className={`${inputCls} h-8 w-28`} /></label>
+          <label className="inline-flex items-center gap-2">à<input type="time" data-testid="input-quiet-end" value={quiet.end} onChange={e => { if (e.target.value) setQuietHours({ ...quiet, end: e.target.value }); }} className={`${inputCls} h-8 w-28`} /></label>
         </div>
       </section>
       <section className="panel min-w-0 p-5 md:p-6" data-testid="section-shortcuts">

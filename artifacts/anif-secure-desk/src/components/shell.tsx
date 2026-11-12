@@ -12,6 +12,7 @@ import { formatWAT } from '@/lib/itsm';
 import { SyncRecoveryActions } from './sync-recovery-actions';
 import { offlineMessage } from '@/lib/offline';
 import { runShortcut } from '@/lib/shortcuts';
+import { isQuietTime, useQuietHours } from '@/lib/quiet-hours';
 
 
 const navItems = [
@@ -132,7 +133,10 @@ function NotificationBell() {
   const { name: displayName } = useDisplayName();
   const { person } = usePeople();
   const items = useMemo(() => deriveNotifications(store, now, [store.profile.name, displayName], person), [store, now, displayName, person]);
-  const unread = items.filter(n => !n.read).length;
+  const quiet = useQuietHours();
+  const quietNow = isQuietTime(quiet, now);
+  // During quiet hours only SLA breaches (red) are counted; the others stay listed.
+  const unread = items.filter(n => !n.read && (!quietNow || n.tone === 'red')).length;
   const markRead = (ids: string[]) => setStore(s => ({ ...s, notifRead: Array.from(new Set([...s.notifRead, ...ids])) }));
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
@@ -140,6 +144,7 @@ function NotificationBell() {
     </PopoverTrigger>
     <PopoverContent align="end" className="w-[340px] max-w-[calc(100vw-1.5rem)] rounded-[14px] border-border bg-card p-0">
       <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><div className="eyebrow">NOTIFICATIONS DU PILOTE</div><div className="mt-0.5 text-[13px] font-semibold">{unread} à consulter</div></div>{unread > 0 && <button data-testid="button-notifications-read-all" onClick={() => { markRead(items.map(n => n.id)); log('Notifications marquées comme lues', 'Notifications'); }} className="focus-ring rounded-lg px-2 py-1 text-[10px] font-semibold text-primary hover:bg-muted">Tout marquer lu</button>}</div>
+      {quietNow && <div data-testid="notifications-quiet" className="border-b border-border bg-muted/50 px-4 py-2 text-[10px] text-muted-foreground">Heures silencieuses jusqu’à {quiet.end} : seuls les délais dépassés sont comptés.</div>}
       <div className="max-h-[360px] overflow-y-auto">
         {items.length === 0 && <div className="grid place-items-center px-6 py-10 text-center"><BellOff size={18} className="text-muted-foreground" /><div className="mt-2 text-[12px] font-semibold">Aucune notification</div><div className="mt-1 text-[11px] text-muted-foreground">Les seuils SLA, escalades et mentions apparaîtront ici.</div></div>}
         {items.map(n => <div key={n.id} className={`flex gap-3 border-b border-border/60 px-4 py-3 ${n.read ? 'opacity-60' : ''}`}>

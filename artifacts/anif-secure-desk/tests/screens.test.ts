@@ -343,6 +343,14 @@ test('Plus Jakarta Sans est la police par défaut et les Préférences peuvent l
   assert.equal(settings.querySelector('[data-testid="button-text-size-tres-grand"]')!.getAttribute('aria-pressed'), 'true');
   assert.equal(window.localStorage.getItem('anif-text-size-v1'), 'tres-grand');
   await click('button-text-size-standard');
+  await click('checkbox-quiet-hours');
+  await fill('input-quiet-start', '21:00');
+  assert.deepEqual(JSON.parse(window.localStorage.getItem('anif-quiet-hours-v1')!), { enabled: true, start: '21:00', end: '07:30' }, 'heures silencieuses gardées dans ce navigateur');
+  assert.equal(ui.logs.at(-1)?.action ?? '', 'Heures silencieuses activées (18:00–07:30)');
+  await fill('input-quiet-end', '');
+  assert.equal(JSON.parse(window.localStorage.getItem('anif-quiet-hours-v1')!).end, '07:30', 'une heure effacée n’est pas enregistrée');
+  await click('checkbox-quiet-hours');
+  assert.equal(JSON.parse(window.localStorage.getItem('anif-quiet-hours-v1')!).enabled, false);
   assert.equal(window.localStorage.getItem('anif-app-font-v1'), 'inter');
   assert.equal(settings.querySelector('[data-testid="button-font-inter"]')?.getAttribute('aria-pressed'), 'true');
 

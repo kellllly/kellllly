@@ -40,6 +40,16 @@ test('une mention de mon nom ou de @tous arrive dans la cloche et mène au messa
     assert.match(personal!.parentElement!.textContent!, /: Tu peux valider/u, 'l’auteur précède l’extrait');
     assert.equal($('link-notification-mention:q1')!.getAttribute('href'), '/messages?c=C-EQ&m=q1');
     assert.equal($('link-notification-mention:d2'), null, 'mon propre @tous ne me notifie pas');
+    assert.equal($('badge-notifications')!.textContent, '2');
+    assert.equal($('notifications-quiet'), null);
+    // Quiet hours around the current Libreville time: mentions are no longer counted, but stay listed.
+    const wat = (offsetMinutes: number) => new Date(Date.now() + (60 + offsetMinutes) * 60_000).toISOString().slice(11, 16);
+    await act(async () => { ui.setQuietHours({ enabled: true, start: wat(-60), end: wat(60) }); });
+    assert.equal($('badge-notifications'), null, 'pendant les heures silencieuses, une mention ne fait plus de badge');
+    assert.match($('notifications-quiet')!.textContent!, new RegExp(`jusqu’à ${wat(60)}`, 'u'));
+    assert.ok($('link-notification-mention:q1'), 'la notification reste consultable');
+    await act(async () => { ui.setQuietHours({ enabled: false, start: '18:00', end: '07:30' }); });
+    assert.equal($('badge-notifications')!.textContent, '2');
     await act(async () => { personal!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
     assert.ok((ui.current.store!.notifRead as string[]).includes('mention:d1'), 'ouvrir la notification la marque lue');
   } finally {
