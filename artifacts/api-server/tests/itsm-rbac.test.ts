@@ -818,7 +818,8 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
     sourcemap: false,
     logLevel: "silent",
   });
-  const { createItsmRoleAttestationRouter, createItsmBootstrapAdmin } = await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
+  const { createItsmRoleAttestationRouter, createItsmBootstrapAdmin } =
+    await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
   t.after(() => rm(tempBuildDir, { recursive: true, force: true }));
 
   const admin = { id: "admin-n1", publicMetadata: { itsmRole: "N1", itsmServiceIds: [] } };

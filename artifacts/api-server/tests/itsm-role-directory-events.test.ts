@@ -30,7 +30,8 @@ test("directory event stream is N1-only, sends minimal role updates, and closes 
       sourcemap: false,
       logLevel: "silent",
     });
-    const { createItsmRoleDirectoryEventsRouter, publishItsmRoleDirectoryEvent } = await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
+    const { createItsmRoleDirectoryEventsRouter, publishItsmRoleDirectoryEvent } =
+      await importWithTestDatabaseUrl(() => import(pathToFileURL(bundlePath).href));
     const app = express();
     let sessionRole: "N1" | "N2" = "N1";
     let currentRole: "N1" | "N2" | "N3" | "N4" | "N5" | null = "N1";
