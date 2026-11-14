@@ -299,6 +299,7 @@ test("the mounted audit export route rejects requests without a Clerk session", 
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
 
   try {
@@ -464,6 +465,7 @@ test("role assignment failures preserve audit consistency or raise a reconciliat
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
   const bundlePath = path.join(tempBuildDir, "itsm-role-route.mjs");
   await build({
@@ -694,6 +696,7 @@ test("the HTTP role route protects the last N1 and permits removal after an acti
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
   const bundlePath = path.join(tempBuildDir, "itsm-role-route.mjs");
   await build({
@@ -816,6 +819,7 @@ test("role attestations require N1 and preserve Clerk metadata while bootstrap i
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
   const bundlePath = path.join(tempBuildDir, "itsm-role-attestation-route.mjs");
   await build({

@@ -91,6 +91,7 @@ test("stale workspace PUT returns a valid current snapshot and conflict identifi
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
 
   try {
@@ -163,6 +164,7 @@ test("role assignment HTTP response follows the generated schema without externa
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempNodeModules, "pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
 
   try {

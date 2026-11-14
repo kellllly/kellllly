@@ -14,6 +14,7 @@ test("directory event stream is N1-only, sends minimal role updates, and closes 
   await symlink(
     path.resolve(packageDir, "../../lib/db/node_modules/pg"),
     path.join(tempBuildDir, "node_modules/pg"),
+    "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
   );
   let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;

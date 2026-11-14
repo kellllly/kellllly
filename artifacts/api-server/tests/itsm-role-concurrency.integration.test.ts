@@ -29,6 +29,7 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
     await symlink(
       path.resolve(packageDir, "../../lib/db/node_modules/pg"),
       path.join(tempBuildDir, "node_modules/pg"),
+      "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
     );
     await build({
       entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],

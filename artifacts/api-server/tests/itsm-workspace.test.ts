@@ -669,6 +669,7 @@ test("the real workspace save route returns a scoped 409 for a stale N4 save", {
     await symlink(
       path.resolve(packageDir, "../../lib/db/node_modules/pg"),
       path.join(tempBuildDir, "node_modules/pg"),
+      "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
     );
     await build({
       entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
@@ -931,6 +932,7 @@ test("concurrent authorized conversions of one Support message accept one save a
     await symlink(
       path.resolve(packageDir, "../../lib/db/node_modules/pg"),
       path.join(tempBuildDir, "node_modules/pg"),
+      "junction", // Windows : un lien de dossier ordinaire exige des droits élevés ; ignoré sous Linux
     );
     await build({
       entryPoints: [path.join(packageDir, "src/routes/itsm.ts")],
