@@ -33,7 +33,7 @@ Prototype francophone de démonstration réunissant collaboration interne et ges
 - Les changements d'habilitation N1 et le bootstrap sont sérialisés côté API. Pour remplacer un N1, nommer d'abord le remplaçant, puis retirer l'ancien accès; l'API refuse de retirer le dernier N1 actif. Une révocation manuelle marque le bootstrap comme effectué et ne rétablit pas automatiquement l'accès.
 - Aucun chiffrement certifié, mécanisme E2EE, journal inviolable ou hébergement souverain n'est implémenté ni revendiqué.
 - Ne saisir aucune donnée personnelle, financière, d'enquête ou classifiée dans la démonstration.
-- Les SLA suivent le temps continu, pas un calendrier ouvré contractuel. Cette simplification permet d’illustrer les parcours avant validation des règles d’astreinte et d’horaires avec le SSI.
+- Les SLA suivent un calendrier ouvré (lundi–vendredi, 7 h–19 h, heure de Libreville, jours fériés tenus par un N1 ; `lib/itsm-sla-calendar.ts` côté API et `src/lib/sla-calendar.ts` côté navigateur, à garder identiques). Le compteur est suspendu tant qu’un ticket est « En attente ». Ce n’est pas un calendrier contractuel : astreintes et horaires restent à valider avec le SSI.
 - Une sauvegarde locale illisible ne doit jamais être remplacée automatiquement par les exemples. Elle reste intacte et n'est pas importée; l'espace ITSM partagé reste consultable.
 
 ## Product

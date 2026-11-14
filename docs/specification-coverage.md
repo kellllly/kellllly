@@ -45,11 +45,28 @@ démonstrateur utilise la matrice explicite suivante :
 | Moyen | P2 | P3 | P3 |
 | Faible | P3 | P3 | P4 |
 
-**Choix de démonstration :** les compteurs suivent le temps continu et signalent
-un risque à 80 % du délai consommé. Ils ne modélisent ni jours fériés, ni horaires
-ouvrés, ni astreintes, ni suspension contractuelle. Ces règles doivent être validées
-avec le SSI avant toute implémentation contractuelle. Changer la priorité ne remet
-pas le compteur à zéro.
+**Choix de démonstration :** les compteurs suivent un calendrier ouvré, du lundi
+au vendredi de 7 h à 19 h, heure de Libreville, et signalent un risque à 80 % du
+délai consommé. Un N1 tient la liste des jours fériés dans les Préférences ; chaque
+changement de cette liste est journalisé. Le compteur s’arrête tant qu’un ticket
+est « En attente » : le début de chaque suspension est inscrit au journal. Les
+astreintes et les horaires contractuels ne sont pas modélisés : ce calendrier
+reste à valider avec le SSI. Changer la priorité ne remet pas le compteur à zéro.
+
+## Ajouts depuis la comparaison du 11 novembre
+
+- **Portail demandeur :** un compte au rôle « Demandeur » n’ouvre que ce portail.
+  Il y dépose un incident ou une demande et n’y voit que les siens ; le reste de
+  l’espace (messagerie, file des tickets, journal) lui est fermé par l’API.
+- **Approbation des demandes :** une demande déposée par le portail attend la
+  décision du support (N1, ou N3 du service concerné). Elle reste « En attente »,
+  compteur SLA suspendu, jusqu’à l’approbation ; un rejet exige un motif. La
+  décision est publiée dans le ticket et journalisée.
+- **Revue des articles KEDB :** l’article créé à la clôture d’un ticket est en
+  attente de revue. Un N1, ou un N3 du service, le publie ou le renvoie en
+  révision avec un commentaire obligatoire ; un article publié ne se revoit plus.
+- **Notifications lues :** l’état « lu » est enregistré par le serveur pour chaque
+  compte et se retrouve donc d’un navigateur à l’autre.
 
 ## Exigences non réalisées
 
