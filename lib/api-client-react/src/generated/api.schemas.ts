@@ -392,6 +392,207 @@ export interface ItsmSaveInput {
   version: number;
 }
 
+export type ItsmMyRequestInputKind = typeof ItsmMyRequestInputKind[keyof typeof ItsmMyRequestInputKind];
+
+
+export const ItsmMyRequestInputKind = {
+  Incident: 'Incident',
+  Demande: 'Demande',
+} as const;
+
+export type ItsmMyRequestInputCategory = typeof ItsmMyRequestInputCategory[keyof typeof ItsmMyRequestInputCategory];
+
+
+export const ItsmMyRequestInputCategory = {
+  Applications: 'Applications',
+  Poste_de_travail: 'Poste de travail',
+  Équipement: 'Équipement',
+  Réseau: 'Réseau',
+  Accès: 'Accès',
+} as const;
+
+export interface ItsmMyRequestInput {
+  kind: ItsmMyRequestInputKind;
+  /**
+     * @minLength 1
+     * @maxLength 180
+     */
+  title: string;
+  category: ItsmMyRequestInputCategory;
+  /**
+     * @minLength 1
+     * @maxLength 12000
+     */
+  description: string;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  serviceId: string | null;
+}
+
+export type ItsmRequestApprovalInputDecision = typeof ItsmRequestApprovalInputDecision[keyof typeof ItsmRequestApprovalInputDecision];
+
+
+export const ItsmRequestApprovalInputDecision = {
+  approve: 'approve',
+  reject: 'reject',
+} as const;
+
+export interface ItsmRequestApprovalInput {
+  decision: ItsmRequestApprovalInputDecision;
+  /** @maxLength 500 */
+  reason?: string;
+}
+
+export type ItsmRequestApprovalStatus = typeof ItsmRequestApprovalStatus[keyof typeof ItsmRequestApprovalStatus];
+
+
+export const ItsmRequestApprovalStatus = {
+  pending: 'pending',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export interface ItsmRequestApproval {
+  status: ItsmRequestApprovalStatus;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  reason: string | null;
+  /** @nullable */
+  decidedAt: string | null;
+}
+
+export type ItsmMyRequestKind = typeof ItsmMyRequestKind[keyof typeof ItsmMyRequestKind];
+
+
+export const ItsmMyRequestKind = {
+  Incident: 'Incident',
+  Demande: 'Demande',
+} as const;
+
+export interface ItsmMyRequest {
+  id: string;
+  title: string;
+  kind: ItsmMyRequestKind;
+  category: string;
+  status: string;
+  priority: string;
+  /** @nullable */
+  serviceId: string | null;
+  /** @nullable */
+  serviceName: string | null;
+  description: string;
+  openedAt: string;
+  requestApproval: ItsmRequestApproval | null;
+}
+
+export type ItsmMyRequestsServicesItem = {
+  id: string;
+  name: string;
+  category: string;
+};
+
+export interface ItsmMyRequests {
+  requests: ItsmMyRequest[];
+  services: ItsmMyRequestsServicesItem[];
+}
+
+export interface ItsmMyRequestCreated {
+  request: ItsmMyRequest;
+}
+
+export interface ItsmRequestApprovalDecision {
+  requestId: string;
+  status: string;
+  requestApproval: ItsmRequestApproval;
+}
+
+export type ItsmKnowledgeReviewInputDecision = typeof ItsmKnowledgeReviewInputDecision[keyof typeof ItsmKnowledgeReviewInputDecision];
+
+
+export const ItsmKnowledgeReviewInputDecision = {
+  publish: 'publish',
+  request_changes: 'request_changes',
+} as const;
+
+export interface ItsmKnowledgeReviewInput {
+  decision: ItsmKnowledgeReviewInputDecision;
+  /**
+     * @minLength 1
+     * @maxLength 180
+     */
+  title?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  symptom?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  rootCause?: string;
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  resolution?: string;
+  /** @maxLength 500 */
+  comment?: string;
+}
+
+export type ItsmKnowledgeArticleReviewStatus = typeof ItsmKnowledgeArticleReviewStatus[keyof typeof ItsmKnowledgeArticleReviewStatus];
+
+
+export const ItsmKnowledgeArticleReviewStatus = {
+  pending: 'pending',
+  published: 'published',
+  needs_revision: 'needs_revision',
+} as const;
+
+export interface ItsmKnowledgeArticle {
+  id: string;
+  title: string;
+  symptom: string;
+  rootCause: string;
+  resolution: string;
+  ticketId: string;
+  /** @nullable */
+  serviceId: string | null;
+  category: string;
+  createdAt: string;
+  author: string;
+  reviewStatus: ItsmKnowledgeArticleReviewStatus;
+  /** @nullable */
+  reviewFeedback: string | null;
+  /** @nullable */
+  reviewedAt: string | null;
+  /** @nullable */
+  reviewedBy: string | null;
+}
+
+export interface ItsmKnowledgeReviewResponse {
+  article: ItsmKnowledgeArticle;
+}
+
+export interface ItsmNotificationReadsInput {
+  /**
+     * @minItems 1
+     * @maxItems 1000
+     * @items.minLength 1
+     * @items.maxLength 256
+     */
+  ids: string[];
+}
+
+export interface ItsmNotificationReadsResponse {
+  /** @minimum 0 */
+  marked: number;
+}
+
 export interface ItsmImportInput {
   store: ItsmStore;
 }
@@ -408,6 +609,7 @@ export const ItsmRoleAssignmentInputRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;
 
 export interface ItsmRoleAssignmentInput {
@@ -432,6 +634,7 @@ export const ItsmRoleAssignmentRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;
 
 export interface ItsmRoleAssignment {
@@ -451,6 +654,7 @@ export const ItsmRoleAttestationRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;
 
 export interface ItsmRoleAttestation {
@@ -469,6 +673,7 @@ export const ItsmRoleAttestationInputRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;
 
 export interface ItsmRoleAttestationInput {
@@ -510,6 +715,7 @@ export const ItsmUserDirectoryAccountRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;
 
 export interface ItsmUserDirectoryAccount {

@@ -1,4 +1,4 @@
-export const ITSM_ROLES = ["N1", "N2", "N3", "N4", "N5"] as const;
+export const ITSM_ROLES = ["N1", "N2", "N3", "N4", "N5", "REQUESTER"] as const;
 export type ItsmRole = (typeof ITSM_ROLES)[number];
 export type ItsmPermission =
   | "viewWorkspace"
@@ -15,7 +15,10 @@ export type ItsmPermission =
   | "approveCab"
   | "exportAudit"
   | "timestampAudit"
-  | "assignRole";
+  | "assignRole"
+  | "viewOwnRequests"
+  | "createOwnRequest"
+  | "reviewKnowledge";
 
 export type ItsmActor = {
   id: string;
@@ -29,6 +32,7 @@ const ROLE_NAMES: Record<ItsmRole, string> = {
   N3: "SSI / support",
   N4: "Services d’appui",
   N5: "Auditeur temporaire",
+  REQUESTER: "Demandeur",
 };
 
 export function isItsmRole(value: unknown): value is ItsmRole {
@@ -82,13 +86,20 @@ export function canPerform(
 ): boolean {
   switch (permission) {
     case "viewWorkspace":
-      return true;
+      return actor.role !== "REQUESTER";
+    case "viewOwnRequests":
+      return actor.role === "REQUESTER";
+    case "createOwnRequest":
+      return actor.role === "REQUESTER";
+    case "reviewKnowledge":
+      return actor.role === "N1"
+        || (actor.role === "N3" && Boolean(serviceId && actor.serviceIds.includes(serviceId)));
     case "importExamples":
       return actor.role === "N1" || actor.role === "N2" || actor.role === "N3";
     case "saveWorkspace":
-      return actor.role !== "N5";
+      return actor.role !== "N5" && actor.role !== "REQUESTER";
     case "createIncident":
-      return actor.role !== "N5";
+      return actor.role !== "N5" && actor.role !== "REQUESTER";
     case "createProblem":
     case "createChange":
       return actor.role === "N3";
@@ -98,11 +109,11 @@ export function canPerform(
     case "manageConversations":
       return actor.role === "N1" || actor.role === "N2" || actor.role === "N3";
     case "appendAudit":
-      return actor.role !== "N5";
+      return actor.role !== "N5" && actor.role !== "REQUESTER";
     case "resolveTicket":
       return actor.role === "N3";
     case "confirmClosure":
-      return actor.role !== "N5";
+      return actor.role !== "N5" && actor.role !== "REQUESTER";
     case "approveCab":
       return actor.role === "N1"
         || (actor.role === "N3" && Boolean(serviceId && actor.serviceIds.includes(serviceId)));

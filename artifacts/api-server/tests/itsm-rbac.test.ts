@@ -13,6 +13,7 @@ import {
   isItsmRole,
   metadataForItsmBootstrap,
   metadataForItsmRoleChange,
+  type ItsmRole,
 } from "../src/lib/itsm-rbac.ts";
 import { createItsmAuditExportHandler } from "../src/routes/itsm-audit-export.ts";
 import {
@@ -22,7 +23,7 @@ import {
 } from "../src/lib/itsm-workspace.ts";
 import { importWithTestDatabaseUrl } from "./helpers/database-bootstrap.ts";
 
-const actor = (role: "N1" | "N2" | "N3" | "N4" | "N5", serviceIds: string[] = []) => ({
+const actor = (role: ItsmRole, serviceIds: string[] = []) => ({
   id: `account-${role}`,
   role,
   serviceIds,
@@ -159,6 +160,15 @@ test("all assigned roles can consult, while an unrecognized role is not an assig
   for (const role of ["N1", "N2", "N3", "N4", "N5"] as const) {
     assert.equal(canPerform(actor(role), "viewWorkspace"), true);
   }
+  assert.equal(canPerform(actor("REQUESTER"), "viewWorkspace"), false);
+  assert.equal(canPerform(actor("REQUESTER"), "viewOwnRequests"), true);
+  assert.equal(canPerform(actor("REQUESTER"), "createOwnRequest"), true);
+  assert.equal(canPerform(actor("N1"), "viewOwnRequests"), false);
+  assert.equal(canPerform(actor("N1"), "createOwnRequest"), false);
+  assert.equal(canPerform(actor("REQUESTER"), "saveWorkspace"), false);
+  assert.equal(canPerform(actor("REQUESTER"), "createIncident"), false);
+  assert.equal(canPerform(actor("REQUESTER"), "exportAudit"), false);
+  assert.equal(isItsmRole("REQUESTER"), true);
   assert.equal(isItsmRole("N5"), true);
   assert.equal(isItsmRole("administrator"), false);
   assert.equal(isItsmRole(undefined), false);

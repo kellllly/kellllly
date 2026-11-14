@@ -498,6 +498,7 @@ test("server enforces maker-checker CAB, requester confirmation, escalation step
   assert.equal(ticket.closedAt, at.toISOString());
   assert.equal(store.kedb.length, 1);
   assert.equal(store.kedb[0].author, "user-a");
+  assert.equal(store.kedb[0].reviewStatus, "pending", "new resolution articles require a review before publication");
 });
 
 test("N2 cannot decide CAB and N5 cannot save workspace changes", () => {
@@ -561,8 +562,8 @@ test("N4 version conflicts include only records and details within assigned serv
       { id: "asset-b", name: "Équipement confidentiel" },
     ],
     kedb: [
-      { id: "KEDB-a", serviceId: "service-a", title: "Article autorisé" },
-      { id: "KEDB-b", serviceId: "service-b", title: "Article confidentiel" },
+      { id: "KEDB-a", serviceId: "service-a", title: "Article autorisé", reviewStatus: "published" },
+      { id: "KEDB-b", serviceId: "service-b", title: "Article confidentiel", reviewStatus: "published" },
     ],
     notifications: [
       { id: "notification-a", ticketId: "INC-2401", message: "Notification autorisée" },
@@ -608,7 +609,7 @@ test("N4 version conflicts reveal no records when no service is assigned", () =>
       description: "Détail confidentiel du dossier",
     }],
     assets: [{ id: "asset-secret", name: "Équipement confidentiel" }],
-    kedb: [{ id: "KEDB-secret", serviceId: "service-secret", title: "Article confidentiel" }],
+    kedb: [{ id: "KEDB-secret", serviceId: "service-secret", title: "Article confidentiel", reviewStatus: "published" }],
     notifications: [{
       id: "notification-secret",
       ticketId: "INC-secret",
@@ -699,8 +700,8 @@ test("the real workspace save route returns a scoped 409 for a stale N4 save", {
         { id: "asset-b", name: "Équipement confidentiel" },
       ],
       kedb: [
-        { id: "KEDB-allowed", serviceId: "service-a", title: "Article autorisé" },
-        { id: "KEDB-forbidden", serviceId: "service-b", title: "Article confidentiel" },
+        { id: "KEDB-allowed", serviceId: "service-a", title: "Article autorisé", reviewStatus: "published" },
+        { id: "KEDB-forbidden", serviceId: "service-b", title: "Article confidentiel", reviewStatus: "published" },
       ],
       notifications: [
         { id: "notification-allowed", ticketId: "INC-allowed", message: "Notification autorisée" },
@@ -797,7 +798,7 @@ test("N5 workspace view hides ticket, conversation, service, and asset details b
     services: [{ id: "service-a", name: "Service fictif" }],
     assets: [{ id: "asset-1", name: "Équipement fictif" }],
     audit: [{ id: "audit-1", action: "Contrôle fictif", actor: "N3", scope: "Support" }],
-    kedb: [{ id: "KEDB-1", ticketId: "INC-2401", title: "Article fictif" }],
+    kedb: [{ id: "KEDB-1", ticketId: "INC-2401", title: "Article fictif", reviewStatus: "published" }],
   };
   const view = userStoreView(store, actor("auditor", "N5"));
   assert.deepEqual(view.tickets, []);

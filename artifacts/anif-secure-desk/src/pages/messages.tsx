@@ -302,13 +302,13 @@ export default function MessagesPage() { const { person } = usePeople();
 }
 
 function SideTicket({ ticket }: { ticket: Ticket }) { const { person } = usePeople();
-  const { setStore, log } = useStore();
+  const { store, setStore, log } = useStore();
   const now = useNow(1000);
   const [text, setText] = useState('');
-  const sla = ticketSla(ticket, now);
+  const sla = ticketSla(ticket, now, store.slaCalendar);
   return <div className="mt-4 space-y-3" data-testid={`side-ticket-${ticket.id}`}>
     <div className="rounded-lg border border-border p-3"><div className="flex items-center justify-between gap-2"><span className="mono text-[10px] text-muted-foreground">{ticket.id} · L{ticket.supportLevel}</span><div className="flex gap-1"><Badge tone={priorityTone(ticket.priority)}>{ticket.priority}</Badge><Badge tone={statusTone(ticket.status)}>{ticket.status}</Badge></div></div><div className="mt-1.5 text-[12px] font-semibold leading-snug">{ticket.title}</div><div className="mt-1 text-[10px] text-muted-foreground">Assigné à {ticket.assignee}</div></div>
-    {isOpen(ticket) && ticket.status !== 'Résolu' && <><SlaBar label="Prise en charge" openedAt={ticket.openedAt} deadline={sla.deadlines.acknowledgeBy} completedAt={ticket.acknowledgedAt} now={now} /><SlaBar label="Résolution" openedAt={ticket.openedAt} deadline={sla.deadlines.resolveBy} completedAt={ticket.resolvedAt} now={now} /></>}
+    {isOpen(ticket) && ticket.status !== 'Résolu' && <><SlaBar label="Prise en charge" openedAt={ticket.openedAt} deadline={sla.deadlines.acknowledgeBy} completedAt={ticket.acknowledgedAt} now={now} calendar={store.slaCalendar} targetMinutes={sla.targets.acknowledgeMinutes} pauses={ticket.slaPauses} /><SlaBar label="Résolution" openedAt={ticket.openedAt} deadline={sla.deadlines.resolveBy} completedAt={ticket.resolvedAt} now={now} calendar={store.slaCalendar} targetMinutes={sla.targets.resolveMinutes} pauses={ticket.slaPauses} /></>}
     <div><div className="eyebrow mb-2">DERNIÈRES ACTIVITÉS</div><ol className="max-h-44 space-y-2 overflow-y-auto">{[...ticket.updates].reverse().slice(0, 5).map((u, i) => <li key={i} className="text-[10px] leading-relaxed"><span className="font-semibold">{person(u.author)}</span> <span className="mono text-muted-foreground">{u.at ? formatWAT(u.at, 'time') : u.time}</span><div className="text-muted-foreground">{u.body}</div></li>)}</ol></div>
     {isOpen(ticket) && <form onSubmit={e => { e.preventDefault(); if (!text.trim()) return; setStore(s => withTicketEvent(s, ticket.id, text.trim(), {}, s.profile.name, true)); log(`Commentaire ajouté au ticket ${ticket.id} depuis la messagerie`, `Ticket ${ticket.id}`); setText(''); }} className="space-y-2"><textarea data-testid="input-side-comment" rows={2} value={text} onChange={e => setText(e.target.value)} placeholder="Commenter le ticket (visible dans la discussion)" className="w-full rounded-lg border border-border bg-card p-2.5 text-[11px]" /><Button type="submit" disabled={!text.trim()} className="w-full" testId="button-side-comment"><Send size={13} />Ajouter le commentaire</Button></form>}
     <Link href={`/tickets?ticket=${encodeURIComponent(ticket.id)}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline">Ouvrir dans Tickets IT <ArrowRight size={12} /></Link>

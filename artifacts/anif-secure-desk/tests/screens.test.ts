@@ -117,6 +117,65 @@ test('un incident suit tout son cycle : création, prise en charge, attente, esc
   assert.deepEqual(actionsShown(), [], 'aucune action sur un ticket clos');
 });
 
+test('le routage propose le propriétaire du service et respecte un choix manuel', async () => {
+  await mountTickets();
+  await click('button-create-ticket');
+  await fill('select-service', 'SVC-02');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Support applicatif');
+  assert.match($('service-assignment-hint')!.textContent!, /Routage automatique actif/u);
+
+  await fill('select-assignee', 'Jean-Pierre Obame');
+  await fill('select-service', 'SVC-03');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Jean-Pierre Obame', 'le choix manuel n’est pas écrasé');
+  assert.match($('service-assignment-hint')!.textContent!, /Affectation manuelle/u);
+
+  await click('button-apply-assignment-suggestion');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Équipe infrastructure');
+  assert.match($('service-assignment-hint')!.textContent!, /Routage automatique actif/u);
+  await fill('input-title', 'Routeur du bâtiment A indisponible');
+  await submitForm('button-submit-ticket');
+  assert.equal(tickets()[0]!.assignee, 'Équipe infrastructure', 'l’assignation proposée est enregistrée avec le ticket');
+});
+
+test('le routage combine priorité et catégorie sans écraser une affectation manuelle', async () => {
+  await mountTickets();
+  await click('button-create-ticket');
+  await fill('select-service', 'SVC-01');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Équipe numérique', 'priorité normale : propriétaire du service');
+
+  await fill('select-impact', '1');
+  await fill('select-urgency', '1');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Support applicatif', 'P1 : spécialiste de la catégorie Applications');
+  await fill('select-category', 'Réseau');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Équipe infrastructure', 'la catégorie réseau change la spécialité suggérée');
+  assert.match($('service-assignment-hint')!.textContent!, /P1 · spécialité Réseau/u);
+
+  await fill('select-assignee', 'Jean-Pierre Obame');
+  await fill('select-category', 'Accès');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Jean-Pierre Obame', 'les changements de formulaire ne remplacent pas un choix manuel');
+  assert.match($('service-assignment-hint')!.textContent!, /Équipe support/u);
+  await click('button-apply-assignment-suggestion');
+  assert.equal(($('select-assignee') as HTMLSelectElement).value, 'Équipe support');
+  assert.equal(($('service-assignment-hint') as HTMLElement).textContent?.includes('Routage automatique actif'), true);
+
+  await fill('input-title', 'Compte bloqué sur le portail');
+  await submitForm('button-submit-ticket');
+  assert.deepEqual([tickets()[0]!.priority, tickets()[0]!.category, tickets()[0]!.assignee], ['P1', 'Accès', 'Équipe support']);
+});
+
+test('le formulaire affiche la charge active de chaque destination avant l’affectation', async () => {
+  await mountTickets();
+  await createTicket({ 'select-kind': 'Incident', 'input-title': 'Portail de services lent', 'select-service': 'SVC-02' });
+  await click('button-create-ticket');
+
+  const option = [...($('select-assignee') as HTMLSelectElement).options].find(item => item.value === 'Support applicatif');
+  assert.equal(option?.textContent, 'Support applicatif · 1 actif', 'la liste montre le nombre de tickets actifs');
+  const workload = document.querySelector('[data-testid="assignment-workload"]');
+  assert.match(workload?.textContent ?? '', /Charge actuelle des équipes/u);
+  assert.match(workload?.textContent ?? '', /tickets résolus, clos et rejetés ne sont pas comptés/iu);
+  assert.match(workload?.querySelector('[data-assignee="Support applicatif"]')?.textContent ?? '', /1/u);
+});
+
 test('un ticket résolu peut être rouvert, et la modification recalcule la priorité sans remettre l’horloge à zéro', async () => {
   await mountTickets();
   await createTicket({ 'input-title': 'Imprimante du 2e étage hors ligne', 'select-impact': '3', 'select-urgency': '3' });
@@ -317,12 +376,28 @@ const text = () => document.body.textContent ?? '';
 
 test('un compte non N1 ne voit pas l’administration des habilitations, et change le thème', async () => {
   defaultHandlers();
-  await mountSettings('N2 · Interne');
+  const settings = await mountSettings('N2 · Interne');
   assert.equal($('panel-role-reconciliation'), null);
   assert.equal(callsTo('getItsmUserDirectory').length, 0, 'le répertoire n’est pas demandé');
   assert.equal(FakeEventSource.last, null, 'aucun flux ouvert');
+  assert.match(settings.querySelector('[data-testid="section-sla-calendar"]')?.textContent ?? '', /lundi au vendredi, de 07 h à 19 h/u);
+  assert.equal(settings.querySelector('[data-testid="input-sla-holiday"]'), null, 'les rôles hors N1 consultent le calendrier sans le modifier');
   await click('button-theme-dark');
   assert.equal(ui.current.store!.theme, 'dark');
+});
+
+test('un N1 ajoute et retire un jour férié du calendrier SLA partagé', async () => {
+  defaultHandlers();
+  const settings = await mountSettings('N1 · Direction');
+  assert.ok(settings.querySelector('[data-testid="input-sla-holiday"]'));
+  await fill('input-sla-holiday', '2026-12-25');
+  await click('button-add-sla-holiday');
+  await settle();
+  assert.deepEqual(ui.current.store!.slaCalendar.holidays, ['2026-12-25']);
+  assert.ok(settings.querySelector('[data-testid="remove-sla-holiday-2026-12-25"]'));
+  await click('remove-sla-holiday-2026-12-25');
+  await settle();
+  assert.deepEqual(ui.current.store!.slaCalendar.holidays, []);
 });
 
 test('Plus Jakarta Sans est la police par défaut et les Préférences peuvent la changer', async () => {
@@ -604,7 +679,7 @@ test('une demande préformatée préremplit le formulaire ; seule la demande sta
 
 test('la saisie du sujet propose les erreurs connues proches, sans quitter le formulaire', async () => {
   const store = ui.testStore();
-  store.kedb = [{ id: 'KB-0001', title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible', rootCause: 'Certificat du relais expiré', resolution: 'Renouvellement du certificat', ticketId: 'INC-2400', category: 'Applications', createdAt: new Date().toISOString(), author: 'user_n3' }];
+  store.kedb = [{ id: 'KB-0001', title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible', rootCause: 'Certificat du relais expiré', resolution: 'Renouvellement du certificat', ticketId: 'INC-2400', category: 'Applications', createdAt: new Date().toISOString(), author: 'user_n3', reviewStatus: 'published' }];
   await mountTickets('', store);
   await click('button-create-ticket');
   assert.equal($('kedb-suggestions'), null, 'rien avant la saisie');
@@ -614,4 +689,30 @@ test('la saisie du sujet propose les erreurs connues proches, sans quitter le fo
   assert.match($('kedb-suggestion-KB-0001')?.textContent ?? '', /Renouvellement du certificat/u);
   await submitForm('button-submit-ticket');
   assert.equal(tickets()[0]!.title, 'Messagerie bloquée, certificat refusé', 'la suggestion n’empêche pas la création');
+});
+
+test('une demande de service en attente est approuvée depuis la file N1 et déclenche une resynchronisation', async () => {
+  const initial = ui.testStore();
+  initial.profile.clearance = 'N1 · Direction';
+  initial.tickets = [{
+    id: 'REQ-2601', title: 'Créer un accès', kind: 'Demande', category: 'Accès',
+    impact: 3, urgency: 3, priority: 'P4', supportLevel: 1, status: 'En attente',
+    assignee: 'Équipe support', requester: 'demandeur', serviceId: 'SVC-01', assetId: null,
+    openedAt: '2026-11-13T10:00:00.000Z', acknowledgedAt: null, resolvedAt: null, closedAt: null,
+    dueAt: '2026-11-13T11:00:00.000Z', description: 'Accès au portail de test.',
+    requestApproval: { status: 'pending' }, slaPauses: [{ startedAt: '2026-11-13T10:00:00.000Z' }],
+    updates: [], cab: null,
+  }] as typeof initial.tickets;
+  ui.calls.length = 0;
+  ui.resyncs.count = 0;
+  ui.handlers.decideItsmRequestApproval = async () => ({ requestId: 'REQ-2601', status: 'Nouveau' });
+  await mountTickets('', initial);
+
+  assert.ok($('panel-request-approval'));
+  assert.ok($('button-approve-request'));
+  assert.equal(($('button-reject-request') as HTMLButtonElement).disabled, true, 'un rejet sans motif est impossible');
+  await click('button-approve-request');
+  assert.equal(ui.calls.find(call => call.name === 'decideItsmRequestApproval')?.args[0], 'REQ-2601');
+  assert.equal(ui.resyncs.count, 1);
+  assert.match($('panel-request-approval')?.textContent ?? '', /Demande approuvée/u);
 });

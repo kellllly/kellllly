@@ -260,7 +260,7 @@ test('the ticket prefill states exactly what was checked, for each API result', 
 
 test('KEDB suggestions: service first, then category and symptom words, newest first on ties', () => {
   const service = { id: 'SVC-03', name: 'Réseau', category: 'Infrastructure', status: 'Opérationnel', owner: 'x', sla: 'y', description: 'z' } as never;
-  const article = (id: string, patch: Record<string, unknown>) => ({ id, title: 't', symptom: 's', rootCause: 'r', resolution: 'x', ticketId: 'T', category: 'Divers', createdAt: '2026-11-01T00:00:00Z', author: 'a', ...patch });
+  const article = (id: string, patch: Record<string, unknown>) => ({ id, title: 't', symptom: 's', rootCause: 'r', resolution: 'x', ticketId: 'T', category: 'Divers', createdAt: '2026-11-01T00:00:00Z', author: 'a', reviewStatus: 'published', ...patch });
   const list = [
     article('A', { serviceId: 'SVC-03' }),
     article('B', { category: 'INFRASTRUCTURE' }),

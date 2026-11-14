@@ -23,7 +23,7 @@ import { usePeople } from '@/hooks/use-people';
 import { formatWAT } from '@/lib/itsm';
 import { isOpen, messageTime, priorityTone, statusTone, ticketKpis, ticketKpisToCsv, ticketSla, unreadOf } from '@/lib/domain';
 import { Badge, Warning, pad2 } from '@/components/kit';
-import type { Ticket } from '@/lib/types';
+import type { Store, Ticket } from '@/lib/types';
 import './dashboard.css';
 
 type QueueFilter = 'Tous' | 'P1' | 'P2' | 'À prendre' | 'En cours' | 'Garde';
@@ -70,8 +70,8 @@ function shortDuration(milliseconds: number) {
   return `${days} j${hours % 24 ? ` ${hours % 24} h` : ''}`;
 }
 
-function slaSummary(ticket: Ticket, now: number) {
-  const sla = ticketSla(ticket, now);
+function slaSummary(ticket: Ticket, now: number, calendar: Store['slaCalendar']) {
+  const sla = ticketSla(ticket, now, calendar);
   const waitingForAcknowledgement = !ticket.acknowledgedAt;
   const progress = waitingForAcknowledgement ? sla.ack : sla.res;
   const completedAt = waitingForAcknowledgement ? ticket.acknowledgedAt : ticket.resolvedAt;
@@ -99,7 +99,7 @@ export default function Dashboard() {
     const p1p2 = open.filter(t => t.priority === 'P1' || t.priority === 'P2').length;
     let warn = 0, breach = 0;
     const due = open.filter(t => {
-      const { ack, res } = ticketSla(t, now);
+      const { ack, res } = ticketSla(t, now, store.slaCalendar);
       const states = [!t.acknowledgedAt ? ack.state : 'met', !t.resolvedAt ? res.state : 'met'];
       if (states.includes('breach')) breach++; else if (states.includes('warning')) warn++;
       return states.includes('breach') || states.includes('warning');
@@ -116,7 +116,7 @@ export default function Dashboard() {
     }).slice(0, 4);
     return { open, p1p2, due, warn, breach, unread, unreadConvs, ops, watch, ranked, recentActivity };
   }, [store, now]);
-  const kpis = useMemo(() => ticketKpis(store.tickets, now), [store.tickets, now]);
+  const kpis = useMemo(() => ticketKpis(store.tickets, now, store.slaCalendar), [store.tickets, store.slaCalendar, now]);
   const exportKpis = () => {
     const generatedAt = new Date(now).toISOString();
     const url = URL.createObjectURL(new Blob([ticketKpisToCsv(kpis, generatedAt, person)], { type: 'text/csv;charset=utf-8' }));
@@ -193,7 +193,7 @@ export default function Dashboard() {
           <div className="ops-queue-list">
             {visibleQueue.map((ticket, index) => {
               const service = store.services.find(item => item.id === ticket.serviceId);
-              const sla = slaSummary(ticket, now);
+              const sla = slaSummary(ticket, now, store.slaCalendar);
               const selected = focusTicket?.id === ticket.id;
               return <Link
                 href={`/tickets?ticket=${encodeURIComponent(ticket.id)}`}

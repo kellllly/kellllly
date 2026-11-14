@@ -40,10 +40,19 @@ import type {
   ItsmAuditTimestamps,
   ItsmContacts,
   ItsmImportInput,
+  ItsmKnowledgeReviewInput,
+  ItsmKnowledgeReviewResponse,
   ItsmMessageRevised,
+  ItsmMyRequestCreated,
+  ItsmMyRequestInput,
+  ItsmMyRequests,
+  ItsmNotificationReadsInput,
+  ItsmNotificationReadsResponse,
   ItsmPeople,
   ItsmPresence,
   ItsmPresenceInput,
+  ItsmRequestApprovalDecision,
+  ItsmRequestApprovalInput,
   ItsmRoleArchiveCheckFailureResponse,
   ItsmRoleArchiveCheckResponse,
   ItsmRoleAssignment,
@@ -465,6 +474,461 @@ export const useImportItsmExamples = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getImportItsmExamplesMutationOptions(options), queryClient);
+    }
+
+export const getGetItsmMyRequestsUrl = () => {
+
+
+
+
+  return `/api/itsm/my-requests`
+}
+
+/**
+ * @summary Read requests belonging to the authenticated requester
+ */
+export const getItsmMyRequests = async ( options?: Parameters<typeof customFetch>[1]): Promise<ItsmMyRequests> => {
+
+  return customFetch<ItsmMyRequests>(getGetItsmMyRequestsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetItsmMyRequestsQueryKey = () => {
+    return [
+    `/api/itsm/my-requests`
+    ] as const;
+    }
+
+
+export const getGetItsmMyRequestsQueryOptions = <TData = Awaited<ReturnType<typeof getItsmMyRequests>>, TError = ErrorType<void>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetItsmMyRequestsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getItsmMyRequests>>> = ({ signal }) => getItsmMyRequests({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetItsmMyRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof getItsmMyRequests>>>
+export type GetItsmMyRequestsQueryError = ErrorType<void>
+
+
+export function useGetItsmMyRequests<TData = Awaited<ReturnType<typeof getItsmMyRequests>>, TError = ErrorType<void>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmMyRequests>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmMyRequests>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmMyRequests<TData = Awaited<ReturnType<typeof getItsmMyRequests>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getItsmMyRequests>>,
+          TError,
+          Awaited<ReturnType<typeof getItsmMyRequests>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetItsmMyRequests<TData = Awaited<ReturnType<typeof getItsmMyRequests>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read requests belonging to the authenticated requester
+ */
+
+export function useGetItsmMyRequests<TData = Awaited<ReturnType<typeof getItsmMyRequests>>, TError = ErrorType<void>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getItsmMyRequests>>, TError, TData>>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetItsmMyRequestsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateItsmMyRequestUrl = () => {
+
+
+
+
+  return `/api/itsm/my-requests`
+}
+
+/**
+ * @summary Submit a request as the authenticated requester
+ */
+export const createItsmMyRequest = async (itsmMyRequestInput: ItsmMyRequestInput, options?: Parameters<typeof customFetch>[1]): Promise<ItsmMyRequestCreated> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmMyRequestCreated>(getCreateItsmMyRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmMyRequestInput)
+  }
+);}
+
+
+
+
+
+export const getCreateItsmMyRequestMutationKey = () => ['createItsmMyRequest'] as const;
+
+export const getCreateItsmMyRequestMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createItsmMyRequest>>, TError,CreateItsmMyRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createItsmMyRequest>>, TError,CreateItsmMyRequestMutationVariables, TContext> => {
+
+const mutationKey = getCreateItsmMyRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createItsmMyRequest>>, CreateItsmMyRequestMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createItsmMyRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateItsmMyRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createItsmMyRequest>>>
+    export type CreateItsmMyRequestMutationBody = BodyType<ItsmMyRequestInput>
+    export type CreateItsmMyRequestMutationError = ErrorType<void>
+    export type CreateItsmMyRequestMutationVariables = {data: BodyType<ItsmMyRequestInput>}
+
+    /**
+ * @summary Submit a request as the authenticated requester
+ */
+export const useCreateItsmMyRequest = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createItsmMyRequest>>, TError,CreateItsmMyRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createItsmMyRequest>>,
+        TError,
+        CreateItsmMyRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateItsmMyRequestMutationOptions(options), queryClient);
+    }
+
+export const getDecideItsmRequestApprovalUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/itsm/requests/${requestId}/approval`
+}
+
+/**
+ * @summary Approve or reject a requester service demand
+ */
+export const decideItsmRequestApproval = async (requestId: string,
+    itsmRequestApprovalInput: ItsmRequestApprovalInput, options?: Parameters<typeof customFetch>[1]): Promise<ItsmRequestApprovalDecision> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmRequestApprovalDecision>(getDecideItsmRequestApprovalUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmRequestApprovalInput)
+  }
+);}
+
+
+
+
+
+export const getDecideItsmRequestApprovalMutationKey = () => ['decideItsmRequestApproval'] as const;
+
+export const getDecideItsmRequestApprovalMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideItsmRequestApproval>>, TError,DecideItsmRequestApprovalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof decideItsmRequestApproval>>, TError,DecideItsmRequestApprovalMutationVariables, TContext> => {
+
+const mutationKey = getDecideItsmRequestApprovalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof decideItsmRequestApproval>>, DecideItsmRequestApprovalMutationVariables> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  decideItsmRequestApproval(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DecideItsmRequestApprovalMutationResult = NonNullable<Awaited<ReturnType<typeof decideItsmRequestApproval>>>
+    export type DecideItsmRequestApprovalMutationBody = BodyType<ItsmRequestApprovalInput>
+    export type DecideItsmRequestApprovalMutationError = ErrorType<void>
+    export type DecideItsmRequestApprovalMutationVariables = {requestId: string;data: BodyType<ItsmRequestApprovalInput>}
+
+    /**
+ * @summary Approve or reject a requester service demand
+ */
+export const useDecideItsmRequestApproval = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof decideItsmRequestApproval>>, TError,DecideItsmRequestApprovalMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof decideItsmRequestApproval>>,
+        TError,
+        DecideItsmRequestApprovalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDecideItsmRequestApprovalMutationOptions(options), queryClient);
+    }
+
+export const getReviewItsmKnowledgeArticleUrl = (articleId: string,) => {
+
+
+
+
+  return `/api/itsm/kedb/${articleId}/review`
+}
+
+/**
+ * @summary Publish or return a knowledge article for revision
+ */
+export const reviewItsmKnowledgeArticle = async (articleId: string,
+    itsmKnowledgeReviewInput: ItsmKnowledgeReviewInput, options?: Parameters<typeof customFetch>[1]): Promise<ItsmKnowledgeReviewResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmKnowledgeReviewResponse>(getReviewItsmKnowledgeArticleUrl(articleId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmKnowledgeReviewInput)
+  }
+);}
+
+
+
+
+
+export const getReviewItsmKnowledgeArticleMutationKey = () => ['reviewItsmKnowledgeArticle'] as const;
+
+export const getReviewItsmKnowledgeArticleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>, TError,ReviewItsmKnowledgeArticleMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>, TError,ReviewItsmKnowledgeArticleMutationVariables, TContext> => {
+
+const mutationKey = getReviewItsmKnowledgeArticleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>, ReviewItsmKnowledgeArticleMutationVariables> = (props) => {
+          const {articleId,data} = props ?? {};
+
+          return  reviewItsmKnowledgeArticle(articleId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewItsmKnowledgeArticleMutationResult = NonNullable<Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>>
+    export type ReviewItsmKnowledgeArticleMutationBody = BodyType<ItsmKnowledgeReviewInput>
+    export type ReviewItsmKnowledgeArticleMutationError = ErrorType<void>
+    export type ReviewItsmKnowledgeArticleMutationVariables = {articleId: string;data: BodyType<ItsmKnowledgeReviewInput>}
+
+    /**
+ * @summary Publish or return a knowledge article for revision
+ */
+export const useReviewItsmKnowledgeArticle = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>, TError,ReviewItsmKnowledgeArticleMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reviewItsmKnowledgeArticle>>,
+        TError,
+        ReviewItsmKnowledgeArticleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReviewItsmKnowledgeArticleMutationOptions(options), queryClient);
+    }
+
+export const getSetItsmNotificationReadsUrl = () => {
+
+
+
+
+  return `/api/itsm/notifications/read`
+}
+
+/**
+ * @summary Persist notifications read by the authenticated account
+ */
+export const setItsmNotificationReads = async (itsmNotificationReadsInput: ItsmNotificationReadsInput, options?: Parameters<typeof customFetch>[1]): Promise<ItsmNotificationReadsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ItsmNotificationReadsResponse>(getSetItsmNotificationReadsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(itsmNotificationReadsInput)
+  }
+);}
+
+
+
+
+
+export const getSetItsmNotificationReadsMutationKey = () => ['setItsmNotificationReads'] as const;
+
+export const getSetItsmNotificationReadsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setItsmNotificationReads>>, TError,SetItsmNotificationReadsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setItsmNotificationReads>>, TError,SetItsmNotificationReadsMutationVariables, TContext> => {
+
+const mutationKey = getSetItsmNotificationReadsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setItsmNotificationReads>>, SetItsmNotificationReadsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  setItsmNotificationReads(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetItsmNotificationReadsMutationResult = NonNullable<Awaited<ReturnType<typeof setItsmNotificationReads>>>
+    export type SetItsmNotificationReadsMutationBody = BodyType<ItsmNotificationReadsInput>
+    export type SetItsmNotificationReadsMutationError = ErrorType<void>
+    export type SetItsmNotificationReadsMutationVariables = {data: BodyType<ItsmNotificationReadsInput>}
+
+    /**
+ * @summary Persist notifications read by the authenticated account
+ */
+export const useSetItsmNotificationReads = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setItsmNotificationReads>>, TError,SetItsmNotificationReadsMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setItsmNotificationReads>>,
+        TError,
+        SetItsmNotificationReadsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetItsmNotificationReadsMutationOptions(options), queryClient);
     }
 
 export const getPostItsmTemporaryMessageUrl = (conversationId: string,) => {

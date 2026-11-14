@@ -9,10 +9,10 @@ const ticket = (fields: Record<string, unknown>) => normalizeTicket({ impact: 1,
 
 test('ITIL indicators: MTTR, resolution SLA rate and volumes', () => {
   const kpis = ticketKpis([
-    // P1 (2 h): resolved in 1 h, on time.
-    ticket({ id: 'INC-1', category: 'Réseau', assignee: 'Olivier Nguema', status: 'Résolu', openedAt: ago(300), resolvedAt: ago(240) }),
-    // P1 closed without resolvedAt, 3 h after opening: late; closedAt ends the resolution.
-    ticket({ id: 'INC-2', category: 'Réseau', assignee: 'Olivier Nguema', status: 'Clos', openedAt: ago(600), resolvedAt: null, closedAt: ago(420) }),
+    // P1 (2 h): opened during working hours and resolved in 1 h, on time.
+    ticket({ id: 'INC-1', category: 'Réseau', assignee: 'Olivier Nguema', status: 'Résolu', openedAt: ago(240), resolvedAt: ago(180) }),
+    // P1 closed without resolvedAt, 3 working hours after opening: late; closedAt ends the resolution.
+    ticket({ id: 'INC-2', category: 'Réseau', assignee: 'Olivier Nguema', status: 'Clos', openedAt: ago(300), resolvedAt: null, closedAt: ago(120) }),
     // P1 open past its deadline: a breach without a resolution time.
     ticket({ id: 'INC-3', category: 'Accès', assignee: '', status: 'En cours', openedAt: ago(200) }),
     // P1 open, deadline not reached: outcome unknown, left out of the rate.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Watermark } from '@/components/watermark';
 import { Link, useLocation } from 'wouter';
 import { Activity, AlertTriangle, Bell, BellOff, Check, ClipboardList, Cpu, Landmark, LayoutDashboard, LifeBuoy, LockKeyhole, LogOut, Menu, MessageSquare, Settings, ShieldCheck, WifiOff, X } from 'lucide-react';
@@ -14,7 +14,7 @@ import { offlineMessage } from '@/lib/offline';
 import { runShortcut } from '@/lib/shortcuts';
 import { isQuietTime, useQuietHours } from '@/lib/quiet-hours';
 import { PRESENCE_OPTIONS, presenceOf } from '@/lib/presence';
-import { setItsmPresence } from '@workspace/api-client-react';
+import { setItsmNotificationReads, setItsmPresence } from '@workspace/api-client-react';
 import type { PresenceStatus } from '@/lib/types';
 
 
@@ -45,7 +45,9 @@ export function Shell({ children }: { children: ReactNode }) {
   const { store, storageIssue, dismissIssue, unreadableRecoveryDraftCount, recovery, writesSuspended, resync, offlineSince } = useStore();
   const { name: displayName } = useDisplayName();
   const { signOut } = useClerk();
-  const [mobileNav, setMobileNav] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const now = useNow(15_000);
   const page = meta[location] || { title: 'Page introuvable', sub: 'Destination inconnue' };
   const isDashboard = location === '/' || location === '/user-portal';
@@ -61,21 +63,59 @@ export function Shell({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [roleCode, setLocation]);
+  useEffect(() => {
+    if (!workspaceOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    workspaceRef.current?.querySelector<HTMLButtonElement>('[data-testid="button-close-workspace"]')?.focus();
+
+    const onDrawerKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setWorkspaceOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = workspaceRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onDrawerKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onDrawerKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (menuButtonRef.current?.isConnected) menuButtonRef.current.focus();
+    };
+  }, [workspaceOpen]);
+  const closeWorkspace = () => setWorkspaceOpen(false);
   return <div className={`app-shell flex min-h-[100dvh] ${isDashboard ? 'anif-dashboard-shell' : ''}`}><Watermark name={displayName} />
-    <aside className={`sidebar fixed inset-y-0 left-0 z-40 flex w-[252px] flex-col overflow-y-auto px-4 py-5 transition-transform lg:sticky lg:top-0 lg:h-[100dvh] lg:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="mb-8 flex items-center gap-3 px-2">
+    <aside id="workspace-navigation" ref={workspaceRef} role="dialog" aria-label="Espace de travail" aria-modal={workspaceOpen || undefined} aria-hidden={!workspaceOpen} inert={!workspaceOpen} className={`sidebar fixed inset-y-0 left-0 z-50 flex w-[min(84vw,320px)] flex-col overflow-y-auto px-4 py-5 shadow-2xl transition-transform duration-300 ease-out ${workspaceOpen ? 'translate-x-0' : '-translate-x-full'}`} data-testid="workspace-drawer">
+      <div className="mb-8 flex items-center justify-between gap-3 px-2">
+        <div className="flex min-w-0 items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#4e9d83] text-[#102c28]"><ShieldCheck size={21} strokeWidth={2.2} /></div>
         <div><div className="text-[13px] font-bold tracking-[.08em]">ANIF <span className="font-medium text-[#a9c9bc]">GABON</span></div><div className="mt-0.5 text-[10px] tracking-[.15em] text-[#aab9c2]">POSTE DE PILOTAGE</div></div>
+        </div>
+        <button type="button" onClick={closeWorkspace} aria-label="Fermer le menu de navigation" data-testid="button-close-workspace" className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-lg text-[#c3cdd0] hover:bg-[#243e43] hover:text-white"><X size={17} /></button>
       </div>
       <div className="eyebrow px-3 pb-2 text-[#9aabb6]">Espace de travail</div>
       <nav className="space-y-1">
         {navItems.filter(({ href }) => roleCode === 'N5'
           ? ['/', '/messages', '/services', '/audit', '/governance'].includes(href)
           : true
-        ).map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileNav(false)} className={`nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${location === href ? 'bg-[#2b4d4d] font-semibold text-[#eff8f2]' : 'text-[#c3cdd0] hover:bg-[#243e43] hover:text-white'}`} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/messages' && unread > 0 && <span data-testid="badge-unread-nav" className="ml-auto rounded-full bg-[#d5a45d] px-1.5 py-0.5 text-[10px] font-semibold text-[#24313b]">{unread}</span>}</Link>)}
+        ).map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={closeWorkspace} className={`nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${location === href ? 'bg-[#2b4d4d] font-semibold text-[#eff8f2]' : 'text-[#c3cdd0] hover:bg-[#243e43] hover:text-white'}`} data-testid={`link-nav-${href === '/' ? 'home' : href.slice(1)}`}><Icon size={17} /><span>{label}</span>{href === '/messages' && unread > 0 && <span data-testid="badge-unread-nav" className="ml-auto rounded-full bg-[#d5a45d] px-1.5 py-0.5 text-[10px] font-semibold text-[#24313b]">{unread}</span>}</Link>)}
       </nav>
       <div className="eyebrow mb-2 mt-8 px-3 text-[#9aabb6]">Configuration</div>
-      <Link href="/settings" data-testid="link-nav-settings" onClick={() => setMobileNav(false)} className={`nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${location === '/settings' ? 'bg-[#2b4d4d] text-white' : 'text-[#c3cdd0] hover:bg-[#243e43]'}`}><Settings size={17} />Préférences</Link>
+      <Link href="/settings" data-testid="link-nav-settings" onClick={closeWorkspace} className={`nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] ${location === '/settings' ? 'bg-[#2b4d4d] text-white' : 'text-[#c3cdd0] hover:bg-[#243e43]'}`}><Settings size={17} />Préférences</Link>
       <div className="mt-auto rounded-xl border border-[#3b5659] bg-[#1d383d] p-3.5">
         <div className="flex items-center gap-2 text-[11px] font-semibold text-[#d2e6db]"><LockKeyhole size={14} />Espace ITSM partagé</div>
         <p className="mt-2 text-[11px] leading-relaxed text-[#a9bdbe]">Données fictives du pilote, visibles aux comptes authentifiés. Prototype non homologué.</p>
@@ -83,11 +123,11 @@ export function Shell({ children }: { children: ReactNode }) {
         <PresencePicker />
       </div>
     </aside>
-    {mobileNav && <button aria-label="Fermer la navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-30 bg-black/30 lg:hidden" />}
+    {workspaceOpen && <button type="button" aria-label="Fermer le menu de navigation" onClick={closeWorkspace} className="fixed inset-0 z-40 cursor-default bg-black/45 backdrop-blur-[1px]" data-testid="workspace-backdrop" />}
     <main className="min-w-0 flex-1">
       <header className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-4 backdrop-blur md:px-8">
         <div className="flex h-[70px] items-center gap-3">
-          <button onClick={() => setMobileNav(v => !v)} className="focus-ring rounded-lg p-2 lg:hidden" aria-label="Ouvrir le menu" data-testid="button-mobile-nav"><Menu size={19} /></button>
+          <button ref={menuButtonRef} type="button" onClick={() => setWorkspaceOpen(v => !v)} className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground" aria-label={workspaceOpen ? 'Fermer le menu de navigation' : 'Ouvrir le menu de navigation'} aria-expanded={workspaceOpen} aria-controls="workspace-navigation" data-testid="button-mobile-nav"><Menu size={19} /></button>
           <div className="min-w-0 flex-1"><div className="eyebrow hidden sm:block">ANIF / GABON <span className="mx-1">·</span> DÉMONSTRATEUR NON HOMOLOGUÉ</div><h1 className="mt-0.5 truncate text-[18px] font-semibold tracking-[-.02em]">Poste de pilotage</h1></div>
           <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[11px] text-muted-foreground md:flex"><span className="h-2 w-2 rounded-full bg-[#4f9d80]" /><span>Environnement simulé</span></div>
           <NotificationBell />
@@ -155,18 +195,31 @@ function NotificationBell() {
   const [open, setOpen] = useState(false);
   const { name: displayName } = useDisplayName();
   const { person } = usePeople();
+  const [readError, setReadError] = useState(false);
   const items = useMemo(() => deriveNotifications(store, now, [store.profile.name, displayName], person), [store, now, displayName, person]);
   const quiet = useQuietHours();
   const quietNow = isQuietTime(quiet, now);
   // During quiet hours only SLA breaches (red) are counted; the others stay listed.
   const unread = items.filter(n => !n.read && (!quietNow || n.tone === 'red')).length;
-  const markRead = (ids: string[]) => setStore(s => ({ ...s, notifRead: Array.from(new Set([...s.notifRead, ...ids])) }));
+  const markRead = (ids: string[]) => {
+    const pending = [...new Set(ids.filter(id => id && !store.notifRead.includes(id)))];
+    if (!pending.length) return;
+    setReadError(false);
+    void (async () => {
+      for (let offset = 0; offset < pending.length; offset += 500) {
+        await setItsmNotificationReads({ ids: pending.slice(offset, offset + 500) });
+      }
+      setStore(s => ({ ...s, notifRead: Array.from(new Set([...s.notifRead, ...pending])).slice(-1000) }));
+      log('Notifications marquées comme lues', 'Notifications');
+    })().catch(() => setReadError(true));
+  };
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
       <button className="focus-ring relative grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-muted-foreground hover:text-foreground" aria-label={`Notifications (${unread} non lues)`} data-testid="button-notifications"><Bell size={16} />{unread > 0 && <span data-testid="badge-notifications" className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#c88e43] px-1 text-[9px] font-bold text-[#24313b]">{unread}</span>}</button>
     </PopoverTrigger>
     <PopoverContent align="end" className="w-[340px] max-w-[calc(100vw-1.5rem)] rounded-[14px] border-border bg-card p-0">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><div className="eyebrow">NOTIFICATIONS DU PILOTE</div><div className="mt-0.5 text-[13px] font-semibold">{unread} à consulter</div></div>{unread > 0 && <button data-testid="button-notifications-read-all" onClick={() => { markRead(items.map(n => n.id)); log('Notifications marquées comme lues', 'Notifications'); }} className="focus-ring rounded-lg px-2 py-1 text-[10px] font-semibold text-primary hover:bg-muted">Tout marquer lu</button>}</div>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><div className="eyebrow">NOTIFICATIONS DU PILOTE</div><div className="mt-0.5 text-[13px] font-semibold">{unread} à consulter</div></div>{unread > 0 && <button data-testid="button-notifications-read-all" onClick={() => markRead(items.map(n => n.id))} className="focus-ring rounded-lg px-2 py-1 text-[10px] font-semibold text-primary hover:bg-muted">Tout marquer lu</button>}</div>
+      {readError && <div role="alert" data-testid="notifications-read-error" className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-[11px] text-destructive">La lecture n’a pas été enregistrée. Réessayez.</div>}
       {quietNow && <div data-testid="notifications-quiet" className="border-b border-border bg-muted/50 px-4 py-2 text-[10px] text-muted-foreground">Heures silencieuses jusqu’à {quiet.end} : seuls les délais dépassés sont comptés.</div>}
       <div className="max-h-[360px] overflow-y-auto">
         {items.length === 0 && <div className="grid place-items-center px-6 py-10 text-center"><BellOff size={18} className="text-muted-foreground" /><div className="mt-2 text-[12px] font-semibold">Aucune notification</div><div className="mt-1 text-[11px] text-muted-foreground">Les seuils SLA, escalades et mentions apparaîtront ici.</div></div>}

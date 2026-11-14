@@ -18,7 +18,7 @@ import type { Store } from './types';
 
 export { STORAGE_KEY } from './storage';
 
-type SharedData = Pick<Store, 'tickets' | 'conversations' | 'services' | 'assets' | 'audit' | 'kedb' | 'notifications' | 'seeded' | 'schema'>;
+type SharedData = Pick<Store, 'tickets' | 'conversations' | 'services' | 'assets' | 'audit' | 'kedb' | 'notifications' | 'seeded' | 'schema' | 'slaCalendar'>;
 type Ctx = {
   store: Store;
   setStore: Dispatch<SetStateAction<Store>>;
@@ -141,6 +141,7 @@ function sharedData(store: Store): SharedData {
     kedb: store.kedb,
     notifications: store.notifications,
     seeded: store.seeded,
+    slaCalendar: store.slaCalendar,
   };
 }
 
@@ -153,7 +154,9 @@ function applySnapshot(previous: Store, remote: Record<string, unknown>): Store 
     profile: remote.profile && typeof remote.profile === 'object' ? next.profile : previous.profile,
     theme: previous.theme,
     drafts: previous.drafts,
-    notifRead: previous.notifRead,
+    notifRead: Array.isArray(remote.notifRead)
+      ? [...new Set(remote.notifRead.filter((id): id is string => typeof id === 'string' && id.length <= 256))].slice(-1000)
+      : previous.notifRead,
   };
 }
 

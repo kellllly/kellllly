@@ -1,10 +1,19 @@
+import {
+  DEFAULT_ITSM_SLA_CALENDAR,
+  addItsmBusinessMinutes,
+  itsmBusinessMinutesBetween,
+  itsmPausedBusinessMinutesBetween,
+  type ItsmSlaCalendar,
+  type ItsmSlaPause,
+} from "./itsm-sla-calendar.ts";
+
 /**
  * Server-side record of SLA breaches. The browser already shows its own
  * countdowns and alerts; this adds a journal trace (time, priority, level,
  * assignee) and an operational log alert, once per ticket and deadline.
  *
- * Same demonstration rules as the browser (docs/specification-coverage.md):
- * continuous time from the initial opening, no business hours or holidays.
+ * The browser and monitor share the Libreville pilot calendar and exclude
+ * server-recorded periods spent in "En attente".
  */
 
 type JsonRecord = Record<string, unknown>;
@@ -37,7 +46,24 @@ const isRecord = (value: unknown): value is JsonRecord =>
 const breachKey = (ticketId: string, deadline: string) => `${ticketId}:${deadline}`;
 
 /** Breaches due at `now` that the journal does not record yet. */
-export function findNewSlaBreaches(tickets: unknown, audit: unknown, now: Date): SlaBreach[] {
+function ticketSlaPauses(ticket: JsonRecord): ItsmSlaPause[] {
+  return (Array.isArray(ticket.slaPauses) ? ticket.slaPauses : []).flatMap((value): ItsmSlaPause[] => {
+    if (!isRecord(value) || typeof value.startedAt !== "string" || !Number.isFinite(Date.parse(value.startedAt))) return [];
+    return [{
+      startedAt: value.startedAt,
+      ...(typeof value.endedAt === "string" && Number.isFinite(Date.parse(value.endedAt))
+        ? { endedAt: value.endedAt }
+        : {}),
+    }];
+  });
+}
+
+export function findNewSlaBreaches(
+  tickets: unknown,
+  audit: unknown,
+  now: Date,
+  calendar: ItsmSlaCalendar = DEFAULT_ITSM_SLA_CALENDAR,
+): SlaBreach[] {
   const recorded = new Set((Array.isArray(audit) ? audit : []).filter(isRecord)
     .filter((event) => event.type === ITSM_SLA_BREACH_AUDIT_TYPE)
     .map((event) => breachKey(String(event.ticketId), String(event.deadline))));
@@ -47,21 +73,25 @@ export function findNewSlaBreaches(tickets: unknown, audit: unknown, now: Date):
     const policy = SLA_POLICY_MINUTES[String(ticket.priority)];
     const opened = typeof ticket.openedAt === "string" ? Date.parse(ticket.openedAt) : Number.NaN;
     if (!policy || !Number.isFinite(opened) || typeof ticket.id !== "string") continue;
+    const pauses = ticketSlaPauses(ticket);
     const checks = [
       { deadline: "acknowledge" as const, minutes: policy.acknowledge, completedAt: ticket.acknowledgedAt },
       { deadline: "resolve" as const, minutes: policy.resolve, completedAt: ticket.resolvedAt },
     ];
     for (const { deadline, minutes, completedAt } of checks) {
-      const due = opened + minutes * 60_000;
       const completed = typeof completedAt === "string" && completedAt ? Date.parse(completedAt) : Number.NaN;
+      const evaluatedAt = Number.isFinite(completed) ? completed : now.getTime();
+      const pausedMinutes = itsmPausedBusinessMinutesBetween(opened, evaluatedAt, pauses, calendar);
+      const elapsedMinutes = Math.max(0, itsmBusinessMinutesBetween(opened, evaluatedAt, calendar) - pausedMinutes);
+      const dueAt = addItsmBusinessMinutes(opened, minutes + pausedMinutes, calendar);
       // Completed in time, or not due yet: nothing to record. A late completion is still a breach.
-      if (Number.isFinite(completed) ? completed <= due : now.getTime() <= due) continue;
+      if (elapsedMinutes <= minutes) continue;
       if (recorded.has(breachKey(ticket.id, deadline))) continue;
       breaches.push({
         ticketId: ticket.id,
         deadline,
         priority: String(ticket.priority),
-        dueAt: new Date(due).toISOString(),
+        dueAt,
         supportLevel: ticket.supportLevel,
         assignee: ticket.assignee,
         serviceId: typeof ticket.serviceId === "string" ? ticket.serviceId : null,
@@ -127,9 +157,15 @@ const lastUpdateAt = (ticket: JsonRecord): number => {
  * - P2, 45 min without acknowledgement: reassigned to a senior L2 engineer;
  * - P3, 4 h without acknowledgement: L1 queue coordinator;
  * - P4 waiting 3 days for the requester: automatic reminder (once per waiting period).
- * Each rule fires once per ticket; continuous time, no business hours.
+ * Business-time thresholds use the pilot calendar; the separate P4 requester
+ * reminder remains a three-calendar-day follow-up.
  */
-export function findSlaEscalations(tickets: unknown, audit: unknown, now: Date): SlaEscalation[] {
+export function findSlaEscalations(
+  tickets: unknown,
+  audit: unknown,
+  now: Date,
+  calendar: ItsmSlaCalendar = DEFAULT_ITSM_SLA_CALENDAR,
+): SlaEscalation[] {
   const done = new Set((Array.isArray(audit) ? audit : []).filter(isRecord)
     .filter((event) => event.type === ITSM_SLA_ESCALATION_AUDIT_TYPE)
     .map((event) => String(event.escalationKey)));
@@ -142,7 +178,11 @@ export function findSlaEscalations(tickets: unknown, audit: unknown, now: Date):
     const opened = Date.parse(String(ticket.openedAt));
     if (!policy || !Number.isFinite(opened)) continue;
     const acknowledged = typeof ticket.acknowledgedAt === "string" && Boolean(ticket.acknowledgedAt);
-    const elapsed = nowMs - opened;
+    const pauses = ticketSlaPauses(ticket);
+    const elapsed = Math.max(0,
+      itsmBusinessMinutesBetween(opened, nowMs, calendar)
+      - itsmPausedBusinessMinutesBetween(opened, nowMs, pauses, calendar),
+    ) * 60_000;
     const id = ticket.id;
     const push = (escalation: Omit<SlaEscalation, "ticketId" | "priority" | "key"> & { key?: string }) => {
       const key = escalation.key ?? `${id}:${escalation.rule}`;

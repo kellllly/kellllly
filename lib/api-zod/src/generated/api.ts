@@ -70,6 +70,192 @@ export const ImportItsmExamplesResponse = zod.object({
 
 
 /**
+ * @summary Read requests belonging to the authenticated requester
+ */
+export const getItsmMyRequestsResponseRequestsItemRequestApprovalOneReasonMax = 500;
+
+
+
+export const GetItsmMyRequestsResponse = zod.object({
+  "requests": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "kind": zod.enum(['Incident', 'Demande']),
+  "category": zod.string(),
+  "status": zod.string(),
+  "priority": zod.string(),
+  "serviceId": zod.string().nullable(),
+  "serviceName": zod.string().nullable(),
+  "description": zod.string(),
+  "openedAt": zod.coerce.date(),
+  "requestApproval": zod.union([zod.object({
+  "status": zod.enum(['pending', 'approved', 'rejected']),
+  "reason": zod.string().max(getItsmMyRequestsResponseRequestsItemRequestApprovalOneReasonMax).nullable(),
+  "decidedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})),
+  "services": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "category": zod.string()
+}))
+})
+
+
+/**
+ * @summary Submit a request as the authenticated requester
+ */
+export const createItsmMyRequestBodyTitleMax = 180;
+
+export const createItsmMyRequestBodyDescriptionMax = 12000;
+
+export const createItsmMyRequestBodyServiceIdMax = 120;
+
+
+
+export const CreateItsmMyRequestBody = zod.object({
+  "kind": zod.enum(['Incident', 'Demande']),
+  "title": zod.string().min(1).max(createItsmMyRequestBodyTitleMax),
+  "category": zod.enum(['Applications', 'Poste de travail', 'Équipement', 'Réseau', 'Accès']),
+  "description": zod.string().min(1).max(createItsmMyRequestBodyDescriptionMax),
+  "serviceId": zod.string().max(createItsmMyRequestBodyServiceIdMax).nullable()
+})
+
+export const createItsmMyRequestResponseRequestRequestApprovalOneReasonMax = 500;
+
+
+
+export const CreateItsmMyRequestResponse = zod.object({
+  "request": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "kind": zod.enum(['Incident', 'Demande']),
+  "category": zod.string(),
+  "status": zod.string(),
+  "priority": zod.string(),
+  "serviceId": zod.string().nullable(),
+  "serviceName": zod.string().nullable(),
+  "description": zod.string(),
+  "openedAt": zod.coerce.date(),
+  "requestApproval": zod.union([zod.object({
+  "status": zod.enum(['pending', 'approved', 'rejected']),
+  "reason": zod.string().max(createItsmMyRequestResponseRequestRequestApprovalOneReasonMax).nullable(),
+  "decidedAt": zod.coerce.date().nullable()
+}),zod.null()])
+})
+})
+
+
+/**
+ * @summary Approve or reject a requester service demand
+ */
+export const decideItsmRequestApprovalPathRequestIdMax = 120;
+
+
+
+export const DecideItsmRequestApprovalParams = zod.object({
+  "requestId": zod.coerce.string().min(1).max(decideItsmRequestApprovalPathRequestIdMax)
+})
+
+export const decideItsmRequestApprovalBodyReasonMax = 500;
+
+
+
+export const DecideItsmRequestApprovalBody = zod.object({
+  "decision": zod.enum(['approve', 'reject']),
+  "reason": zod.string().max(decideItsmRequestApprovalBodyReasonMax).optional()
+})
+
+export const decideItsmRequestApprovalResponseRequestApprovalReasonMax = 500;
+
+
+
+export const DecideItsmRequestApprovalResponse = zod.object({
+  "requestId": zod.string(),
+  "status": zod.string(),
+  "requestApproval": zod.object({
+  "status": zod.enum(['pending', 'approved', 'rejected']),
+  "reason": zod.string().max(decideItsmRequestApprovalResponseRequestApprovalReasonMax).nullable(),
+  "decidedAt": zod.coerce.date().nullable()
+})
+})
+
+
+/**
+ * @summary Publish or return a knowledge article for revision
+ */
+export const reviewItsmKnowledgeArticlePathArticleIdMax = 120;
+
+
+
+export const ReviewItsmKnowledgeArticleParams = zod.object({
+  "articleId": zod.coerce.string().min(1).max(reviewItsmKnowledgeArticlePathArticleIdMax)
+})
+
+export const reviewItsmKnowledgeArticleBodyTitleMax = 180;
+
+export const reviewItsmKnowledgeArticleBodySymptomMax = 4000;
+
+export const reviewItsmKnowledgeArticleBodyRootCauseMax = 4000;
+
+export const reviewItsmKnowledgeArticleBodyResolutionMax = 8000;
+
+export const reviewItsmKnowledgeArticleBodyCommentMax = 500;
+
+
+
+export const ReviewItsmKnowledgeArticleBody = zod.object({
+  "decision": zod.enum(['publish', 'request_changes']),
+  "title": zod.string().min(1).max(reviewItsmKnowledgeArticleBodyTitleMax).optional(),
+  "symptom": zod.string().min(1).max(reviewItsmKnowledgeArticleBodySymptomMax).optional(),
+  "rootCause": zod.string().min(1).max(reviewItsmKnowledgeArticleBodyRootCauseMax).optional(),
+  "resolution": zod.string().min(1).max(reviewItsmKnowledgeArticleBodyResolutionMax).optional(),
+  "comment": zod.string().max(reviewItsmKnowledgeArticleBodyCommentMax).optional()
+})
+
+export const ReviewItsmKnowledgeArticleResponse = zod.object({
+  "article": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "symptom": zod.string(),
+  "rootCause": zod.string(),
+  "resolution": zod.string(),
+  "ticketId": zod.string(),
+  "serviceId": zod.string().nullable(),
+  "category": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "author": zod.string(),
+  "reviewStatus": zod.enum(['pending', 'published', 'needs_revision']),
+  "reviewFeedback": zod.string().nullable(),
+  "reviewedAt": zod.coerce.date().nullable(),
+  "reviewedBy": zod.string().nullable()
+})
+})
+
+
+/**
+ * @summary Persist notifications read by the authenticated account
+ */
+export const setItsmNotificationReadsBodyIdsItemMax = 256;
+
+export const setItsmNotificationReadsBodyIdsMax = 1000;
+
+
+
+export const SetItsmNotificationReadsBody = zod.object({
+  "ids": zod.array(zod.string().min(1).max(setItsmNotificationReadsBodyIdsItemMax)).min(1).max(setItsmNotificationReadsBodyIdsMax)
+})
+
+export const setItsmNotificationReadsResponseMarkedMin = 0;
+
+
+
+export const SetItsmNotificationReadsResponse = zod.object({
+  "marked": zod.int().min(setItsmNotificationReadsResponseMarkedMin)
+})
+
+
+/**
  * @summary Post a message in a temporary channel (members only, until its end date)
  */
 export const postItsmTemporaryMessagePathConversationIdMax = 64;
@@ -411,7 +597,7 @@ export const GetItsmUserDirectoryResponse = zod.object({
   "accounts": zod.array(zod.object({
   "userId": zod.string(),
   "email": zod.string().nullable(),
-  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal(null)]).nullable(),
+  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal('REQUESTER'),zod.literal(null)]).nullable(),
   "serviceIds": zod.array(zod.string()),
   "unavailableServiceIds": zod.array(zod.string()).describe('Service identifiers assigned to this account but absent from the current pilot catalog')
 })),
@@ -449,13 +635,13 @@ export const assignItsmRoleBodyServiceIdsMax = 50;
 
 
 export const AssignItsmRoleBody = zod.object({
-  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal(null)]).nullable(),
+  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal('REQUESTER'),zod.literal(null)]).nullable(),
   "serviceIds": zod.array(zod.string().max(assignItsmRoleBodyServiceIdsItemMax)).max(assignItsmRoleBodyServiceIdsMax)
 })
 
 export const AssignItsmRoleResponse = zod.object({
   "userId": zod.string(),
-  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal(null)]).nullable(),
+  "role": zod.union([zod.literal('N1'),zod.literal('N2'),zod.literal('N3'),zod.literal('N4'),zod.literal('N5'),zod.literal('REQUESTER'),zod.literal(null)]).nullable(),
   "label": zod.string(),
   "serviceIds": zod.array(zod.string())
 })
@@ -564,13 +750,13 @@ export const attestItsmRoleBodyServiceIdsMax = 50;
 
 
 export const AttestItsmRoleBody = zod.object({
-  "role": zod.enum(['N1', 'N2', 'N3', 'N4', 'N5']),
+  "role": zod.enum(['N1', 'N2', 'N3', 'N4', 'N5', 'REQUESTER']),
   "serviceIds": zod.array(zod.string().max(attestItsmRoleBodyServiceIdsItemMax)).max(attestItsmRoleBodyServiceIdsMax)
 })
 
 export const AttestItsmRoleResponse = zod.object({
   "userId": zod.string(),
-  "role": zod.enum(['N1', 'N2', 'N3', 'N4', 'N5']),
+  "role": zod.enum(['N1', 'N2', 'N3', 'N4', 'N5', 'REQUESTER']),
   "serviceIds": zod.array(zod.string()),
   "attestedAt": zod.coerce.date()
 })

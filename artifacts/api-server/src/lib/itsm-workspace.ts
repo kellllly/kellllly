@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sanitizeAttachment } from "./itsm-attachments.ts";
-import { ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
+import { canPerform, ItsmAuthorizationError, requirePermission, type ItsmActor } from "./itsm-rbac.ts";
 import { developmentRoleArchiveConfig, developmentRoleArchiveEnabled } from "./development-role-archive-config.ts";
 import { isKeptWholeAuditType, isPrunedAuditEvent, pruneAuditEvent, sealAuditEvents, stripAuditChainFields } from "./itsm-audit-chain.ts";
 import {
   findNewSlaBreaches, findSlaEscalations, ITSM_SLA_ESCALATION_AUDIT_TYPE, SLA_MONITOR_ACTOR,
   slaBreachAuditEvent, type SlaBreach, type SlaEscalation,
 } from "./itsm-sla.ts";
+import {
+  DEFAULT_ITSM_SLA_CALENDAR,
+  normalizeItsmSlaCalendar,
+  parseItsmSlaCalendar,
+} from "./itsm-sla-calendar.ts";
 
 export type WorkspaceActor = ItsmActor;
 type JsonRecord = Record<string, unknown>;
@@ -113,14 +118,35 @@ const shortTime = (now: Date) => new Intl.DateTimeFormat("fr-FR", {
 export function recordItsmSlaBreaches(store: JsonRecord, now = new Date()): {
   store: JsonRecord; breaches: SlaBreach[]; escalations: SlaEscalation[];
 } {
-  const breaches = findNewSlaBreaches(store.tickets, store.audit, now);
-  const escalations = findSlaEscalations(store.tickets, store.audit, now);
-  if (breaches.length === 0 && escalations.length === 0) return { store, breaches, escalations };
+  const calendar = normalizeItsmSlaCalendar(store.slaCalendar ?? DEFAULT_ITSM_SLA_CALENDAR);
   const at = newStamp(now);
   const time = shortTime(now);
+  const pauseEvents: JsonRecord[] = [];
+  const tickets = records(store.tickets).map((ticket): JsonRecord => {
+    if (ticket.status !== "En attente" || typeof ticket.id !== "string") return { ...ticket };
+    const pauses = records(ticket.slaPauses).map((pause) => ({ ...pause }));
+    const activePause = pauses.at(-1);
+    if (activePause && typeof activePause.endedAt !== "string") return { ...ticket, slaPauses: pauses };
+    pauses.push({ startedAt: at });
+    pauseEvents.push({
+      id: randomUUID(),
+      type: "itsm.sla.pause.started",
+      action: `Pause des délais SLA initialisée pour le ticket ${ticket.id} déjà en attente`,
+      actor: SLA_MONITOR_ACTOR,
+      scope: `Ticket ${ticket.id}`,
+      ticketId: ticket.id,
+      reason: "waiting_status_at_calendar_activation",
+      at,
+      time,
+    });
+    return { ...ticket, slaPauses: pauses };
+  });
+  const breaches = findNewSlaBreaches(tickets, store.audit, now, calendar);
+  const escalations = findSlaEscalations(tickets, store.audit, now, calendar);
+  if (breaches.length === 0 && escalations.length === 0 && pauseEvents.length === 0) return { store, breaches, escalations };
   const events: JsonRecord[] = breaches.map((breach) => slaBreachAuditEvent(breach, randomUUID(), at, time));
+  events.push(...pauseEvents);
   const notifications: JsonRecord[] = [];
-  const tickets = records(store.tickets).map((ticket) => ({ ...ticket }));
   for (const escalation of escalations) {
     events.push({
       id: randomUUID(),
@@ -563,7 +589,7 @@ function nextTicketId(kind: unknown, tickets: JsonRecord[]): string {
   return `${prefix}-${max + 1}`;
 }
 
-function eventFor(ticket: JsonRecord, body: string, actor: WorkspaceActor, now: Date) {
+function eventFor(ticket: JsonRecord, body: string, actor: WorkspaceActor, now: Date): JsonRecord {
   const at = newStamp(now);
   return {
     ...ticket,
@@ -918,6 +944,15 @@ export function applyWorkspaceUpdate(
   requirePermission(actor, "saveWorkspace");
   const next = structuredClone(current);
   const normalized = structuredClone(submitted);
+  const currentSlaCalendar = normalizeItsmSlaCalendar(current.slaCalendar ?? DEFAULT_ITSM_SLA_CALENDAR);
+  const submittedSlaCalendar = Object.hasOwn(submitted, "slaCalendar")
+    ? parseItsmSlaCalendar(submitted.slaCalendar)
+    : currentSlaCalendar;
+  const slaCalendarChanged = !jsonEqual(currentSlaCalendar, submittedSlaCalendar);
+  if (slaCalendarChanged && actor.role !== "N1") {
+    throw new ItsmAuthorizationError("Seul un compte N1 peut modifier les jours fériés du calendrier SLA.");
+  }
+  normalized.slaCalendar = submittedSlaCalendar;
   // Read receipts are computed by the server; whatever the browser echoes back is dropped.
   if (Array.isArray(normalized.conversations)) normalized.conversations = records(normalized.conversations).map(({ readBy: _readBy, ...conversation }) => conversation);
   const oldTickets = records(current.tickets);
@@ -1064,6 +1099,12 @@ export function applyWorkspaceUpdate(
     }
     const oldStatus = String(old.status);
     const requestedStatus = String(proposed.status);
+    const hasTicketChanges = TICKET_FIELDS.some((field) => !jsonEqual(old[field], proposed[field]))
+      || oldStatus !== requestedStatus
+      || !jsonEqual(old.updates ?? [], proposed.updates ?? []);
+    if (hasTicketChanges && isRecord(old.requestApproval) && old.requestApproval.status === "pending") {
+      throw new ItsmAuthorizationError("Cette demande doit d’abord être approuvée ou rejetée par un N1 ou un N3 autorisé.");
+    }
     const resolutionChanged = !jsonEqual(old.rootCause, proposed.rootCause)
       || !jsonEqual(old.resolution, proposed.resolution);
     if (!ALLOWED_TRANSITIONS[oldStatus]?.includes(requestedStatus) && requestedStatus !== oldStatus) {
@@ -1078,9 +1119,6 @@ export function applyWorkspaceUpdate(
     const oldCab = isRecord(old.cab) ? old.cab : null;
     const proposedCab = isRecord(proposed.cab) ? proposed.cab : null;
     const cabChanged = !jsonEqual(oldCab, proposedCab);
-    const hasTicketChanges = TICKET_FIELDS.some((field) => !jsonEqual(old[field], proposed[field]))
-      || oldStatus !== requestedStatus
-      || !jsonEqual(old.updates ?? [], proposed.updates ?? []);
     if (hasTicketChanges) {
       const requesterClosure = requestedStatus === "Clos"
         && oldStatus === "Résolu"
@@ -1177,6 +1215,23 @@ export function applyWorkspaceUpdate(
       : requestedStatus === "En cours" && oldStatus === "Résolu" ? null : old.resolvedAt ?? null;
     updated.closedAt = ["Clos", "Rejeté"].includes(requestedStatus)
       ? (old.closedAt ?? newStamp(now)) : old.closedAt ?? null;
+    const slaPauses: JsonRecord[] = records(old.slaPauses).flatMap((pause) => {
+      if (typeof pause.startedAt !== "string" || !Number.isFinite(Date.parse(pause.startedAt))) return [];
+      return [{
+        startedAt: pause.startedAt,
+        ...(typeof pause.endedAt === "string" && Number.isFinite(Date.parse(pause.endedAt))
+          ? { endedAt: pause.endedAt }
+          : {}),
+      }];
+    });
+    if (oldStatus !== "En attente" && requestedStatus === "En attente") {
+      slaPauses.push({ startedAt: newStamp(now) });
+    } else if (oldStatus === "En attente" && requestedStatus !== "En attente") {
+      const activePause = slaPauses.at(-1);
+      if (activePause && typeof activePause.endedAt !== "string") activePause.endedAt = newStamp(now);
+    }
+    if (slaPauses.length) updated.slaPauses = slaPauses;
+    else delete updated.slaPauses;
     updated.cab = cabChanged && proposedCab
       ? { decision: proposedCab.decision, reason: String(proposedCab.reason ?? "").slice(0, 3000), by: actor.id, at: newStamp(now) }
       : old.cab ?? null;
@@ -1424,7 +1479,22 @@ export function applyWorkspaceUpdate(
         time: shortTime(now),
       };
     });
-  next.audit = retainItsmAuditEvents([...conversionEvents, ...messageEvents, ...additions, ...oldAudit]);
+  const slaCalendarEvents = slaCalendarChanged ? [{
+    id: randomUUID(),
+    type: "itsm.sla.calendar.changed",
+    action: "Calendrier SLA du pilote modifié",
+    actor: actor.id,
+    scope: "Préférences · SLA",
+    timezone: submittedSlaCalendar.timezone,
+    startTime: submittedSlaCalendar.startTime,
+    endTime: submittedSlaCalendar.endTime,
+    workingDays: submittedSlaCalendar.workingDays,
+    previousHolidays: currentSlaCalendar.holidays,
+    holidays: submittedSlaCalendar.holidays,
+    at: newStamp(now),
+    time: shortTime(now),
+  }] : [];
+  next.audit = retainItsmAuditEvents([...conversionEvents, ...messageEvents, ...additions, ...slaCalendarEvents, ...oldAudit]);
 
   // KEDB is generated exclusively by the server when requester confirmation closes a ticket.
   const kedb = records(current.kedb);
@@ -1438,7 +1508,8 @@ export function applyWorkspaceUpdate(
         id: articleId, title: ticket.title, symptom: ticket.description,
         rootCause: ticket.rootCause, resolution: ticket.resolution,
         ticketId: ticket.id, serviceId: ticket.serviceId ?? null, category: ticket.category,
-        createdAt: ticket.closedAt, author: actor.id,
+        createdAt: ticket.closedAt, author: actor.id, reviewStatus: "pending",
+        reviewFeedback: null, reviewedAt: null, reviewedBy: null,
       });
     }
   }
@@ -1450,6 +1521,7 @@ export function applyWorkspaceUpdate(
   next.drafts = current.drafts;
   next.seeded = current.seeded;
   next.schema = current.schema ?? 2;
+  next.slaCalendar = submittedSlaCalendar;
   return next;
 }
 
@@ -1539,8 +1611,335 @@ function readByFor(readReceipts: unknown, conversation: JsonRecord, actor: Works
   return Object.keys(readBy).length ? { readBy } : {};
 }
 
+export type ItsmMyRequestInput = {
+  kind: "Incident" | "Demande";
+  title: string;
+  category: string;
+  description: string;
+  serviceId: string | null;
+};
+
+function requesterTicketView(ticket: JsonRecord, servicesById: Map<string, JsonRecord>): JsonRecord | null {
+  if (ticket.kind !== "Incident" && ticket.kind !== "Demande") return null;
+  if (typeof ticket.id !== "string" || typeof ticket.openedAt !== "string") return null;
+  const serviceId = typeof ticket.serviceId === "string" ? ticket.serviceId : null;
+  const service = serviceId ? servicesById.get(serviceId) : undefined;
+  return {
+    id: ticket.id,
+    title: String(ticket.title ?? ""),
+    kind: ticket.kind,
+    category: String(ticket.category ?? ""),
+    status: String(ticket.status ?? "Nouveau"),
+    priority: String(ticket.priority ?? "À qualifier"),
+    serviceId,
+    serviceName: service ? String(service.name ?? "") : null,
+    description: String(ticket.description ?? ""),
+    openedAt: ticket.openedAt,
+    requestApproval: isRecord(ticket.requestApproval)
+      && ["pending", "approved", "rejected"].includes(String(ticket.requestApproval.status))
+      ? {
+        status: ticket.requestApproval.status,
+        reason: typeof ticket.requestApproval.reason === "string" ? ticket.requestApproval.reason : null,
+        decidedAt: typeof ticket.requestApproval.decidedAt === "string" ? ticket.requestApproval.decidedAt : null,
+      }
+      : null,
+  };
+}
+
+/** A requester receives only their own submissions and a minimal service picker. */
+export function itsmMyRequestsView(store: JsonRecord, actor: WorkspaceActor): JsonRecord {
+  requirePermission(actor, "viewOwnRequests");
+  const services = records(store.services)
+    .filter((service) => String(service.status ?? "").toLocaleLowerCase("fr-FR") !== "retiré")
+    .map((service) => ({
+      id: String(service.id ?? ""),
+      name: String(service.name ?? ""),
+      category: String(service.category ?? ""),
+    }))
+    .filter((service) => service.id && service.name);
+  const servicesById = new Map(records(store.services).map((service) => [String(service.id), service]));
+  const requests = records(store.tickets)
+    .filter((ticket) => ticket.requesterId === actor.id)
+    .map((ticket) => requesterTicketView(ticket, servicesById))
+    .filter((ticket): ticket is JsonRecord => ticket !== null)
+    .sort((left, right) => String(right.openedAt).localeCompare(String(left.openedAt)));
+  return { requests, services };
+}
+
+/** Creates a self-service request using server-owned identity, priority and assignment. */
+export function createItsmMyRequest(
+  store: JsonRecord,
+  input: ItsmMyRequestInput,
+  actor: WorkspaceActor,
+  now = new Date(),
+): JsonRecord {
+  requirePermission(actor, "createOwnRequest");
+  const title = input.title.trim();
+  const description = input.description.trim();
+  if (!title || title.length > 180) throw new Error("Le sujet du ticket est obligatoire (180 caractères maximum).");
+  if (!description || description.length > 12_000) throw new Error("Description invalide (12 000 caractères maximum).");
+  if (input.kind !== "Incident" && input.kind !== "Demande") throw new Error("Type de demande invalide.");
+  const category = input.category.trim();
+  const serviceId = input.serviceId?.trim() || null;
+  const services = records(store.services);
+  if (serviceId && !services.some((service) => String(service.id) === serviceId)) {
+    throw new Error("Service associé introuvable.");
+  }
+  const tickets = records(store.tickets);
+  const openedAt = newStamp(now);
+  const proposed = {
+    id: nextTicketId(input.kind, tickets),
+    title,
+    kind: input.kind,
+    category,
+    impact: 3,
+    urgency: 3,
+    supportLevel: 1,
+    assignee: "Équipe support",
+    serviceId,
+    assetId: null,
+    description,
+  };
+  const invalid = validateTicketBasics(proposed);
+  if (invalid) throw new Error(invalid);
+  const created = eventFor({
+    ...proposed,
+    priority: PRIORITY["3"]![2],
+    requester: actor.id,
+    requesterId: actor.id,
+    rootCause: null,
+    resolution: null,
+    status: input.kind === "Demande" ? "En attente" : "Nouveau",
+    openedAt,
+    acknowledgedAt: null,
+    resolvedAt: null,
+    closedAt: null,
+    cab: null,
+    kedbId: null,
+    ...(input.kind === "Demande" ? {
+      requestApproval: { status: "pending" },
+      slaPauses: [{ startedAt: openedAt }],
+    } : {}),
+    updates: [],
+  }, "Demande déposée depuis le portail demandeur.", actor, now);
+  const auditEvent = {
+    id: randomUUID(),
+    type: "itsm.request.created",
+    action: `Demande ${created.id} déposée`,
+    actor: actor.id,
+    scope: category,
+    ticketId: created.id,
+    at: openedAt,
+    time: shortTime(now),
+  };
+  return {
+    ...store,
+    tickets: [created, ...tickets],
+    audit: retainItsmAuditEvents([auditEvent, ...records(store.audit)]),
+  };
+}
+
+export type ItsmRequestApprovalDecisionInput = { decision: "approve" | "reject"; reason?: string };
+
+export class ItsmRequestNotFoundError extends Error {
+  constructor() {
+    super("Demande introuvable.");
+    this.name = "ItsmRequestNotFoundError";
+  }
+}
+
+export class ItsmRequestApprovalConflictError extends Error {
+  constructor() {
+    super("Cette demande a déjà reçu une décision.");
+    this.name = "ItsmRequestApprovalConflictError";
+  }
+}
+
+export class ItsmRequestApprovalValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ItsmRequestApprovalValidationError";
+  }
+}
+
+/** N1 can decide any requester demand; N3 is restricted to assigned services by approveCab. */
+export function decideItsmRequestApproval(
+  store: JsonRecord,
+  requestId: string,
+  input: ItsmRequestApprovalDecisionInput,
+  actor: WorkspaceActor,
+  now = new Date(),
+): JsonRecord {
+  const currentTickets = records(store.tickets);
+  const current = currentTickets.find((ticket) => ticket.id === requestId);
+  if (!current || current.kind !== "Demande" || typeof current.requesterId !== "string") {
+    throw new ItsmRequestNotFoundError();
+  }
+  requirePermission(actor, "approveCab", typeof current.serviceId === "string" ? current.serviceId : null);
+  if (!isRecord(current.requestApproval) || current.requestApproval.status !== "pending") {
+    throw new ItsmRequestApprovalConflictError();
+  }
+  const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+  if (reason.length > 500) throw new ItsmRequestApprovalValidationError("Le motif ne peut pas dépasser 500 caractères.");
+  if (input.decision === "reject" && !reason) {
+    throw new ItsmRequestApprovalValidationError("Un motif est obligatoire pour rejeter une demande.");
+  }
+  const at = newStamp(now);
+  const approved = input.decision === "approve";
+  const status = approved ? "Nouveau" : "Rejeté";
+  const requestApproval = {
+    status: approved ? "approved" : "rejected",
+    decidedAt: at,
+    reason: reason || null,
+  };
+  const tickets = currentTickets.map((ticket) => {
+    if (ticket.id !== requestId) return ticket;
+    const pauses = records(ticket.slaPauses).map((pause) => ({ ...pause }));
+    const lastPause = pauses.at(-1);
+    if (lastPause && typeof lastPause.endedAt !== "string") lastPause.endedAt = at;
+    const decisionText = approved ? "approuvée" : `rejetée : ${reason}`;
+    return {
+      ...ticket,
+      status,
+      closedAt: approved ? null : at,
+      requestApproval,
+      slaPauses: pauses,
+      updates: [
+        ...records(ticket.updates),
+        { author: actor.id, body: `Demande ${decisionText} par le support.`, at, time: shortTime(now) },
+      ],
+    };
+  });
+  const auditEvent = {
+    id: randomUUID(),
+    type: approved ? "itsm.request.approved" : "itsm.request.rejected",
+    action: approved ? `Demande ${requestId} approuvée` : `Demande ${requestId} rejetée`,
+    actor: actor.id,
+    scope: `Demande ${requestId}`,
+    ticketId: requestId,
+    reason: reason || undefined,
+    at,
+    time: shortTime(now),
+  };
+  return {
+    ...store,
+    tickets,
+    audit: retainItsmAuditEvents([auditEvent, ...records(store.audit)]),
+  };
+}
+
+export type ItsmKnowledgeReviewInput = {
+  decision: "publish" | "request_changes";
+  title?: string;
+  symptom?: string;
+  rootCause?: string;
+  resolution?: string;
+  comment?: string;
+};
+
+export class ItsmKnowledgeArticleNotFoundError extends Error {
+  constructor() {
+    super("Article de connaissance introuvable.");
+    this.name = "ItsmKnowledgeArticleNotFoundError";
+  }
+}
+
+export class ItsmKnowledgeReviewConflictError extends Error {
+  constructor() {
+    super("Cet article est déjà publié et ne peut plus être revu dans ce parcours.");
+    this.name = "ItsmKnowledgeReviewConflictError";
+  }
+}
+
+export class ItsmKnowledgeReviewValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ItsmKnowledgeReviewValidationError";
+  }
+}
+
+/** N1 reviews all articles; N3 reviews only articles in assigned service scopes. */
+export function reviewItsmKnowledgeArticle(
+  store: JsonRecord,
+  articleId: string,
+  input: ItsmKnowledgeReviewInput,
+  actor: WorkspaceActor,
+  now = new Date(),
+): { store: JsonRecord; article: JsonRecord } {
+  const articles = records(store.kedb);
+  const current = articles.find((article) => article.id === articleId);
+  if (!current) throw new ItsmKnowledgeArticleNotFoundError();
+  const serviceId = typeof current.serviceId === "string" ? current.serviceId : null;
+  requirePermission(actor, "reviewKnowledge", serviceId);
+  if (current.reviewStatus === "published") throw new ItsmKnowledgeReviewConflictError();
+
+  const comment = typeof input.comment === "string" ? input.comment.trim() : "";
+  if (comment.length > 500) throw new ItsmKnowledgeReviewValidationError("Le commentaire ne peut pas dépasser 500 caractères.");
+  if (input.decision === "request_changes" && !comment) {
+    throw new ItsmKnowledgeReviewValidationError("Un commentaire est obligatoire pour demander des corrections.");
+  }
+
+  const at = newStamp(now);
+  const normalizedServiceId = serviceId;
+  let article: JsonRecord;
+  if (input.decision === "publish") {
+    const requiredText = (value: unknown, field: string, limit: number): string => {
+      if (typeof value !== "string" || !value.trim()) {
+        throw new ItsmKnowledgeReviewValidationError("Le titre, le symptôme, la cause racine et la résolution sont obligatoires.");
+      }
+      if (value.trim().length > limit) throw new ItsmKnowledgeReviewValidationError(`Le champ ${field} dépasse sa longueur maximale.`);
+      return value.trim();
+    };
+    const title = requiredText(input.title ?? current.title, "title", 180);
+    const symptom = requiredText(input.symptom ?? current.symptom, "symptom", 4000);
+    const rootCause = requiredText(input.rootCause ?? current.rootCause, "rootCause", 4000);
+    const resolution = requiredText(input.resolution ?? current.resolution, "resolution", 8000);
+    article = {
+      ...current,
+      serviceId: normalizedServiceId,
+      title,
+      symptom,
+      rootCause,
+      resolution,
+      reviewStatus: "published",
+      reviewFeedback: null,
+      reviewedAt: at,
+      reviewedBy: actor.id,
+    };
+  } else {
+    article = {
+      ...current,
+      serviceId: normalizedServiceId,
+      reviewStatus: "needs_revision",
+      reviewFeedback: comment,
+      reviewedAt: at,
+      reviewedBy: actor.id,
+    };
+  }
+
+  const action = input.decision === "publish" ? "publié" : "renvoyé pour corrections";
+  const auditEvent = {
+    id: randomUUID(),
+    type: input.decision === "publish" ? "itsm.kedb.published" : "itsm.kedb.changes_requested",
+    action: `Article ${articleId} ${action}`,
+    actor: actor.id,
+    scope: "Base de connaissances",
+    ticketId: String(current.ticketId ?? ""),
+    at,
+    time: shortTime(now),
+  };
+  return {
+    store: {
+      ...store,
+      kedb: articles.map((item) => item.id === articleId ? article : item),
+      audit: retainItsmAuditEvents([auditEvent, ...records(store.audit)]),
+    },
+    article,
+  };
+}
+
 export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = new Date()): JsonRecord {
-  const { readStates, readReceipts, presence, ...visibleStore } = store;
+  const { readStates, readReceipts, notificationReads, presence, ...visibleStore } = store;
   const actorReads = isRecord(readStates) && isRecord(readStates[actor.id]) ? readStates[actor.id] as JsonRecord : {};
   const scopedTickets = records(store.tickets).filter((ticket) =>
     actor.role !== "N4" || actor.serviceIds.includes(String(ticket.serviceId ?? "")));
@@ -1551,9 +1950,26 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = ne
     actor.role !== "N4" || actor.serviceIds.includes(String(service.id)));
   const hiddenCollections = actor.role === "N5";
   const visibleConversations = records(store.conversations).filter((conversation) => canSeeConversation(actor, conversation, now));
+  const visibleNotifications = actor.role === "N4"
+    ? records(store.notifications).filter((item) => scopedTicketIds.has(String(item.ticketId)))
+    : hiddenCollections ? [] : records(store.notifications);
+  const visibleNotificationIds = new Set(visibleNotifications.map((item) => String(item.id ?? "")));
+  const visibleMessageIds = new Set(visibleConversations.flatMap((conversation) =>
+    records(conversation.messages).map((message) => String(message.id ?? ""))));
+  const readMap = isRecord(notificationReads) && Array.isArray(notificationReads[actor.id])
+    ? (notificationReads[actor.id] as unknown[]).filter((id): id is string => typeof id === "string")
+    : [];
+  const readTicketIds = hiddenCollections ? [] : scopedTickets.map((ticket) => String(ticket.id));
+  const visibleNotificationReads = actor.role !== "N4" && !hiddenCollections
+    ? readMap
+    : readMap.filter((id) =>
+      visibleNotificationIds.has(id)
+      || (id.startsWith("mention:") && visibleMessageIds.has(id.slice("mention:".length)))
+      || readTicketIds.some((ticketId) => id.startsWith(`${ticketId}:ack:`) || id.startsWith(`${ticketId}:res:`)));
   return {
     ...visibleStore,
     presence: visiblePresence(presence, visibleConversations, actor),
+    notifRead: [...new Set(visibleNotificationReads)].slice(-1000),
     tickets: hiddenCollections ? [] : scopedTickets,
     conversations: visibleConversations.map((conversation) => ({
       ...conversation,
@@ -1565,12 +1981,14 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = ne
     // The RFC 3161 token (a few kB) is served by GET /itsm/audit/timestamps/:id/token, not with every view.
     audit: actor.role === "N4" ? [] : records(store.audit).filter((event) => !isPrunedAuditEvent(event))
       .map(({ token: _token, ...event }) => event),
-    kedb: actor.role === "N4"
-      ? records(store.kedb).filter((article) => actor.serviceIds.includes(String(article.serviceId ?? "")))
-      : records(store.kedb),
-    notifications: actor.role === "N4"
-      ? records(store.notifications).filter((item) => scopedTicketIds.has(String(item.ticketId)))
-      : hiddenCollections ? [] : records(store.notifications),
+    kedb: records(store.kedb).filter((article) => {
+      const serviceId = typeof article.serviceId === "string" ? article.serviceId : null;
+      const published = article.reviewStatus === "published";
+      const inReviewScope = canPerform(actor, "reviewKnowledge", serviceId);
+      if (!published && !inReviewScope) return false;
+      return actor.role !== "N4" || actor.serviceIds.includes(String(article.serviceId ?? ""));
+    }),
+    notifications: visibleNotifications,
     seeded: [...new Set([
       ...(Array.isArray(store.seeded) ? store.seeded.filter((entry): entry is string => typeof entry === "string") : []),
       "support-channel",
@@ -1581,8 +1999,30 @@ export function userStoreView(store: JsonRecord, actor: WorkspaceActor, now = ne
       role: actor.role === "N1" ? "Direction"
         : actor.role === "N2" ? "Analyste"
           : actor.role === "N3" ? "SSI / support"
-            : actor.role === "N4" ? "Services d’appui" : "Auditeur temporaire",
+            : actor.role === "N4" ? "Services d’appui"
+              : actor.role === "N5" ? "Auditeur temporaire" : "Demandeur",
       clearance: `${actor.role} · ${actor.role === "N1" ? "Pilotage" : actor.role === "N2" ? "Interne" : actor.role === "N3" ? "Technique" : actor.role === "N4" ? "Périmètre" : "Lecture"}`,
+    },
+  };
+}
+
+/** Stores notification reads per authenticated account; this state is not client-owned workspace data. */
+export function markItsmNotificationsRead(
+  store: JsonRecord,
+  ids: readonly string[],
+  actor: WorkspaceActor,
+): JsonRecord {
+  requirePermission(actor, "viewWorkspace");
+  const cleanIds = [...new Set(ids.filter((id) => typeof id === "string" && id.length > 0 && id.length <= 256))];
+  const notificationReads = isRecord(store.notificationReads) ? store.notificationReads : {};
+  const oldIds = Array.isArray(notificationReads[actor.id])
+    ? (notificationReads[actor.id] as unknown[]).filter((id): id is string => typeof id === "string" && id.length <= 256)
+    : [];
+  return {
+    ...store,
+    notificationReads: {
+      ...notificationReads,
+      [actor.id]: [...new Set([...oldIds, ...cleanIds])].slice(-1000),
     },
   };
 }

@@ -1,6 +1,7 @@
-import { formatWAT, getDeadlines, slaProgress, toCsv, type Priority } from './itsm';
+import { formatWAT, SLA_POLICIES, toCsv, type Priority } from './itsm';
 import { mentionNotifications } from './mentions';
-import type { Conversation, Store, Ticket, TicketKind, TicketStatus } from './types';
+import type { Conversation, SlaCalendar, Store, Ticket, TicketKind, TicketStatus } from './types';
+import { businessSlaProgress, DEFAULT_SLA_CALENDAR, getBusinessDeadlines } from './sla-calendar';
 
 export const KINDS: TicketKind[] = ['Incident', 'Demande', 'Problème', 'Changement'];
 export const STATUSES: TicketStatus[] = ['Nouveau', 'Pris en compte', 'En cours', 'En attente', 'Résolu', 'Clos', 'Rejeté'];
@@ -31,7 +32,18 @@ export function messageTime(m: { time: string; at?: string }) { return m.at ? fo
 /** Ajoute un événement au ticket et le reflète dans la discussion liée si elle existe. */
 export function withTicketEvent(s: Store, id: string, body: string, patch: Partial<Ticket> = {}, author = s.profile.name, asComment = false): Store {
   const at = nowIso();
-  const tickets = s.tickets.map(t => (t.id === id ? { ...t, ...patch, updates: [...t.updates, { author, body, time: formatWAT(at, 'datetime'), at }] } : t));
+  const tickets = s.tickets.map(t => {
+    if (t.id !== id) return t;
+    const updated = { ...t, ...patch };
+    const pauses = (t.slaPauses ?? []).map(pause => ({ ...pause }));
+    if (t.status !== 'En attente' && updated.status === 'En attente') pauses.push({ startedAt: at });
+    else if (t.status === 'En attente' && updated.status !== 'En attente') {
+      const activePause = pauses.at(-1);
+      if (activePause && !activePause.endedAt) activePause.endedAt = at;
+    }
+    if (pauses.length) updated.slaPauses = pauses;
+    return { ...updated, updates: [...t.updates, { author, body, time: formatWAT(at, 'datetime'), at }] };
+  });
   const t = tickets.find(x => x.id === id);
   const conversations = t?.conversationId
     ? s.conversations.map(c => (c.id === t.conversationId ? { ...c, messages: [...c.messages, { id: uid(), author: asComment ? author : `Suivi ${id}`, body: asComment ? `Commentaire sur ${id} : ${body}` : body, time: '', at, system: !asComment, ticketId: id }] } : c))
@@ -77,17 +89,19 @@ export function closeResolvedTicket(s: Store, id: string, satisfaction: number |
       id: kedbId, title: ticket.title, symptom: ticket.description,
       rootCause: ticket.rootCause!, resolution: ticket.resolution!,
       ticketId: id, serviceId: ticket.serviceId ?? null, category: ticket.category,
-      createdAt: at, author: s.profile.name,
+      createdAt: at, author: s.profile.name, reviewStatus: 'pending',
     }, ...next.kedb],
   };
 }
 
-export function ticketSla(t: Ticket, now: number) {
-  const d = getDeadlines(t.openedAt, t.priority);
+export function ticketSla(t: Ticket, now: number, calendar: SlaCalendar = DEFAULT_SLA_CALENDAR) {
+  const policy = SLA_POLICIES[t.priority];
+  const d = getBusinessDeadlines(t.openedAt, policy, calendar, t.slaPauses, now, t.acknowledgedAt, t.resolvedAt);
   return {
     deadlines: d,
-    ack: slaProgress(t.openedAt, d.acknowledgeBy, t.acknowledgedAt, now),
-    res: slaProgress(t.openedAt, d.resolveBy, t.resolvedAt, now),
+    targets: policy,
+    ack: businessSlaProgress(t.openedAt, t.acknowledgedAt, now, policy.acknowledgeMinutes, calendar, t.slaPauses),
+    res: businessSlaProgress(t.openedAt, t.resolvedAt, now, policy.resolveMinutes, calendar, t.slaPauses),
   };
 }
 
@@ -108,7 +122,7 @@ const countBy = (tickets: Ticket[], key: (t: Ticket) => string): KpiCount[] => {
  * volume per category and per assignee, requester satisfaction. Rejected tickets are not support work and are left out.
  * Same continuous-time rules as ticketSla (no business hours).
  */
-export function ticketKpis(tickets: Ticket[], now: number) {
+export function ticketKpis(tickets: Ticket[], now: number, calendar: SlaCalendar = DEFAULT_SLA_CALENDAR) {
   const counted = tickets.filter(t => t.status !== 'Rejeté');
   // Older closed tickets may carry only closedAt: it then marks the end of the resolution.
   const endOf = (t: Ticket) => t.resolvedAt ?? t.closedAt;
@@ -119,10 +133,12 @@ export function ticketKpis(tickets: Ticket[], now: number) {
   });
   let met = 0, decided = 0;
   for (const t of counted) {
-    const due = Date.parse(getDeadlines(t.openedAt, t.priority).resolveBy);
     const end = endOf(t);
     // An open ticket counts only once its deadline has passed; before that the outcome is unknown.
-    if (end) { decided++; if (Date.parse(end) <= due) met++; } else if (now > due) decided++;
+    const progress = businessSlaProgress(
+      t.openedAt, end ?? null, now, SLA_POLICIES[t.priority].resolveMinutes, calendar, t.slaPauses,
+    );
+    if (end) { decided++; if (progress.state === 'met') met++; } else if (progress.state === 'breach') decided++;
   }
   // MTBF (ITIL): per service, time from an incident's restoration to the next incident's opening.
   const uptimes: number[] = [];
@@ -224,14 +240,19 @@ export function deriveNotifications(s: Store, now: number, myNames: readonly str
   const list: DerivedNotification[] = [];
   for (const t of s.tickets) {
     if (!isOpen(t) || t.status === 'Résolu') continue;
-    const { ack, res, deadlines } = ticketSla(t, now);
+    const { ack, res, deadlines } = ticketSla(t, now, s.slaCalendar);
     if (!t.acknowledgedAt && (ack.state === 'warning' || ack.state === 'breach'))
-      list.push({ id: `${t.id}:ack:${ack.state}`, ticketId: t.id, title: ack.state === 'breach' ? `Prise en charge dépassée · ${t.id}` : `Prise en charge bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.acknowledgeBy, 'datetime')}`, tone: ack.state === 'breach' ? 'red' : 'amber', at: deadlines.acknowledgeBy, read: false });
+      list.push({ id: `${t.id}:ack:${deadlines.acknowledgeBy}`, ticketId: t.id, title: ack.state === 'breach' ? `Prise en charge dépassée · ${t.id}` : `Prise en charge bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.acknowledgeBy, 'datetime')}`, tone: ack.state === 'breach' ? 'red' : 'amber', at: deadlines.acknowledgeBy, read: false });
     if (!t.resolvedAt && (res.state === 'warning' || res.state === 'breach'))
-      list.push({ id: `${t.id}:res:${res.state}`, ticketId: t.id, title: res.state === 'breach' ? `Résolution dépassée · ${t.id}` : `Résolution bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.resolveBy, 'datetime')}`, tone: res.state === 'breach' ? 'red' : 'amber', at: deadlines.resolveBy, read: false });
+      list.push({ id: `${t.id}:res:${deadlines.resolveBy}`, ticketId: t.id, title: res.state === 'breach' ? `Résolution dépassée · ${t.id}` : `Résolution bientôt due · ${t.id}`, body: `${t.priority} · échéance ${formatWAT(deadlines.resolveBy, 'datetime')}`, tone: res.state === 'breach' ? 'red' : 'amber', at: deadlines.resolveBy, read: false });
   }
   for (const n of s.notifications) list.push({ ...n, tone: 'blue', read: false });
   for (const m of mentionNotifications(s.conversations, s.profile.name, myNames, nameOf))
     list.push({ id: m.id, ticketId: '', title: m.title, body: m.body, tone: 'blue', at: m.at, read: false, href: `/messages?c=${encodeURIComponent(m.conversationId)}&m=${encodeURIComponent(m.messageId)}` });
-  return list.map(n => ({ ...n, read: s.notifRead.includes(n.id) })).sort((a, b) => Number(a.read) - Number(b.read) || b.at.localeCompare(a.at));
+  return list.map(n => {
+    const phase = n.ticketId && n.id.startsWith(`${n.ticketId}:ack:`) ? 'ack'
+      : n.ticketId && n.id.startsWith(`${n.ticketId}:res:`) ? 'res' : null;
+    const legacyRead = phase !== null && ['warning', 'breach'].some(state => s.notifRead.includes(`${n.ticketId}:${phase}:${state}`));
+    return { ...n, read: s.notifRead.includes(n.id) || legacyRead };
+  }).sort((a, b) => Number(a.read) - Number(b.read) || b.at.localeCompare(a.at));
 }

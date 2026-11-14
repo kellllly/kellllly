@@ -80,7 +80,7 @@ test("role PUT serializes concurrent N1 changes and rejects missing services, st
         onActorResolved?.();
         onActorResolved = undefined;
         const role = user.publicMetadata.itsmRole;
-        if (role !== "N1" && role !== "N2" && role !== "N3" && role !== "N4" && role !== "N5") {
+        if (role !== "N1" && role !== "N2" && role !== "N3" && role !== "N4" && role !== "N5" && role !== "REQUESTER") {
           res.status(403).json({ error: "No assigned test role" });
           return null;
         }

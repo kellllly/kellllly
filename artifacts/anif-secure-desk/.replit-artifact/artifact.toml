@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "ANIF Gabon — Poste de pilotage"
+description = "Prototype interactif en français d’une plateforme institutionnelle réunissant messagerie de démonstration, support ITSM et supervision des services. Réservé à des données fictives, sans homologation ni garanties de sécurité réelles."
+version = "1.0.0"
+id = "artifacts/anif-secure-desk"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18373
+
+[services.development]
+run = "pnpm --filter @workspace/anif-secure-desk run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/anif-secure-desk", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/anif-secure-desk/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18373"
+BASE_PATH = "/"

@@ -95,6 +95,143 @@ paths:
           description: Authentication required
         "403":
           description: The assigned role cannot import examples
+  /itsm/my-requests:
+    get:
+      operationId: getItsmMyRequests
+      tags: [itsm]
+      summary: Read requests belonging to the authenticated requester
+      responses:
+        "200":
+          description: The authenticated requester's safe request view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmMyRequests"
+        "401":
+          description: Authentication required
+        "403":
+          description: The account does not have the requester role
+    post:
+      operationId: createItsmMyRequest
+      tags: [itsm]
+      summary: Submit a request as the authenticated requester
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmMyRequestInput"
+      responses:
+        "201":
+          description: Request accepted for support triage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmMyRequestCreated"
+        "400":
+          description: Invalid request
+        "401":
+          description: Authentication required
+        "403":
+          description: The account does not have the requester role
+  /itsm/requests/{requestId}/approval:
+    post:
+      operationId: decideItsmRequestApproval
+      tags: [itsm]
+      summary: Approve or reject a requester service demand
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmRequestApprovalInput"
+      responses:
+        "200":
+          description: The decision and updated request state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmRequestApprovalDecision"
+        "400":
+          description: Invalid decision or rejection reason
+        "401":
+          description: Authentication required
+        "403":
+          description: The account is outside the approval scope
+        "404":
+          description: Request not found
+        "409":
+          description: The request already has a decision
+  /itsm/kedb/{articleId}/review:
+    post:
+      operationId: reviewItsmKnowledgeArticle
+      tags: [itsm]
+      summary: Publish or return a knowledge article for revision
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 120
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmKnowledgeReviewInput"
+      responses:
+        "200":
+          description: Updated knowledge article and review state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmKnowledgeReviewResponse"
+        "400":
+          description: Invalid review decision or article content
+        "401":
+          description: Authentication required
+        "403":
+          description: The account is outside the knowledge review scope
+        "404":
+          description: Knowledge article not found
+        "409":
+          description: The article is already published
+  /itsm/notifications/read:
+    put:
+      operationId: setItsmNotificationReads
+      tags: [itsm]
+      summary: Persist notifications read by the authenticated account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItsmNotificationReadsInput"
+      responses:
+        "200":
+          description: Read state saved for the current account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItsmNotificationReadsResponse"
+        "400":
+          description: Invalid notification identifiers
+        "401":
+          description: Authentication required
+        "403":
+          description: The assigned role cannot access workspace notifications
+        "503":
+          description: Read state could not be saved
   /itsm/conversations/{conversationId}/messages:
     post:
       operationId: postItsmTemporaryMessage
@@ -973,6 +1110,183 @@ components:
           type: integer
           minimum: 0
       required: [store, version]
+    ItsmMyRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [Incident, Demande]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        category:
+          type: string
+          enum: [Applications, Poste de travail, Équipement, Réseau, Accès]
+        description:
+          type: string
+          minLength: 1
+          maxLength: 12000
+        serviceId:
+          type: [string, "null"]
+          maxLength: 120
+      required: [kind, title, category, description, serviceId]
+    ItsmRequestApprovalInput:
+      type: object
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject]
+        reason:
+          type: string
+          maxLength: 500
+      required: [decision]
+    ItsmRequestApproval:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        reason:
+          type: [string, "null"]
+          maxLength: 500
+        decidedAt:
+          type: [string, "null"]
+          format: date-time
+      required: [status, reason, decidedAt]
+    ItsmMyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        title: { type: string }
+        kind: { type: string, enum: [Incident, Demande] }
+        category: { type: string }
+        status: { type: string }
+        priority: { type: string }
+        serviceId: { type: [string, "null"] }
+        serviceName: { type: [string, "null"] }
+        description: { type: string }
+        openedAt: { type: string, format: date-time }
+        requestApproval:
+          anyOf:
+            - $ref: "#/components/schemas/ItsmRequestApproval"
+            - type: "null"
+      required: [id, title, kind, category, status, priority, serviceId, serviceName, description, openedAt, requestApproval]
+    ItsmMyRequests:
+      type: object
+      additionalProperties: false
+      properties:
+        requests:
+          type: array
+          items: { $ref: "#/components/schemas/ItsmMyRequest" }
+        services:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id: { type: string }
+              name: { type: string }
+              category: { type: string }
+            required: [id, name, category]
+      required: [requests, services]
+    ItsmMyRequestCreated:
+      type: object
+      additionalProperties: false
+      properties:
+        request:
+          $ref: "#/components/schemas/ItsmMyRequest"
+      required: [request]
+    ItsmRequestApprovalDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        requestId: { type: string }
+        status: { type: string }
+        requestApproval:
+          $ref: "#/components/schemas/ItsmRequestApproval"
+      required: [requestId, status, requestApproval]
+    ItsmKnowledgeReviewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [publish, request_changes]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 180
+        symptom:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        rootCause:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        resolution:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        comment:
+          type: string
+          maxLength: 500
+      required: [decision]
+    ItsmKnowledgeArticle:
+      type: object
+      additionalProperties: false
+      properties:
+        id: { type: string }
+        title: { type: string }
+        symptom: { type: string }
+        rootCause: { type: string }
+        resolution: { type: string }
+        ticketId: { type: string }
+        serviceId: { type: [string, "null"] }
+        category: { type: string }
+        createdAt: { type: string, format: date-time }
+        author: { type: string }
+        reviewStatus:
+          type: string
+          enum: [pending, published, needs_revision]
+        reviewFeedback: { type: [string, "null"] }
+        reviewedAt: { type: [string, "null"], format: date-time }
+        reviewedBy: { type: [string, "null"] }
+      required: [id, title, symptom, rootCause, resolution, ticketId, serviceId, category, createdAt, author, reviewStatus, reviewFeedback, reviewedAt, reviewedBy]
+    ItsmKnowledgeReviewResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        article:
+          $ref: "#/components/schemas/ItsmKnowledgeArticle"
+      required: [article]
+    ItsmNotificationReadsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
+      required: [ids]
+    ItsmNotificationReadsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        marked:
+          type: integer
+          minimum: 0
+      required: [marked]
     ItsmImportInput:
       type: object
       properties:
@@ -984,7 +1298,7 @@ components:
       properties:
         role:
           type: [string, "null"]
-          enum: [N1, N2, N3, N4, N5, null]
+          enum: [N1, N2, N3, N4, N5, REQUESTER, null]
         serviceIds:
           type: array
           maxItems: 50
@@ -998,7 +1312,7 @@ components:
         userId: { type: string }
         role:
           type: [string, "null"]
-          enum: [N1, N2, N3, N4, N5, null]
+          enum: [N1, N2, N3, N4, N5, REQUESTER, null]
         label: { type: string }
         serviceIds:
           type: array
@@ -1009,7 +1323,7 @@ components:
       additionalProperties: false
       properties:
         userId: { type: string }
-        role: { type: string, enum: [N1, N2, N3, N4, N5] }
+        role: { type: string, enum: [N1, N2, N3, N4, N5, REQUESTER] }
         serviceIds:
           type: array
           items: { type: string }
@@ -1019,7 +1333,7 @@ components:
       type: object
       additionalProperties: false
       properties:
-        role: { type: string, enum: [N1, N2, N3, N4, N5] }
+        role: { type: string, enum: [N1, N2, N3, N4, N5, REQUESTER] }
         serviceIds:
           type: array
           maxItems: 50
@@ -1048,7 +1362,7 @@ components:
         email: { type: [string, "null"] }
         role:
           type: [string, "null"]
-          enum: [N1, N2, N3, N4, N5, null]
+          enum: [N1, N2, N3, N4, N5, REQUESTER, null]
         serviceIds:
           type: array
           items: { type: string }

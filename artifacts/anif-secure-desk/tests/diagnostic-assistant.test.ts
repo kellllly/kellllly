@@ -40,6 +40,7 @@ const article = (id: string, serviceId: string | null, category: string, title: 
   category,
   createdAt: '2026-11-01T08:00:00.000Z',
   author: 'agent',
+  reviewStatus: 'published',
 });
 
 test('diagnostic KEDB suggestions rank the selected service before broad matches', () => {

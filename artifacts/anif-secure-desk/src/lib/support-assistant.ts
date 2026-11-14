@@ -50,7 +50,7 @@ export function suggestArticles(topic: AssistantTopic, articles: readonly KedbAr
     const text = normalize(`${article.title} ${article.symptom} ${article.resolution}`);
     return (article.category === topic.category ? 2 : 0) + words.filter((word) => text.includes(word)).length;
   };
-  return articles.map((article) => ({ article, value: score(article) }))
+  return articles.filter((article) => article.reviewStatus === 'published').map((article) => ({ article, value: score(article) }))
     .filter(({ value }) => value > 0)
     .sort((a, b) => b.value - a.value)
     .slice(0, limit)

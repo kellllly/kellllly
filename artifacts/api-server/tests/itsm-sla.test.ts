@@ -3,20 +3,21 @@ import assert from "node:assert/strict";
 import { createSlaBreachMonitor, findNewSlaBreaches, findSlaEscalations, ITSM_SLA_BREACH_AUDIT_TYPE, SENIOR_L2_ASSIGNEE } from "../src/lib/itsm-sla.ts";
 import { applyWorkspaceUpdate, recordItsmSlaBreaches } from "../src/lib/itsm-workspace.ts";
 import { verifyAuditChain } from "../src/lib/itsm-audit-chain.ts";
+import { addItsmBusinessMinutes, DEFAULT_ITSM_SLA_CALENDAR, parseItsmSlaCalendar } from "../src/lib/itsm-sla-calendar.ts";
 
-const opened = "2026-11-07T08:00:00.000Z";
+const opened = "2026-11-09T06:00:00.000Z";
 const ticket = (extra: Record<string, unknown> = {}) => ({
   id: "INC-1", priority: "P1", status: "Nouveau", openedAt: opened, acknowledgedAt: null, resolvedAt: null,
   supportLevel: 1, assignee: "Équipe support", serviceId: "svc-1", ...extra,
 });
-const at = (minutes: number) => new Date(Date.parse(opened) + minutes * 60_000);
+const at = (minutes: number) => new Date(addItsmBusinessMinutes(opened, minutes, DEFAULT_ITSM_SLA_CALENDAR));
 
 test("a P1 is in breach after 15 minutes without acknowledgement, and after 2 hours without resolution", () => {
   assert.deepEqual(findNewSlaBreaches([ticket()], [], at(15)), [], "exactly on time is not a breach");
   assert.deepEqual(findNewSlaBreaches([ticket()], [], at(16)).map((b) => b.deadline), ["acknowledge"]);
   assert.deepEqual(findNewSlaBreaches([ticket()], [], at(121)).map((b) => b.deadline), ["acknowledge", "resolve"]);
   const [breach] = findNewSlaBreaches([ticket()], [], at(16));
-  assert.equal(breach!.dueAt, "2026-11-07T08:15:00.000Z");
+  assert.equal(breach!.dueAt, "2026-11-09T06:15:00.000Z");
 });
 
 test("on-time completion, closed tickets and already recorded breaches are skipped; late completion is kept", () => {
@@ -95,9 +96,32 @@ test("escalation circuit follows the SLA table of the cahier des charges", () =>
 test("a P4 waiting three days for the requester is reminded once per waiting period", () => {
   const waiting = ticket({ id: "REQ-1", priority: "P4", status: "En attente", acknowledgedAt: at(10).toISOString(),
     updates: [{ author: "user_a", body: "Précisions demandées", at: at(60).toISOString() }] });
-  const threeDays = 3 * 24 * 60;
-  assert.deepEqual(rules([waiting], 60 + threeDays - 1), []);
-  assert.deepEqual(rules([waiting], 60 + threeDays), ["REQ-1:p4-reminder"]);
+  const reminderAt = at(60).getTime() + 3 * 24 * 60 * 60_000;
+  const rulesAt = (time: number) => findSlaEscalations([waiting], [], new Date(time)).map((e) => `${e.ticketId}:${e.rule}`);
+  assert.deepEqual(rulesAt(reminderAt - 60_000), []);
+  assert.deepEqual(rulesAt(reminderAt), ["REQ-1:p4-reminder"]);
+});
+
+test("business deadlines skip weekends and configured holidays", () => {
+  const calendar = parseItsmSlaCalendar({
+    ...DEFAULT_ITSM_SLA_CALENDAR,
+    holidays: ["2026-11-09"],
+  });
+  const fridayEvening = "2026-11-06T17:55:00.000Z"; // 18:55 in Libreville
+  assert.equal(
+    addItsmBusinessMinutes(fridayEvening, 15, calendar),
+    "2026-11-10T06:10:00.000Z", // Tuesday 07:10 after the Monday holiday
+  );
+});
+
+test("waiting pauses subtract business minutes from the breach monitor", () => {
+  const paused = ticket({
+    slaPauses: [{ startedAt: "2026-11-09T06:10:00.000Z", endedAt: "2026-11-09T06:20:00.000Z" }],
+  });
+  assert.deepEqual(findNewSlaBreaches([paused], [], new Date("2026-11-09T06:20:00.000Z")), []);
+  const [breach] = findNewSlaBreaches([paused], [], new Date("2026-11-09T06:26:00.000Z"));
+  assert.equal(breach?.deadline, "acknowledge");
+  assert.equal(breach?.dueAt, "2026-11-09T06:25:00.000Z");
 });
 
 test("escalations are applied once: notification, journal, P2 reassignment and P4 reminder in the ticket history", () => {

@@ -4,6 +4,11 @@ import {
   AssignItsmRoleParams,
   AssignItsmRoleResponse,
   CheckItsmRoleArchiveResponse,
+  CreateItsmMyRequestBody,
+  CreateItsmMyRequestResponse,
+  DecideItsmRequestApprovalBody,
+  DecideItsmRequestApprovalResponse,
+  GetItsmMyRequestsResponse,
   AttestItsmRoleParams,
   AttestItsmRoleBody,
   AttestItsmRoleResponse,
@@ -24,8 +29,13 @@ import {
   GetItsmUserDirectoryResponse,
   ImportItsmExamplesBody,
   ImportItsmExamplesResponse,
+  ReviewItsmKnowledgeArticleBody,
+  ReviewItsmKnowledgeArticleParams,
+  ReviewItsmKnowledgeArticleResponse,
   SaveItsmWorkspaceBody,
   SaveItsmWorkspaceResponse,
+  SetItsmNotificationReadsBody,
+  SetItsmNotificationReadsResponse,
 } from "@workspace/api-zod";
 import { db, itsmWorkspaceTable, pool } from "@workspace/db";
 import { loadArchivedSeals } from "../lib/itsm-audit-worm";
@@ -46,9 +56,22 @@ import {
   publishItsmRoleChangeToArchive,
   recordItsmRoleChange,
   saveWorkspaceAtVersion,
+  createItsmMyRequest,
+  decideItsmRequestApproval,
+  ItsmRequestApprovalConflictError,
+  ItsmRequestNotFoundError,
+  ItsmRequestApprovalValidationError,
+  itsmMyRequestsView,
+  reviewItsmKnowledgeArticle,
+  ItsmKnowledgeArticleNotFoundError,
+  ItsmKnowledgeReviewConflictError,
+  ItsmKnowledgeReviewValidationError,
+  markItsmNotificationsRead,
   userStoreView,
   workspaceVersionConflictResponse,
   type WorkspaceActor,
+  type ItsmMyRequestInput,
+  type ItsmKnowledgeReviewInput,
   type VersionedWorkspaceSave,
   type ItsmRoleSnapshot,
   type ItsmRoleChangeArchiveEvent,
@@ -602,6 +625,243 @@ export function createItsmRoleDirectoryEventsRouter(
 }
 
 router.use(createItsmRoleDirectoryEventsRouter());
+
+type MyRequestsDependencies = {
+  resolveActor: typeof actorFor;
+  readStore: () => Promise<Record<string, unknown>>;
+  withLock: typeof withAdminChangeLock;
+};
+
+export function createItsmMyRequestsRouter(
+  overrides: Partial<MyRequestsDependencies> = {},
+  authMiddleware: RequestHandler = requireAuth,
+): IRouter {
+  const myRequestsRouter: IRouter = Router();
+  const dependencies: MyRequestsDependencies = {
+    resolveActor: actorFor,
+    readStore: async () => {
+      const [row] = await db.select({ store: itsmWorkspaceTable.store }).from(itsmWorkspaceTable)
+        .where(eq(itsmWorkspaceTable.id, WORKSPACE_ID));
+      return row?.store ?? {};
+    },
+    withLock: withAdminChangeLock,
+    ...overrides,
+  };
+
+  myRequestsRouter.get("/itsm/my-requests", authMiddleware, async (req, res): Promise<void> => {
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    try {
+      requirePermission(actor, "viewOwnRequests");
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json(GetItsmMyRequestsResponse.parse(itsmMyRequestsView(await dependencies.readStore(), actor)));
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Could not load requester requests");
+      res.status(503).json({ error: "Impossible de charger vos demandes pour le moment." });
+    }
+  });
+
+  myRequestsRouter.post("/itsm/my-requests", authMiddleware, async (req, res): Promise<void> => {
+    const parsed = CreateItsmMyRequestBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Demande invalide." });
+      return;
+    }
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    try {
+      requirePermission(actor, "createOwnRequest");
+      const ticketId = await dependencies.withLock(async (store, saveStore) => {
+        const existingIds = new Set((Array.isArray(store.tickets) ? store.tickets : [])
+          .filter((ticket): ticket is Record<string, unknown> =>
+            Boolean(ticket && typeof ticket === "object" && !Array.isArray(ticket)))
+          .map((ticket) => String(ticket.id ?? "")));
+        const nextStore = createItsmMyRequest(store, parsed.data as ItsmMyRequestInput, actor);
+        const newTicket = (Array.isArray(nextStore.tickets) ? nextStore.tickets : [])
+          .find((ticket): ticket is Record<string, unknown> =>
+            Boolean(ticket && typeof ticket === "object" && !Array.isArray(ticket))
+            && !existingIds.has(String((ticket as Record<string, unknown>).id ?? ""))
+            && (ticket as Record<string, unknown>).requesterId === actor.id);
+        if (!newTicket || typeof newTicket.id !== "string") {
+          throw new Error("Impossible d’identifier la demande créée.");
+        }
+        await saveStore(nextStore);
+        return newTicket.id;
+      });
+      const view = GetItsmMyRequestsResponse.parse(itsmMyRequestsView(await dependencies.readStore(), actor));
+      const request = view.requests.find((item) => item.id === ticketId);
+      if (!request) throw new Error("La demande enregistrée est introuvable.");
+      res.status(201).json(CreateItsmMyRequestResponse.parse({ request }));
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      if (error instanceof Error && /ticket|Type de demande|Catégorie|Service associé|priorité|Description|sujet/.test(error.message)) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Could not create requester request");
+      res.status(503).json({ error: "Impossible d’enregistrer la demande pour le moment." });
+    }
+  });
+
+  myRequestsRouter.post("/itsm/requests/:requestId/approval", authMiddleware, async (req, res): Promise<void> => {
+    const parsed = DecideItsmRequestApprovalBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Décision invalide." });
+      return;
+    }
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    const requestId = Array.isArray(req.params.requestId)
+      ? req.params.requestId[0] ?? ""
+      : req.params.requestId ?? "";
+    try {
+      const result = await dependencies.withLock(async (store, saveStore) => {
+        const nextStore = decideItsmRequestApproval(
+          store,
+          requestId,
+          parsed.data,
+          actor,
+        );
+        const ticket = (Array.isArray(nextStore.tickets) ? nextStore.tickets : [])
+          .find((item): item is Record<string, unknown> =>
+            Boolean(item && typeof item === "object" && !Array.isArray(item))
+            && (item as Record<string, unknown>).id === requestId);
+        if (!ticket || !ticket.requestApproval) throw new Error("La décision enregistrée est introuvable.");
+        await saveStore(nextStore);
+        return ticket;
+      });
+      res.json(DecideItsmRequestApprovalResponse.parse({
+        requestId: result.id,
+        status: result.status,
+        requestApproval: result.requestApproval,
+      }));
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmRequestNotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmRequestApprovalConflictError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmRequestApprovalValidationError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Could not decide requester service demand");
+      res.status(503).json({ error: "Impossible d’enregistrer la décision pour le moment." });
+    }
+  });
+
+  return myRequestsRouter;
+}
+
+router.use(createItsmMyRequestsRouter());
+
+type ItsmKnowledgeReviewDependencies = {
+  resolveActor: typeof actorFor;
+  withLock: typeof withAdminChangeLock;
+};
+
+export function createItsmKnowledgeReviewRouter(
+  overrides: Partial<ItsmKnowledgeReviewDependencies> = {},
+  authMiddleware: RequestHandler = requireAuth,
+): IRouter {
+  const knowledgeRouter: IRouter = Router();
+  const dependencies: ItsmKnowledgeReviewDependencies = {
+    resolveActor: actorFor,
+    withLock: withAdminChangeLock,
+    ...overrides,
+  };
+
+  knowledgeRouter.post("/itsm/kedb/:articleId/review", authMiddleware, async (req, res): Promise<void> => {
+    const params = ReviewItsmKnowledgeArticleParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: "Article de connaissance invalide." });
+      return;
+    }
+    const parsed = ReviewItsmKnowledgeArticleBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Décision de revue invalide." });
+      return;
+    }
+    const actor = await dependencies.resolveActor(req, res);
+    if (!actorOrReply(req, res, actor)) return;
+    try {
+      const result = await dependencies.withLock(async (store, saveStore) => {
+        const reviewed = reviewItsmKnowledgeArticle(
+          store,
+          params.data.articleId,
+          parsed.data as ItsmKnowledgeReviewInput,
+          actor,
+        );
+        await saveStore(reviewed.store);
+        return reviewed.article;
+      });
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json(ReviewItsmKnowledgeArticleResponse.parse({ article: result }));
+    } catch (error) {
+      if (error instanceof ItsmAuthorizationError) {
+        res.status(403).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmKnowledgeArticleNotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmKnowledgeReviewConflictError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ItsmKnowledgeReviewValidationError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      req.log.error({ err: error }, "Could not review knowledge article");
+      res.status(503).json({ error: "Impossible d’enregistrer la revue pour le moment." });
+    }
+  });
+
+  return knowledgeRouter;
+}
+
+router.use(createItsmKnowledgeReviewRouter());
+
+router.put("/itsm/notifications/read", requireAuth, async (req, res): Promise<void> => {
+  const parsed = SetItsmNotificationReadsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Liste de notifications invalide." });
+    return;
+  }
+  const actor = await actorFor(req, res);
+  if (!actorOrReply(req, res, actor)) return;
+  try {
+    await withAdminChangeLock(async (store, saveStore) => {
+      await saveStore(markItsmNotificationsRead(store, parsed.data.ids, actor));
+      return true;
+    });
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json(SetItsmNotificationReadsResponse.parse({ marked: parsed.data.ids.length }));
+  } catch (error) {
+    if (error instanceof ItsmAuthorizationError) {
+      res.status(403).json({ error: error.message });
+      return;
+    }
+    req.log.warn({ err: error }, "Could not persist notification read state");
+    res.status(503).json({ error: "Impossible d’enregistrer l’état des notifications. Réessayez." });
+  }
+});
 
 router.get("/itsm", requireAuth, async (req, res): Promise<void> => {
   const actor = await actorFor(req, res);

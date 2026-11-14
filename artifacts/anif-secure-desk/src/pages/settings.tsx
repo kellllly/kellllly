@@ -21,9 +21,57 @@ import { SHORTCUTS } from '@/lib/shortcuts';
 import { TEXT_SIZE_OPTIONS, setTextSizePreference, useTextSizePreference } from '@/lib/text-size-preference';
 import { setQuietHours, useQuietHours } from '@/lib/quiet-hours';
 import { setWatermarkEnabled, useWatermarkEnabled } from '@/lib/watermark-preference';
+import { parseHolidayDates } from '@/lib/sla-calendar';
+import type { SlaCalendar } from '@/lib/types';
 import { Button, Field, inputCls, PageIntro, SectionTitle, Warning } from '@/components/kit';
 
 type PilotServiceOption = { id: string; name: string };
+
+function SlaCalendarPanel({ calendar, canEdit, onChange }: {
+  calendar: SlaCalendar;
+  canEdit: boolean;
+  onChange: (next: SlaCalendar) => void;
+}) {
+  const [holiday, setHoliday] = useState('');
+  const [message, setMessage] = useState('');
+  const messageIsError = message.includes('invalide') || message.includes('Choisissez') || message.includes('déjà');
+  const addHoliday = () => {
+    try {
+      const [date] = parseHolidayDates(holiday);
+      if (!date) throw new RangeError('Choisissez une date à ajouter.');
+      if (calendar.holidays.includes(date)) throw new RangeError('Cette date est déjà enregistrée.');
+      onChange({ ...calendar, holidays: [...calendar.holidays, date].sort() });
+      setHoliday('');
+      setMessage('Jour férié envoyé pour enregistrement.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Date invalide.');
+    }
+  };
+  return <section className="panel min-w-0 p-5 md:p-6" data-testid="section-sla-calendar">
+    <SectionTitle kicker="SLA DU PILOTE" title="Calendrier ouvré" />
+    <p className="text-[11px] leading-relaxed text-muted-foreground">
+      Les délais de prise en charge et de résolution avancent du lundi au vendredi, de 07 h à 19 h, heure de Libreville. Les deux sont suspendus pendant « En attente ». Ce calendrier de démonstration n’est pas un engagement contractuel.
+    </p>
+    <div className="mt-4">
+      <div className="eyebrow mb-2">JOURS FÉRIÉS EXCLUS</div>
+      {calendar.holidays.length
+        ? <ul className="flex flex-wrap gap-2">{calendar.holidays.map(date => <li key={date} className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1.5 text-[11px]">
+          <time dateTime={date} className="mono">{date}</time>
+          {canEdit && <button type="button" aria-label={`Retirer le jour férié ${date}`} data-testid={`remove-sla-holiday-${date}`} onClick={() => { onChange({ ...calendar, holidays: calendar.holidays.filter(item => item !== date) }); setMessage('Retrait envoyé pour enregistrement.'); }} className="font-bold text-muted-foreground hover:text-foreground">×</button>}
+        </li>)}</ul>
+        : <p className="text-[11px] text-muted-foreground">Aucun jour férié configuré.</p>}
+    </div>
+    {canEdit
+      ? <div className="mt-4 flex flex-wrap items-end gap-2">
+        <Field label="Ajouter un jour férié">
+          <input type="date" value={holiday} onChange={event => setHoliday(event.target.value)} className={`${inputCls} h-9`} data-testid="input-sla-holiday" />
+        </Field>
+        <Button type="button" onClick={addHoliday} disabled={!holiday} testId="button-add-sla-holiday">Ajouter</Button>
+        <span aria-live="polite" role={messageIsError ? 'alert' : 'status'} className="text-[10px] text-muted-foreground">{message}</span>
+      </div>
+      : <p className="mt-3 text-[10px] text-muted-foreground">La liste est consultable en lecture seule ; seul un N1 peut la modifier.</p>}
+  </section>;
+}
 
 function pilotServiceOptions(value: unknown): PilotServiceOption[] {
   if (!Array.isArray(value)) return [];
@@ -45,7 +93,7 @@ export default function SettingsPage() {
   const [targetUserId, setTargetUserId] = useState('');
   const [directorySearch, setDirectorySearch] = useState('');
   const [directoryPage, setDirectoryPage] = useState(0);
-  const [role, setRole] = useState<'N1' | 'N2' | 'N3' | 'N4' | 'N5' | 'REVOKE'>('N2');
+  const [role, setRole] = useState<'N1' | 'N2' | 'N3' | 'N4' | 'N5' | 'REQUESTER' | 'REVOKE'>('N2');
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [pilotServices, setPilotServices] = useState<PilotServiceOption[]>(() => pilotServiceOptions(store.services));
   const [roleMessage, setRoleMessage] = useState('');
@@ -170,7 +218,7 @@ export default function SettingsPage() {
     }
     if (unavailableAccountServiceIds.length > 0 && role !== 'REVOKE') {
       const requestedServiceIds = roleServiceIds(role, selectedServiceIds);
-      const roleScope = role === 'N1' || role === 'N2' || role === 'N5'
+      const roleScope = role === 'N1' || role === 'N2' || role === 'N5' || role === 'REQUESTER'
         ? 'tous les services selon le rôle'
         : requestedServiceIds.length
           ? requestedServiceIds.join(', ')
@@ -289,7 +337,7 @@ export default function SettingsPage() {
     }
   };
   return <div className="page-enter min-w-0"><Warning /><PageIntro kicker="COMPTE & CONFIGURATION" title="Préférences" description="Le compte authentifié accède à l’espace ITSM fictif partagé." />
-    <div className="grid min-w-0 gap-5 xl:grid-cols-[1fr_.8fr]"><div className="min-w-0 space-y-5">
+    <div className="settings-panels-layout grid min-w-0 gap-5"><div className="min-w-0 space-y-5">
       <section className="panel p-5 md:p-6"><SectionTitle kicker="COMPTE AUTHENTIFIÉ" title="Identité de la session" />
         <div className="rounded-lg bg-muted/60 p-4"><div className="eyebrow">COMPTE</div><div className="mt-2 text-[13px] font-semibold">{displayName}</div><div className="eyebrow mt-3">IDENTIFIANT DE COMPTE</div><div className="mono mt-2 break-all text-[12px] font-semibold">{store.profile.name}</div><div className="mt-2 text-[11px] text-muted-foreground">{store.profile.role} · {store.profile.clearance}</div></div>
         <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">L’identité affichée provient de la session authentifiée. Les rôles de démonstration sélectionnables ont été retirés; les commandes et transitions de tickets sont contrôlées par l’API.</p>
@@ -330,8 +378,8 @@ export default function SettingsPage() {
                 </li>)}</ul>
               : <p role="status" data-testid="text-reconciliation-ok" className="mt-2 text-[11px] text-primary">Tous les rôles Clerk correspondent au journal.</p>}
           </div>}
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[1fr_1fr]">
-            <div className="space-y-3">
+          <div className="settings-role-admin-layout grid min-w-0 gap-5">
+            <div className="min-w-0 space-y-3">
               <Field label="Rechercher un compte pilote">
                 <div className="relative"><Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input value={directorySearch} onChange={event => { setDirectorySearch(event.target.value); setDirectoryPage(0); }} className={`${inputCls} pl-9`} placeholder="E-mail ou identifiant de compte" /></div>
               </Field>
@@ -358,7 +406,7 @@ export default function SettingsPage() {
                 </div>
               </div>}
             </div>
-            <form onSubmit={assignRole} className="space-y-3">
+            <form onSubmit={assignRole} className="min-w-0 space-y-3">
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <div className="text-[11px] font-semibold">Régulariser une trace d’habilitation manquante</div>
                 <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Choisissez un compte pour attester son rôle Clerk actuel. Cette opération ne modifie pas ses métadonnées et ne prétend pas reconstituer l’historique antérieur.</p>
@@ -385,7 +433,7 @@ export default function SettingsPage() {
                 {targetUserId ? <div className="mono mt-1 break-all text-[11px] font-semibold">{targetUserId}</div> : <p className="mt-1 text-[11px] text-muted-foreground">Choisissez un compte dans le répertoire.</p>}
               </div>
               {unavailableAccountServiceIds.length > 0 && <p role="status" data-testid="status-unavailable-account-services" className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[10px] text-amber-800 dark:text-amber-200">Ce compte comporte des identifiants de services absents du catalogue : {unavailableAccountServiceIds.join(', ')}. Ils ne seront retirés qu’après confirmation de l’enregistrement.</p>}
-              <Field label="Nouvelle habilitation"><select value={role} onChange={e => setRole(e.target.value as typeof role)} className={inputCls}>{['N1', 'N2', 'N3', 'N4', 'N5', 'REVOKE'].map(value => <option key={value} value={value}>{value === 'REVOKE' ? 'Retirer entièrement l’accès' : value}</option>)}</select></Field>
+              <Field label="Nouvelle habilitation"><select value={role} onChange={e => setRole(e.target.value as typeof role)} className={inputCls}>{['N1', 'N2', 'N3', 'N4', 'N5', 'REQUESTER', 'REVOKE'].map(value => <option key={value} value={value}>{value === 'REVOKE' ? 'Retirer entièrement l’accès' : value === 'REQUESTER' ? 'Demandeur' : value}</option>)}</select></Field>
               {(role === 'N3' || role === 'N4') && <Field label="Services autorisés pour N3 / N4" hint="Cochez les services à autoriser. Sans sélection : N3 accède à tous les services; N4 n’en reçoit aucun.">
                 <div role="group" aria-label="Services disponibles dans le pilote" className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
                   {pilotServices.length > 0 ? pilotServices.map(service => <label key={service.id} className="flex cursor-pointer items-start gap-2 rounded-md p-2 text-[11px] hover:bg-muted/50">
@@ -402,6 +450,10 @@ export default function SettingsPage() {
             </form>
           </div>
        </section>}
+      <SlaCalendarPanel calendar={store.slaCalendar} canEdit={isRoleAdmin} onChange={next => {
+        setStore(current => ({ ...current, slaCalendar: next }));
+        log(`Calendrier SLA modifié · ${next.holidays.length} jour(s) férié(s)`, 'Préférences');
+      }} />
       <section className="panel min-w-0 p-5 md:p-6"><SectionTitle kicker="APPARENCE" title="Thème de l’interface" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{([{ value: 'light', label: 'Clair', Icon: Sun }, { value: 'dark', label: 'Sombre', Icon: Moon }]).map(({ value, label, Icon }) => <button key={value} data-testid={`button-theme-${value}`} onClick={() => { setStore(s => ({ ...s, theme: value })); log(`Thème ${label} activé`, 'Préférences'); }} className={`flex min-w-0 items-center gap-3 rounded-xl border p-4 text-left ${store.theme === value ? 'border-primary bg-muted/60' : 'border-border hover:bg-muted/50'}`}><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted text-primary"><Icon size={17} /></span><span className="min-w-0"><span className="block text-[12px] font-semibold">{label}</span><span className="mt-1 block text-[10px] text-muted-foreground">{store.theme === value ? 'Thème actif' : 'Sélectionner'}</span></span></button>)}</div></section>
       <section className="panel min-w-0 p-5 md:p-6">
         <SectionTitle kicker="TYPOGRAPHIE" title="Police de l’interface" />

@@ -9,6 +9,7 @@ import type { Level, Ticket } from '@/lib/types';
 import { Badge, Button, dialogStickyActionsCls, EmptyState, Field, Modal, pad2, SearchBox, Warning, textareaCls } from '@/components/kit';
 import { SlaBar, TicketForm, emptyDraft, type TicketDraft } from '@/components/ticket-parts';
 import { usePeople } from '@/hooks/use-people';
+import { useDecideItsmRequestApproval } from '@workspace/api-client-react';
 import './tickets.css';
 
 type Dialog = null | 'create' | 'edit' | 'resolve' | 'confirm' | 'cab';
@@ -74,7 +75,9 @@ export default function TicketsPage() { const { person } = usePeople();
 
   const filtered = useMemo(() => store.tickets.filter(t =>
     (kindF === 'Tous' || t.kind === kindF) &&
-    (statusF === 'Tous' || (statusF === 'Ouverts' ? isOpen(t) : t.status === statusF)) &&
+    (statusF === 'Tous' || (statusF === 'Ouverts' ? isOpen(t)
+      : statusF === 'À approuver' ? t.requestApproval?.status === 'pending'
+        : t.status === statusF)) &&
     (prioF === 'Toutes' || t.priority === prioF) &&
     `${t.id} ${t.title} ${t.category} ${person(t.requester)} ${t.assignee} ${t.kind}`.toLowerCase().includes(query.toLowerCase())
   ).sort((a, b) => Number(!isOpen(a)) - Number(!isOpen(b)) || a.priority.localeCompare(b.priority) || b.openedAt.localeCompare(a.openedAt)), [store.tickets, kindF, statusF, prioF, query]);
@@ -84,7 +87,7 @@ export default function TicketsPage() { const { person } = usePeople();
   const toHandleCount = store.tickets.filter(t => t.status === 'Nouveau').length;
   const slaWatchCount = store.tickets.filter(t => {
     if (!isOpen(t) || t.status === 'Résolu') return false;
-    const { ack, res } = ticketSla(t, now);
+    const { ack, res } = ticketSla(t, now, store.slaCalendar);
     const states = [!t.acknowledgedAt ? ack.state : 'met', !t.resolvedAt ? res.state : 'met'];
     return states.includes('warning') || states.includes('breach');
   }).length;
@@ -136,7 +139,7 @@ export default function TicketsPage() { const { person } = usePeople();
       </div>
       <Button testId="button-create-ticket" className="td-create-btn" onClick={() => { setPrefill(emptyDraft()); setLinkIncidents([]); setTemplate(''); setDialog('create'); }}><Plus size={15} />Créer un ticket</Button>
     </div>
-    <div className="td-sla-note"><Timer size={15} /><div><strong>Minuteurs SLA de démonstration.</strong> Les délais courent en continu depuis l’ouverture (24 h sur 24, sans calendrier ouvré ni jours fériés) et sont recalculés chaque seconde. Un changement de priorité modifie les échéances mais ne remet jamais le temps écoulé à zéro. Ces indicateurs ne mesurent aucune performance contractuelle.</div></div>
+    <div className="td-sla-note"><Timer size={15} /><div><strong>Calendrier SLA de démonstration.</strong> Les deux délais suivent le calendrier du pilote (lundi–vendredi, 07 h–19 h, heure de Libreville, hors jours fériés saisis dans Préférences) et sont suspendus pendant « En attente ». Un changement de priorité recalcule l’échéance sans remettre le temps écoulé à zéro. Ces indicateurs ne mesurent aucune performance contractuelle.</div></div>
     {recurrences.length > 0 && <div className="td-sla-note td-recurrence" role="status" data-testid="recurrence-alerts"><ShieldAlert size={15} /><div><strong>Incidents récurrents.</strong> Plusieurs incidents d’une même catégorie touchent le même service depuis {RECURRENCE_WINDOW_DAYS} jours : un ticket Problème permet d’en chercher la cause commune.
       <ul>{recurrences.map((r, i) => <li key={`${r.serviceId}|${r.category}`}><span><b>{store.services.find(s => s.id === r.serviceId)?.name ?? r.serviceId}</b> · {r.category} · {r.incidentIds.length} incidents ({r.incidentIds.join(', ')})</span><Button testId={`button-open-problem-${i}`} variant="outline" className="h-7 px-2.5" onClick={() => openProblem(r)}><Plus size={13} />Ouvrir un problème</Button></li>)}</ul></div></div>}
     <div className="td-summary" aria-label="Résumé de la file">
@@ -162,14 +165,14 @@ export default function TicketsPage() { const { person } = usePeople();
           </div>
           <details className="td-advanced-filters" open>
             <summary><Filter size={12} />Filtres détaillés<ChevronDown size={12} /></summary>
-            <div className="td-filter-grid"><FilterSel label="Type" value={kindF} onChange={setKindF} opts={['Tous', ...KINDS]} /><FilterSel label="État" value={statusF} onChange={setStatusF} opts={['Ouverts', 'Tous', ...STATUSES]} /><FilterSel label="Priorité" value={prioF} onChange={setPrioF} opts={['Toutes', ...PRIORITIES]} /></div>
+            <div className="td-filter-grid"><FilterSel label="Type" value={kindF} onChange={setKindF} opts={['Tous', ...KINDS]} /><FilterSel label="État" value={statusF} onChange={setStatusF} opts={['Ouverts', 'À approuver', 'Tous', ...STATUSES]} /><FilterSel label="Priorité" value={prioF} onChange={setPrioF} opts={['Toutes', ...PRIORITIES]} /></div>
           </details>
           <div className="td-result-line"><span><Filter size={12} />{filtered.length} résultat(s)</span>{(kindF !== 'Tous' || statusF !== 'Ouverts' || prioF !== 'Toutes' || query) && <button data-testid="button-reset-filters" onClick={clearFilters}>Réinitialiser les filtres</button>}</div>
           {hiddenActive && <div className="td-hidden-active" role="status">Le ticket {active} est masqué par les filtres actuels.</div>}
         </div>
         <div className="td-ticket-list">
           {filtered.map(t => {
-            const sla = ticketSla(t, now);
+            const sla = ticketSla(t, now, store.slaCalendar);
             const hot = isOpen(t) && t.status !== 'Résolu' && [!t.acknowledgedAt && sla.ack.state, !t.resolvedAt && sla.res.state].find(x => x === 'breach' || x === 'warning');
             const pendingAck = !t.acknowledgedAt;
             const remaining = pendingAck ? sla.ack.remainingMs : sla.res.remainingMs;
@@ -179,7 +182,7 @@ export default function TicketsPage() { const { person } = usePeople();
             return <button key={t.id} data-testid={`row-ticket-${t.id}`} aria-pressed={ticket?.id === t.id} onClick={() => { setActive(t.id); setMobileQueueOpen(false); }} className={`td-ticket-row ${ticket?.id === t.id ? 'is-selected' : ''}`}>
               <span className="td-ticket-top"><span className="td-ticket-id">{t.id} <i>·</i> {t.kind} · L{t.supportLevel}</span><span className="td-ticket-priority"><Badge tone={priorityTone(t.priority)}>{t.priority}</Badge>{hot && <span title={hot === 'breach' ? 'Délai dépassé' : 'Seuil d’alerte'} className={`td-hot-dot ${hot === 'breach' ? 'breach' : 'warning'}`} />}</span></span>
               <strong className="td-ticket-title">{t.title}</strong>
-              <span className="td-ticket-meta"><span>{service?.name || t.category} <i>/</i> {person(t.requester)}</span><Badge tone={statusTone(t.status)}>{t.status === 'Nouveau' ? 'À prendre' : t.status}</Badge></span>
+              <span className="td-ticket-meta"><span>{service?.name || t.category} <i>/</i> {person(t.requester)}</span><span className="flex flex-wrap items-center gap-1"><Badge tone={statusTone(t.status)}>{t.status === 'Nouveau' ? 'À prendre' : t.status}</Badge>{t.requestApproval?.status === 'pending' && <Badge tone="amber">À approuver</Badge>}</span></span>
               <span className={`td-ticket-sla ${hot === 'breach' ? 'is-breach' : hot ? 'is-warning' : ''}`}><span><Clock3 size={11} />{slaText}</span><small>{t.assignee}</small></span>
             </button>;
           })}
@@ -194,8 +197,8 @@ export default function TicketsPage() { const { person } = usePeople();
       </section>
     </div>
     <footer className="td-footer"><ShieldAlert size={12} />Espace ITSM partagé · données fictives de démonstration · aucun indicateur SLA n’est contractuel.</footer>
-     {dialog === 'create' && <Modal wide title="Créer un ticket" description={diagnosticNotice || "Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence."} onClose={closeCreate}>{!linkIncidents.length && <div className="td-templates" role="group" aria-label="Demandes préformatées"><span>Demandes préformatées</span>{REQUEST_TEMPLATES.map(t => <Button key={t.id} testId={`button-template-${t.id}`} variant={template === t.id ? 'primary' : 'outline'} className="h-7 px-2.5" onClick={() => { setTemplate(t.id); setPrefill(emptyDraft({ kind: 'Demande', ...t.draft })); }}>{t.label}</Button>)}{chosenTemplate && <p data-testid="text-template-approval">{chosenTemplate.autoApproved ? 'Demande standard : prise en compte automatiquement à la création, sans validation manuelle.' : 'Demande préremplie : elle sera validée par le support avant traitement.'}</p>}</div>}<TicketForm key={template || 'libre'} initial={prefill} services={store.services} assets={store.assets} articles={store.kedb} submitLabel="Créer le ticket" onSubmit={create} onCancel={closeCreate} /></Modal>}
-    {dialog === 'edit' && ticket && <Modal wide title={`Modifier ${ticket.id}`} description="L’heure d’ouverture est conservée : les échéances SLA sont recalculées sans remettre le temps écoulé à zéro." onClose={() => setDialog(null)}><TicketForm lockKind={ticket.status !== 'Nouveau' || !!ticket.cab} initial={emptyDraft({ kind: ticket.kind, title: ticket.title, description: ticket.description, category: ticket.category, impact: ticket.impact, urgency: ticket.urgency, supportLevel: ticket.supportLevel, assignee: ticket.assignee, serviceId: ticket.serviceId ?? '', assetId: ticket.assetId ?? '' })} services={store.services} assets={store.assets} submitLabel="Enregistrer" onSubmit={edit} onCancel={() => setDialog(null)} /></Modal>}
+      {dialog === 'create' && <Modal wide title="Créer un ticket" description={diagnosticNotice || "Ticket fictif de démonstration. La priorité découle de l’impact et de l’urgence."} onClose={closeCreate}>{!linkIncidents.length && <div className="td-templates" role="group" aria-label="Demandes préformatées"><span>Demandes préformatées</span>{REQUEST_TEMPLATES.map(t => <Button key={t.id} testId={`button-template-${t.id}`} variant={template === t.id ? 'primary' : 'outline'} className="h-7 px-2.5" onClick={() => { setTemplate(t.id); setPrefill(emptyDraft({ kind: 'Demande', ...t.draft })); }}>{t.label}</Button>)}{chosenTemplate && <p data-testid="text-template-approval">{chosenTemplate.autoApproved ? 'Demande standard : prise en compte automatiquement à la création, sans validation manuelle.' : 'Demande préremplie : elle sera validée par le support avant traitement.'}</p>}</div>}<TicketForm key={template || 'libre'} initial={prefill} services={store.services} assets={store.assets} tickets={store.tickets} articles={store.kedb} autoAssignByService submitLabel="Créer le ticket" onSubmit={create} onCancel={closeCreate} /></Modal>}
+    {dialog === 'edit' && ticket && <Modal wide title={`Modifier ${ticket.id}`} description="L’heure d’ouverture est conservée : les échéances SLA sont recalculées sans remettre le temps écoulé à zéro." onClose={() => setDialog(null)}><TicketForm lockKind={ticket.status !== 'Nouveau' || !!ticket.cab} initial={emptyDraft({ kind: ticket.kind, title: ticket.title, description: ticket.description, category: ticket.category, impact: ticket.impact, urgency: ticket.urgency, supportLevel: ticket.supportLevel, assignee: ticket.assignee, serviceId: ticket.serviceId ?? '', assetId: ticket.assetId ?? '' })} services={store.services} assets={store.assets} tickets={store.tickets} submitLabel="Enregistrer" onSubmit={edit} onCancel={() => setDialog(null)} /></Modal>}
     {dialog === 'resolve' && ticket && <ResolveDialog ticket={ticket} onClose={() => setDialog(null)} onDone={(rootCause, resolution) => { setStore(s => resolveTicket(s, ticket.id, rootCause, resolution)); log(`Ticket ${ticket.id} résolu (en attente de confirmation)`, `Ticket ${ticket.id}`); setDialog(null); }} />}
     {dialog === 'confirm' && ticket && <ConfirmDialog ticket={ticket} onClose={() => setDialog(null)} onDone={satisfaction => {
       setStore(s => closeResolvedTicket(s, ticket.id, satisfaction));
@@ -217,8 +220,12 @@ function FilterSel({ label, value, onChange, opts }: { label: string; value: str
 }
 
 function TicketDetail({ ticket, now, onDialog, event, notify, comment, setComment, onBack }: { ticket: Ticket; now: number; onDialog: (d: Dialog) => void; event: (id: string, body: string, patch?: Partial<Ticket>, audit?: string) => void; notify: (id: string, title: string, body: string) => void; comment: string; setComment: (v: string) => void; onBack: () => void }) { const { person } = usePeople();
-  const { store } = useStore();
-  const sla = ticketSla(ticket, now);
+  const { store, resync } = useStore();
+  const approvalMutation = useDecideItsmRequestApproval();
+  const [approvalReason, setApprovalReason] = useState('');
+  const [approvalError, setApprovalError] = useState('');
+  const [approvalMessage, setApprovalMessage] = useState('');
+  const sla = ticketSla(ticket, now, store.slaCalendar);
   const policy = SLA_POLICIES[ticket.priority];
   const service = store.services.find(s => s.id === ticket.serviceId);
   const asset = store.assets.find(a => a.id === ticket.assetId);
@@ -234,6 +241,27 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
   const slaAttention = !slaComplete && (currentSla.state === 'warning' || currentSla.state === 'breach');
   const slaBreached = currentSla.state === 'breach';
   const slaPhase = ticket.acknowledgedAt ? 'Résolution' : 'Prise en charge';
+  const approvalPending = ticket.requestApproval?.status === 'pending';
+  const clearance = store.profile.clearance.slice(0, 2);
+  const canDecideRequest = clearance === 'N1' || (clearance === 'N3' && Boolean(ticket.serviceId));
+  const decideRequest = async (decision: 'approve' | 'reject') => {
+    setApprovalError('');
+    setApprovalMessage('');
+    try {
+      await approvalMutation.mutateAsync({
+        requestId: ticket.id,
+        data: { decision, ...(approvalReason.trim() ? { reason: approvalReason.trim() } : {}) },
+      });
+      setApprovalMessage(decision === 'approve' ? 'Demande approuvée ; elle rejoint la file de traitement.' : 'Demande rejetée ; le demandeur verra le motif.');
+      setApprovalReason('');
+      await resync();
+    } catch (error) {
+      const data = error && typeof error === 'object' && 'data' in error ? error.data : null;
+      setApprovalError(data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+        ? data.error
+        : error instanceof Error ? error.message : 'La décision n’a pas pu être enregistrée.');
+    }
+  };
   const canStart = (ticket.status === 'Pris en compte' || ticket.status === 'En attente') && (!isChange || cabOk);
   const canResolve = ['Pris en compte', 'En cours', 'En attente'].includes(ticket.status) && (!isChange || cabOk);
   const ack = () => event(ticket.id, 'Prise en charge enregistrée.', { status: 'Pris en compte', acknowledgedAt: nowIso() }, `Ticket ${ticket.id} pris en charge`);
@@ -257,7 +285,7 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
         {problem && <p className="td-linked" data-testid="text-linked-problem">Rattaché au problème {problem.id} · {problem.status}</p>}
       </div>
     </div>
-    {slaAttention && <div className={`td-priority-callout ${slaBreached ? 'is-breach' : ''}`} role="status"><ShieldAlert size={15} /><div><strong>{slaBreached ? `${slaPhase} SLA dépassée` : `${slaPhase} SLA à surveiller`}</strong><span>Échéance {formatWAT(slaDeadline, 'datetime')}. Les délais du pilote sont continus et ne représentent pas un engagement contractuel.</span></div></div>}
+     {slaAttention && <div className={`td-priority-callout ${slaBreached ? 'is-breach' : ''}`} role="status"><ShieldAlert size={15} /><div><strong>{slaBreached ? `${slaPhase} SLA dépassée` : `${slaPhase} SLA à surveiller`}</strong><span>Échéance {formatWAT(slaDeadline, 'datetime')}. Les délais du pilote suivent le calendrier ouvré, hors jours fériés, et ne sont pas contractuels.</span></div></div>}
     <div className="td-fact-grid">
       <div><span>SERVICE</span><strong><Server size={12} />{service?.name || ticket.category}</strong></div>
       <div><span>RESPONSABLE</span><strong><UserRound size={12} />{person(ticket.assignee)}</strong></div>
@@ -265,7 +293,29 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
       <div><span>NIVEAU</span><strong><Headphones size={12} />Support L{ticket.supportLevel}</strong></div>
     </div>
 
-    <div className="td-ticket-actions mt-4 flex flex-wrap gap-2">
+     {approvalPending && <section className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4" data-testid="panel-request-approval" aria-labelledby="request-approval-title">
+       <div className="flex items-start gap-3">
+         <ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" />
+         <div className="min-w-0 flex-1">
+           <h4 id="request-approval-title" className="text-sm font-semibold">Demande en attente de validation</h4>
+           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Le traitement et le délai SLA reprendront après la décision. Seuls un N1 ou un N3 du service peuvent décider.</p>
+           {canDecideRequest
+             ? <div className="mt-3 space-y-2">
+               <Field label="Motif de rejet" hint="Obligatoire uniquement pour rejeter · 500 caractères maximum">
+                 <textarea value={approvalReason} maxLength={500} onChange={e => setApprovalReason(e.target.value)} className={textareaCls} data-testid="input-request-approval-reason" />
+               </Field>
+               <div className="flex flex-wrap gap-2">
+                 <Button testId="button-approve-request" disabled={approvalMutation.isPending} onClick={() => void decideRequest('approve')}><CircleCheck size={14} />Approuver</Button>
+                 <Button testId="button-reject-request" variant="outline" disabled={approvalMutation.isPending || !approvalReason.trim()} onClick={() => void decideRequest('reject')}>Rejeter avec motif</Button>
+               </div>
+             </div>
+             : <p className="mt-3 text-xs text-muted-foreground">L’approbation N1 est requise{ticket.serviceId ? ' ou celle d’un N3 autorisé pour ce service' : ' pour cette demande sans service associé'}.</p>}
+           {approvalError && <p role="alert" className="mt-2 text-xs text-destructive">{approvalError}</p>}
+           {approvalMessage && <p role="status" className="mt-2 text-xs text-primary">{approvalMessage}</p>}
+         </div>
+       </div>
+     </section>}
+     {!approvalPending && <div className="td-ticket-actions mt-4 flex flex-wrap gap-2">
       {ticket.status === 'Nouveau' && <Button testId="button-ack" onClick={ack}><Hand size={14} />Prendre en charge</Button>}
       {isChange && open && !ticket.cab && <Button testId="button-cab" variant={ticket.status === 'Nouveau' ? 'outline' : 'primary'} onClick={() => onDialog('cab')}><Gavel size={14} />Décision CAB</Button>}
       {(ticket.status === 'Pris en compte' || ticket.status === 'En attente') && <Button testId="button-start" variant="outline" disabled={!canStart} title={isChange && !cabOk ? 'Décision CAB requise' : undefined} onClick={() => event(ticket.id, ticket.status === 'En attente' ? 'Traitement repris.' : 'Traitement démarré.', { status: 'En cours' }, `Ticket ${ticket.id} en cours`)}><Play size={14} />{ticket.status === 'En attente' ? 'Reprendre' : 'Démarrer le traitement'}</Button>}
@@ -277,13 +327,13 @@ function TicketDetail({ ticket, now, onDialog, event, notify, comment, setCommen
         : <Button testId="button-complete-resolution" onClick={() => onDialog('resolve')}><CircleCheck size={14} />Documenter la résolution</Button>)}
       {ticket.status === 'Résolu' && <Button testId="button-reopen" variant="outline" onClick={() => event(ticket.id, 'Résolution refusée, ticket rouvert. Le minuteur de résolution reprend depuis l’ouverture.', { status: 'En cours', resolvedAt: null }, `Ticket ${ticket.id} rouvert`)}><RotateCcw size={14} />Rouvrir</Button>}
       {open && <Button testId="button-edit-ticket" variant="quiet" onClick={() => onDialog('edit')}><Pencil size={13} />Modifier</Button>}
-    </div>
+     </div>}
     {isChange && open && !cabOk && ticket.status !== 'Nouveau' && <p className="mt-2 text-[10px] text-muted-foreground">Démarrage et résolution bloqués tant qu’aucune approbation CAB n’est enregistrée.</p>}
     {ticket.status === 'Nouveau' && !isChange && <p className="mt-2 text-[10px] text-muted-foreground">La résolution n’est possible qu’après la prise en charge.</p>}
 
     <div className="td-sla-bars mt-5 grid gap-3 md:grid-cols-2">
-      <SlaBar testId="sla-ack" label={`Prise en charge · ${fmtMinutes(policy.acknowledgeMinutes)}`} openedAt={ticket.openedAt} deadline={sla.deadlines.acknowledgeBy} completedAt={ticket.acknowledgedAt} now={now} />
-      <SlaBar testId="sla-resolve" label={`Résolution · ${fmtMinutes(policy.resolveMinutes)}`} openedAt={ticket.openedAt} deadline={sla.deadlines.resolveBy} completedAt={ticket.resolvedAt} now={now} />
+      <SlaBar testId="sla-ack" label={`Prise en charge · ${fmtMinutes(policy.acknowledgeMinutes)}`} openedAt={ticket.openedAt} deadline={sla.deadlines.acknowledgeBy} completedAt={ticket.acknowledgedAt} now={now} calendar={store.slaCalendar} targetMinutes={policy.acknowledgeMinutes} pauses={ticket.slaPauses} />
+      <SlaBar testId="sla-resolve" label={`Résolution · ${fmtMinutes(policy.resolveMinutes)}`} openedAt={ticket.openedAt} deadline={sla.deadlines.resolveBy} completedAt={ticket.resolvedAt} now={now} calendar={store.slaCalendar} targetMinutes={policy.resolveMinutes} pauses={ticket.slaPauses} />
     </div>
     <p className="mt-2 text-[10px] text-muted-foreground">Escalade prévue : {policy.escalation}</p>
 

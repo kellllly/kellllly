@@ -25,8 +25,8 @@ const tickets = () => [
   ui.normalizeTicket({ id: 'INC-2400', title: 'Ancien incident', impact: 2, urgency: 2, status: 'Clos', assetId: 'MAT-0874', openedAt: minutesAgo(5000), closedAt: minutesAgo(4000) }),
 ];
 const kedb = [
-  { id: 'KB-0001', title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible', rootCause: 'Certificat du relais expiré', resolution: 'Renouvellement du certificat', ticketId: 'INC-2400', category: 'Applications', createdAt: minutesAgo(4000), author: 'user_n3' },
-  { id: 'KB-0002', title: 'Point d’accès saturé', symptom: 'Wi-Fi lent aile Est', rootCause: 'Canal radio encombré', resolution: 'Changement de canal', ticketId: 'INC-2399', category: 'Réseau', createdAt: minutesAgo(9000), author: 'user_n3' },
+  { id: 'KB-0001', title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible', rootCause: 'Certificat du relais expiré', resolution: 'Renouvellement du certificat', ticketId: 'INC-2400', category: 'Applications', createdAt: minutesAgo(4000), author: 'user_n3', reviewStatus: 'published' as const },
+  { id: 'KB-0002', title: 'Point d’accès saturé', symptom: 'Wi-Fi lent aile Est', rootCause: 'Canal radio encombré', resolution: 'Changement de canal', ticketId: 'INC-2399', category: 'Réseau', createdAt: minutesAgo(9000), author: 'user_n3', reviewStatus: 'published' as const },
 ];
 const conversations = [
   { id: 'C-1', title: 'Équipe', kind: 'Groupe', classification: 'Interne', participants: [], readCount: 0, messages: [{ id: 'x1', author: 'a', body: 'Bonjour', time: '', at: minutesAgo(3) }, { id: 'x2', author: 'a', body: 'Point à 10 h', time: '', at: minutesAgo(2) }] },
@@ -36,7 +36,7 @@ const auditEvents = (count: number) => Array.from({ length: count }, (_, i) => (
   scope: i % 2 ? 'Support informatique' : 'Messagerie', time: '', at: minutesAgo(i * 60),
 }));
 
-async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', withData = true, audit = auditEvents(3), services = undefined as unknown[] | undefined } = {}) {
+async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', withData = true, audit = auditEvents(3), services = undefined as unknown[] | undefined, kedbArticles = undefined as unknown[] | undefined } = {}) {
   ui.calls.length = 0;
   ui.logs.length = 0;
   ui.router.path = '/';
@@ -45,7 +45,7 @@ async function mount(page: unknown, { clearance = 'N2 · Interne', search = '', 
   ui.clock.now = Date.now();
   const store = ui.testStore(withData ? tickets() : [], withData ? conversations : []);
   store.profile = { ...store.profile, name: 'user_me', clearance };
-  store.kedb = withData ? kedb : [];
+  store.kedb = kedbArticles ? kedbArticles as never : withData ? kedb : [];
   store.audit = audit;
   if (services) store.services = services as never;
   const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -69,7 +69,9 @@ async function click(target: string | HTMLElement) {
 async function fill(target: string | HTMLElement, value: string) {
   const element = (typeof target === 'string' ? $(target) : target) as HTMLElement;
   assert.ok(element, `${target} présent`);
-  const proto = element instanceof window.HTMLSelectElement ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
+  const proto = element instanceof window.HTMLSelectElement ? window.HTMLSelectElement.prototype
+    : element instanceof window.HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
   Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(element, value);
   await act(async () => { element.dispatchEvent(new window.Event(element instanceof window.HTMLSelectElement ? 'change' : 'input', { bubbles: true })); });
 }
@@ -77,13 +79,13 @@ const byText = (selector: string, needle: string) => [...document.querySelectorA
 
 // --- Tableau de bord ---------------------------------------------------------
 
-test('le tableau de bord classe la file de travail, filtre par priorité et état, et signale le SLA dépassé', async () => {
+test('le tableau de bord classe la file de travail et le SLA attend les heures ouvrées', async () => {
   await mount(ui.DashboardPage);
   assert.ok(document.querySelector('.ops-welcome'), 'le tableau de bord conserve son en-tête opérationnel harmonisé');
   const queue = () => [...document.querySelectorAll('[data-testid^="link-dashboard-ticket-"]')].map((link) => (link as HTMLElement).dataset.testid!.replace('link-dashboard-ticket-', ''));
   assert.match(text(), /File de travail\s*02 ouverts/u, 'le ticket clos est ignoré');
   assert.deepEqual(queue(), ['INC-2410'], 'seul le premier ticket est montré par défaut');
-  assert.match($('link-dashboard-ticket-INC-2410')!.textContent!, /prise en charge dépassée|de \d+ h/u, 'P1 sans prise en charge depuis 3 h');
+  assert.match($('link-dashboard-ticket-INC-2410')!.textContent!, /dans \d+ min/u, 'le ticket ouvert hors horaires n’accumule pas de délai ouvré');
   assert.match(text(), /FOCUS DU MOMENT\s*Panne du portail/u);
   await click(byText('button', 'Afficher la file complète')!);
   assert.deepEqual(queue(), ['INC-2410', 'REQ-2411'], 'P1 avant P4');
@@ -100,7 +102,7 @@ test('le tableau de bord classe la file de travail, filtre par priorité et éta
   assert.deepEqual(queue(), ['INC-2410'], 'la garde ne garde que P1 et P2');
 
   assert.match($('kpi-mttr')!.textContent!, /3 j 10 h\s*1 ticket\(s\) résolu\(s\) sur 3/u, 'ticket clos : résolution datée par normalizeTicket ~30 min avant maintenant');
-  assert.match($('kpi-sla')!.textContent!, /0 %\s*0\/2 dans le délai/u, 'clos hors délai et P1 ouvert dépassé ; la demande P4 n’est pas encore due');
+  assert.match($('kpi-sla')!.textContent!, /0 %\s*0\/1 dans le délai/u, 'seul le P1 fermé et le P1 ouvert ont une échéance de résolution décidée');
   assert.match($('kpi-mtbf')!.textContent!, /—\s*Pas encore deux incidents/u, 'un seul incident rattaché à un service');
   assert.match($('kpi-satisfaction')!.textContent!, /—\s*Aucune note pour l’instant/u);
   assert.match($('kpi-category')!.textContent!, /3/u);
@@ -180,6 +182,27 @@ test('un lien vers un article KEDB l’ouvre puis nettoie l’adresse ; un audit
   assert.ok($('link-kedb-source'), 'lien vers le ticket d’origine');
   await mount(ui.ServicesPage, { clearance: 'N5 · Audit' });
   assert.ok(document.querySelector('section.hidden [data-testid="input-search-services"]'), 'catalogue masqué pour N5');
+});
+
+test('un article en attente est caché au N2 et un N1 peut le corriger puis le publier', async () => {
+  const pending = { ...kedb[0]!, reviewStatus: 'pending' as const, reviewFeedback: null };
+  await mount(ui.ServicesPage, { clearance: 'N2 · Interne', kedbArticles: [pending] });
+  assert.equal($('row-kedb-KB-0001'), null, 'un article non publié ne devient pas une solution en libre-service');
+
+  await mount(ui.ServicesPage, { clearance: 'N1 · Pilotage', kedbArticles: [pending] });
+  assert.match(text(), /À valider/u, 'le N1 voit la file de validation');
+  await click('row-kedb-KB-0001');
+  await fill('input-kedb-review-title', 'Certificat SMTP renouvelé');
+  ui.handlers.reviewItsmKnowledgeArticle = async (articleId, input) => {
+    assert.equal(articleId, pending.id);
+    const data = input as { title: string; symptom: string; rootCause: string; resolution: string };
+    return { article: { ...pending, ...data, reviewStatus: 'published', reviewFeedback: null, reviewedBy: 'user-reviewer', reviewedAt: new Date().toISOString() } };
+  };
+  await click('button-kedb-publish');
+  assert.match(text(), /Publié/u);
+  assert.match(text(), /Certificat SMTP renouvelé/u);
+  assert.equal($('button-kedb-publish'), null, 'l’article publié sort de la file de revue');
+  delete ui.handlers.reviewItsmKnowledgeArticle;
 });
 
 test('l’assistant de diagnostic vérifie le pilote, propose la KEDB et prépare un ticket guidé repris par la file', async () => {
@@ -268,7 +291,7 @@ test('sans service au catalogue, l’assistant ne lance rien', async () => {
 
 test('une KEDB vide invite à documenter une résolution', async () => {
   await mount(ui.ServicesPage, { withData: false });
-  assert.match(text(), /Aucune résolution validée pour l’instant/u);
+  assert.match(text(), /Aucune résolution à consulter pour l’instant/u);
 });
 
 // --- Gouvernance --------------------------------------------------------------
@@ -349,6 +372,82 @@ test('un journal vide affiche l’état vide sans pagination', async () => {
   await mount(ui.AuditPage, { audit: [] });
   assert.ok($('empty-audit-state'));
   assert.equal($('text-audit-page-range'), null);
+});
+
+test('le portail demandeur crée une demande et ne montre que les soumissions personnelles', async () => {
+  let ownRequests: Array<Record<string, unknown>> = [];
+  ui.handlers.getItsmMyRequests = async () => ({
+    requests: ownRequests,
+    services: [{ id: 'service-1', name: 'Support central', category: 'Applications' }],
+  });
+  ui.handlers.createItsmMyRequest = async (input) => {
+    const data = input as unknown as Record<string, unknown>;
+    const request = {
+      id: 'INC-NEW',
+      title: String(data.title),
+      kind: data.kind,
+      category: data.category,
+      status: 'Nouveau',
+      priority: 'P4',
+      serviceId: data.serviceId,
+      serviceName: 'Support central',
+      description: String(data.description),
+      openedAt: minutesAgo(0),
+      requestApproval: null,
+    };
+    ownRequests = [request];
+    return { request };
+  };
+  ui.calls.length = 0;
+  await mount(ui.RequesterPortalPage);
+  assert.match(text(), /Comment pouvons-nous vous aider/u);
+  assert.match(text(), /Aucune soumission pour le moment/u);
+  await fill('input-request-title', 'Accès à l’application');
+  await fill('select-request-category', 'Accès');
+  await fill('select-request-service', 'service-1');
+  await fill('textarea-request-description', 'Je dois accéder au portail de gestion.');
+  const form = document.querySelector('form');
+  assert.ok(form);
+  await act(async () => { form!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })); });
+  await settle();
+  assert.match(text(), /INC-NEW/u);
+  assert.match(text(), /Accès à l’application/u);
+  assert.match(text(), /Nouveau/u);
+  assert.ok(ui.calls.some((call) => call.name === 'createItsmMyRequest'));
+  assert.ok(ui.calls.some((call) => call.name === 'getItsmMyRequests'));
+});
+
+test('le portail montre l’approbation en attente et le motif de rejet', async () => {
+  ui.handlers.getItsmMyRequests = async () => ({
+    services: [],
+    requests: [
+      {
+        id: 'REQ-PENDING', title: 'Créer un accès', kind: 'Demande', category: 'Accès',
+        status: 'En attente', priority: 'P4', serviceId: 'service-1', serviceName: 'Support central',
+        description: 'Accès au portail.', openedAt: minutesAgo(5),
+        requestApproval: { status: 'pending', reason: null, decidedAt: null },
+      },
+      {
+        id: 'REQ-REJECTED', title: 'Compte supplémentaire', kind: 'Demande', category: 'Accès',
+        status: 'Rejeté', priority: 'P4', serviceId: 'service-1', serviceName: 'Support central',
+        description: 'Un compte supplémentaire.', openedAt: minutesAgo(15),
+        requestApproval: { status: 'rejected', reason: 'Le responsable métier doit valider le besoin.', decidedAt: minutesAgo(10) },
+      },
+    ],
+  });
+  await mount(ui.RequesterPortalPage);
+  assert.match(text(), /REQ-PENDING/u);
+  assert.match(text(), /À valider/u);
+  assert.match(text(), /REQ-REJECTED/u);
+  assert.match(text(), /Le responsable métier doit valider le besoin\./u);
+});
+
+test('le portail demandeur affiche un refus d’accès sans données partagées', async () => {
+  ui.handlers.getItsmMyRequests = async () => { throw Object.assign(new Error('forbidden'), { status: 403 }); };
+  await mount(ui.RequesterPortalPage);
+  assert.match(text(), /Accès non autorisé/u);
+  assert.match(text(), /Aucune demande n’est affichée/u);
+  assert.doesNotMatch(text(), /File de travail/u);
 });
 
 test('les onglets de consultation partagent le gabarit de titre', async () => {

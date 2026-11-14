@@ -114,6 +114,7 @@ test('requester confirmation creates one KEDB article, once, and mirrors the lin
   assert.equal(store.tickets.find(t => t.id === ticket.id)?.status, 'Clos');
   assert.equal(store.tickets.find(t => t.id === ticket.id)?.resolvedAt, resolvedAt);
   assert.equal(store.kedb.filter(a => a.ticketId === ticket.id).length, 1);
+  assert.equal(store.kedb.find(a => a.ticketId === ticket.id)?.reviewStatus, 'pending');
   assert.ok(store.conversations.find(c => c.id === 'C-SUP')?.messages.some(m => m.ticketId === ticket.id && m.body.includes('Ticket clos')));
   assert.equal(closeResolvedTicket(store, ticket.id), store);
   assert.ok(!('satisfaction' in store.tickets.find(t => t.id === ticket.id)!), 'sans note, aucun champ ajouté');
@@ -156,6 +157,40 @@ test('notifications follow active SLA state and honor locally read identifiers',
   const first = notifications[0]!;
   store.notifRead.push(first.id);
   assert.equal(deriveNotifications(store, now).find(n => n.id === first.id)?.read, true);
+});
+
+test('une alerte SLA reste lue quand elle passe de bientôt due à dépassée', () => {
+  const store = migrate(null);
+  const openedAt = '2026-11-12T08:00:00.000Z';
+  const ticket = {
+    ...store.tickets[0]!,
+    id: 'INC-2500',
+    title: 'Portail indisponible',
+    impact: 1 as const,
+    urgency: 1 as const,
+    priority: 'P1' as const,
+    status: 'Nouveau' as const,
+    openedAt,
+    acknowledgedAt: null,
+    resolvedAt: null,
+    closedAt: null,
+  };
+  store.tickets = [ticket];
+  const opened = Date.parse(openedAt);
+  const warning = deriveNotifications(store, opened + 13 * 60_000).find(item => item.ticketId === ticket.id && item.title.startsWith('Prise en charge'));
+  assert.ok(warning);
+  assert.match(warning.title, /bientôt due/u);
+  store.notifRead.push(warning.id);
+
+  const breached = deriveNotifications(store, opened + 16 * 60_000).find(item => item.ticketId === ticket.id && item.title.startsWith('Prise en charge'));
+  assert.ok(breached);
+  assert.match(breached.title, /dépassée/u);
+  assert.equal(breached.id, warning.id, 'l’identifiant reste attaché à la même échéance');
+  assert.equal(breached.read, true, 'le dépassement hérite de l’état lu de l’avertissement');
+  assert.equal(deriveNotifications(store, opened + 16 * 60_000).filter(item => !item.read).length, 0, 'aucun badge ne réapparaît');
+
+  const legacyState = { ...store, notifRead: [`${ticket.id}:ack:warning`] };
+  assert.equal(deriveNotifications(legacyState, opened + 16 * 60_000).find(item => item.ticketId === ticket.id && item.title.startsWith('Prise en charge'))?.read, true, 'les états lus existants restent compatibles');
 });
 
 test('a mention of my display name becomes a notification that links to the message', () => {

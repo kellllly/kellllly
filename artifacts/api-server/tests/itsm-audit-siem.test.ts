@@ -33,6 +33,25 @@ test("a revocation keeps next: null, and unmapped fields never leave the pilot",
   assert.equal((toSiemRecord(event("y")).event as Record<string, unknown>).action, "itsm.activity");
 });
 
+test("service-request decisions enter SIEM without exporting free-text rejection reasons", () => {
+  const rejected = toSiemRecord({
+    ...event("request"),
+    type: "itsm.request.rejected",
+    ticketId: "REQ-2601",
+    reason: "Texte privé à ne pas exporter.",
+  });
+  assert.deepEqual(rejected.event, {
+    id: "request",
+    kind: "event",
+    dataset: "anif.itsm.audit",
+    action: "itsm.request.rejected",
+    category: ["process"],
+    type: ["change"],
+  });
+  assert.doesNotMatch(JSON.stringify(rejected), /Texte privé à ne pas exporter/u);
+  assert.deepEqual((rejected.anif as Record<string, unknown>).ticket, { id: "REQ-2601" });
+});
+
 test("pages follow the sequence, skip pruned stubs and move the cursor past them", () => {
   const sealed = sealAuditEvents(["e", "d", "c", "b", "a"].map((id) => event(id)));
   const journal = sealed.map((item) => (item.seq === 2 ? pruneAuditEvent(item) : item));

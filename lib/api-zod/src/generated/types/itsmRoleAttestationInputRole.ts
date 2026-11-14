@@ -15,4 +15,5 @@ export const ItsmRoleAttestationInputRole = {
   N3: 'N3',
   N4: 'N4',
   N5: 'N5',
+  REQUESTER: 'REQUESTER',
 } as const;

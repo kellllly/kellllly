@@ -24,6 +24,7 @@ const compact = <T extends JsonRecord>(record: T): T =>
 
 function category(type: string): { category: string[]; type: string[] } {
   if (type.startsWith("itsm.role.")) return { category: ["iam"], type: type === "itsm.role.attested" ? ["info"] : ["change"] };
+  if (type === "itsm.request.approved" || type === "itsm.request.rejected") return { category: ["process"], type: ["change"] };
   if (type.startsWith("itsm.sla.")) return { category: ["process"], type: ["info"] };
   if (type === "itsm.messages.expired") return { category: ["file"], type: ["deletion"] };
   return { category: ["configuration"], type: ["change"] };

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { findKedbSuggestionsForDraft } from '../src/lib/diagnostic-assistant';
 import type { KedbArticle } from '../src/lib/types';
 
-const article = (id: string, fields: Partial<KedbArticle>): KedbArticle => ({ id, title: '', symptom: '', rootCause: '', resolution: '', ticketId: 'INC-1', category: 'Applications', createdAt: '2026-11-01T00:00:00Z', author: 'user_n3', ...fields });
+const article = (id: string, fields: Partial<KedbArticle>): KedbArticle => ({ id, title: '', symptom: '', rootCause: '', resolution: '', ticketId: 'INC-1', category: 'Applications', createdAt: '2026-11-01T00:00:00Z', author: 'user_n3', reviewStatus: 'published', ...fields });
 const kedb = [
   article('KB-1', { title: 'Certificat SMTP expiré', symptom: 'Messagerie inaccessible' }),
   article('KB-2', { title: 'VPN déconnecté', symptom: 'Connexion perdue', category: 'Réseau', serviceId: 'SVC-VPN' }),
@@ -26,4 +26,9 @@ test('no KEDB suggestion without a meaningful shared word', () => {
   assert.deepEqual(findKedbSuggestionsForDraft(kedb, draft('Impossible pour moi')), [], 'stop words only');
   assert.deepEqual(findKedbSuggestionsForDraft(kedb, draft('Imprimante bloquée')), []);
   assert.equal(findKedbSuggestionsForDraft(kedb, draft('connexion'), 1).length, 1);
+});
+
+test('articles awaiting review are never suggested as a solution', () => {
+  const unpublished = article('KB-pending', { title: 'Certificat expiré', reviewStatus: 'pending' });
+  assert.deepEqual(findKedbSuggestionsForDraft([unpublished], draft('Certificat expiré')), []);
 });

@@ -81,6 +81,7 @@ export function findDiagnosticKedbSuggestions(
   if (!symptom) return [];
 
   return articles
+    .filter((article) => article.reviewStatus === 'published')
     .map((article) => {
       const searchable = [
         article.title,
@@ -219,6 +220,7 @@ export function findKedbSuggestionsForDraft(
   const terms = suggestionStems(draft.title);
   if (!terms.size) return [];
   return articles
+    .filter((article) => article.reviewStatus === 'published')
     .map((article) => {
       const text = suggestionStems([article.title, article.symptom, article.rootCause, article.resolution].join(' '));
       const hits = [...terms].filter(t => text.has(t)).length;

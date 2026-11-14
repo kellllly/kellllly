@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ASSISTANT_TOPICS, assistantReport, suggestArticles } from '../src/lib/support-assistant.ts';
 
-const article = (id: string, category: string, title: string) => ({ id, title, symptom: '', rootCause: '', resolution: 'Procédure', ticketId: 'INC-1', category, createdAt: '', author: '' });
+const article = (id: string, category: string, title: string) => ({ id, title, symptom: '', rootCause: '', resolution: 'Procédure', ticketId: 'INC-1', category, createdAt: '', author: '', reviewStatus: 'published' as const });
 const printer = ASSISTANT_TOPICS.find((t) => t.id === 'printer')!;
 
 test('every topic maps to a known ticket category and gives steps', () => {

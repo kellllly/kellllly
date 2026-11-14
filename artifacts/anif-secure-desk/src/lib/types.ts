@@ -3,7 +3,7 @@ import type { Priority } from './itsm';
 export type Level = 1 | 2 | 3;
 export type TicketKind = 'Incident' | 'Demande' | 'Problème' | 'Changement';
 export type TicketStatus = 'Nouveau' | 'Pris en compte' | 'En cours' | 'En attente' | 'Résolu' | 'Clos' | 'Rejeté';
-export type RoleKey = 'Direction' | 'Analyste' | 'SSI / support' | 'Services d’appui' | 'Auditeur temporaire';
+export type RoleKey = 'Direction' | 'Analyste' | 'SSI / support' | 'Services d’appui' | 'Auditeur temporaire' | 'Demandeur';
 export type SupportMessageFilter = 'all' | 'report' | 'instruction';
 
 export type DemoProfile = { name: string; role: string; clearance: string };
@@ -40,6 +40,19 @@ export type Conversation = {
   durationHours?: number; expiresAt?: string;
 };
 export type TicketUpdate = { author: string; body: string; time: string; at?: string };
+export type RequestApproval = {
+  status: 'pending' | 'approved' | 'rejected';
+  decidedAt?: string;
+  reason?: string | null;
+};
+export type SlaCalendar = {
+  timezone: 'Africa/Libreville';
+  workingDays: number[];
+  startTime: '07:00';
+  endTime: '19:00';
+  holidays: string[];
+};
+export type SlaPause = { startedAt: string; endedAt?: string };
 export type CabDecision = { decision: 'Approuvé' | 'Rejeté'; by: string; at: string; reason: string };
 export type Ticket = {
   id: string; title: string; kind: TicketKind; category: string;
@@ -54,6 +67,10 @@ export type Ticket = {
   satisfaction?: number | null;
   /** Problème only: the incidents it was opened from, fixed by the server at creation. */
   incidentIds?: string[];
+  /** Server-owned periods while the ticket is in "En attente". */
+  slaPauses?: SlaPause[];
+  /** Server-owned decision for a request submitted from the requester portal. */
+  requestApproval?: RequestApproval;
   /** Auto-approved standard request: the template it was created from, checked by the server. */
   template?: string;
   updates: TicketUpdate[];
@@ -75,6 +92,8 @@ export type AuditEvent = {
 export type KedbArticle = {
   id: string; title: string; symptom: string; rootCause: string; resolution: string;
   ticketId: string; serviceId?: string | null; category: string; createdAt: string; author: string;
+  reviewStatus?: 'pending' | 'published' | 'needs_revision';
+  reviewFeedback?: string | null; reviewedAt?: string | null; reviewedBy?: string | null;
 };
 export type StoredNotification = { id: string; ticketId: string; title: string; body: string; at: string };
 
@@ -86,6 +105,7 @@ export type Store = {
   conversations: Conversation[]; tickets: Ticket[]; services: Service[]; assets: Asset[]; audit: AuditEvent[];
   kedb: KedbArticle[]; drafts: Record<string, string>;
   notifications: StoredNotification[]; notifRead: string[]; seeded: string[];
+  slaCalendar: SlaCalendar;
   /** Presence chosen by each colleague sharing a conversation (from the server). */
   presence?: Record<string, { status: PresenceStatus; at: string }>;
 };

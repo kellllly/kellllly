@@ -14,6 +14,7 @@ export { default as AssetsPage } from '@/pages/assets';
 export { default as ServicesPage } from '@/pages/services';
 export { default as GovernancePage } from '@/pages/governance';
 export { default as AuditPage } from '@/pages/audit';
+export { default as RequesterPortalPage } from '@/pages/requester-portal';
 export { normalizeTicket } from '@/lib/seed';
 export { Watermark } from '@/components/watermark';
 export { Shell } from '@/components/shell';

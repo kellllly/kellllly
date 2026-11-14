@@ -1,6 +1,7 @@
 import { priorityFor } from './itsm';
 import { parsePresence } from './presence';
 import type { Conversation, Level, Store, Ticket, TicketKind, TicketStatus } from './types';
+import { DEFAULT_SLA_CALENDAR, normalizeSlaCalendar } from './sla-calendar';
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -53,8 +54,30 @@ export function normalizeTicket(t: any): Ticket {
     conversationId: t.conversationId ?? null, sourceMessageId: t.sourceMessageId ?? null, kedbId: t.kedbId ?? null,
     // Only when rated: the server compares closed tickets exactly and stores no `null` here.
     ...(t.satisfaction != null ? { satisfaction: t.satisfaction } : {}),
+    ...(t.requestApproval && ['pending', 'approved', 'rejected'].includes(t.requestApproval.status)
+      ? { requestApproval: {
+        status: t.requestApproval.status as 'pending' | 'approved' | 'rejected',
+        ...(typeof t.requestApproval.decidedAt === 'string' ? { decidedAt: t.requestApproval.decidedAt } : {}),
+        ...(typeof t.requestApproval.reason === 'string' || t.requestApproval.reason === null
+          ? { reason: t.requestApproval.reason as string | null }
+          : {}),
+      } }
+      : {}),
     ...(Array.isArray(t.incidentIds) ? { incidentIds: t.incidentIds } : {}),
     ...(typeof t.template === 'string' ? { template: t.template } : {}),
+    ...(Array.isArray(t.slaPauses) ? {
+      slaPauses: t.slaPauses.flatMap((pause: unknown) => {
+        if (!pause || typeof pause !== 'object' || Array.isArray(pause)) return [];
+        const value = pause as Record<string, unknown>;
+        if (typeof value.startedAt !== 'string' || !Number.isFinite(Date.parse(value.startedAt))) return [];
+        return [{
+          startedAt: value.startedAt,
+          ...(typeof value.endedAt === 'string' && Number.isFinite(Date.parse(value.endedAt))
+            ? { endedAt: value.endedAt }
+            : {}),
+        }];
+      }),
+    } : {}),
     updates: Array.isArray(t.updates) ? t.updates : [],
   };
 }
@@ -114,6 +137,7 @@ function extraTickets(now: number): Ticket[] {
 export function baseStore(): Omit<Store, 'tickets' | 'conversations' | 'seeded'> {
   return {
     schema: 2,
+    slaCalendar: { ...DEFAULT_SLA_CALENDAR, workingDays: [...DEFAULT_SLA_CALENDAR.workingDays], holidays: [] },
     profile: { name: 'Nadia Moussavou', role: 'Analyste', clearance: 'N2 · Interne' },
     theme: 'light',
     services: [
@@ -184,6 +208,7 @@ export function migrate(raw: any): Store {
     notifications: Array.isArray(src.notifications) ? src.notifications : [],
     notifRead: Array.isArray(src.notifRead) ? src.notifRead : [],
     seeded,
+    slaCalendar: normalizeSlaCalendar(src.slaCalendar),
     ...(src.presence ? { presence: parsePresence(src.presence) } : {}),
   };
 }

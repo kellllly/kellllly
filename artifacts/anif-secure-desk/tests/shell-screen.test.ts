@@ -12,6 +12,42 @@ const ui = await loadComponents();
 const $ = (id: string) => document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
 const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
 
+test('le menu latéral s’ouvre depuis le bandeau et se ferme avec Échap en restaurant le focus', async () => {
+  ui.router.path = '/';
+  const client = new ui.QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(ui.QueryClientProvider, { client }, createElement(ui.TestStoreProvider, { initial: ui.testStore([], []) }, createElement(ui.Shell, null, 'contenu'))));
+  });
+  try {
+    const trigger = $('button-mobile-nav') as HTMLButtonElement;
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+    await act(async () => { trigger.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+    const drawer = $('workspace-drawer')!;
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(drawer.getAttribute('aria-hidden'), 'false');
+    assert.equal(drawer.getAttribute('aria-modal'), 'true');
+    assert.ok($('workspace-backdrop'), 'un voile ferme le reste de la page');
+    assert.equal(document.activeElement, $('button-close-workspace'), 'le focus entre dans le volet');
+    assert.equal(document.body.style.overflow, 'hidden');
+
+    await act(async () => {
+      window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+    assert.equal(drawer.getAttribute('aria-hidden'), 'true');
+    assert.equal($('workspace-backdrop'), null);
+    assert.equal(document.activeElement, trigger, 'le focus revient au bouton du menu');
+    assert.equal(document.body.style.overflow, '');
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    container.remove();
+  }
+});
+
 test('une mention de mon nom ou de @tous arrive dans la cloche et mène au message ; mes propres mentions non', async () => {
   ui.router.path = '/messages';
   ui.clock.now = Date.now();
@@ -32,6 +68,7 @@ test('une mention de mon nom ou de @tous arrive dans la cloche et mène au messa
   const root = createRoot(container);
   await act(async () => { root.render(createElement(ui.QueryClientProvider, { client }, createElement(ui.TestStoreProvider, { initial: store }, createElement(ui.Shell, null, 'contenu')))); });
   try {
+    ui.handlers.setItsmNotificationReads = async (input) => ({ marked: (input as { ids: string[] }).ids.length });
     await act(async () => { $('button-notifications')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
     const personal = $('link-notification-mention:d1');
     assert.ok(personal, 'la mention de mon nom affiché est notifiée');
@@ -50,9 +87,17 @@ test('une mention de mon nom ou de @tous arrive dans la cloche et mène au messa
     assert.ok($('link-notification-mention:q1'), 'la notification reste consultable');
     await act(async () => { ui.setQuietHours({ enabled: false, start: '18:00', end: '07:30' }); });
     assert.equal($('badge-notifications')!.textContent, '2');
-    await act(async () => { personal!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+    await act(async () => { personal!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 10)); });
     assert.ok((ui.current.store!.notifRead as string[]).includes('mention:d1'), 'ouvrir la notification la marque lue');
+    ui.handlers.setItsmNotificationReads = async () => { throw new Error('503'); };
+    await act(async () => { $('button-notifications')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 10)); });
+    await act(async () => { $('link-notification-mention:q1')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 10)); });
+    await act(async () => { $('button-notifications')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); await new Promise(resolve => setTimeout(resolve, 10)); });
+    assert.ok($('notifications-read-error'), 'un échec serveur est visible');
+    assert.equal((ui.current.store!.notifRead as string[]).includes('mention:q1'), false, 'un refus n’est pas marqué lu localement');
+    assert.equal($('badge-notifications')!.textContent, '1', 'la pastille reste tant que la lecture n’est pas enregistrée');
   } finally {
+    delete ui.handlers.setItsmNotificationReads;
     await act(async () => root.unmount());
     client.clear();
     container.remove();

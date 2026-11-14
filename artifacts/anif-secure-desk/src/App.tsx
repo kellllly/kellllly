@@ -21,6 +21,7 @@ const AssetsPage = lazy(() => import('@/pages/assets'));
 const AuditPage = lazy(() => import('@/pages/audit'));
 const GovernancePage = lazy(() => import('@/pages/governance'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
+const RequesterPortalPage = lazy(() => import('@/pages/requester-portal'));
 
 function PageLoading() {
   return <div role="status" aria-live="polite" className="grid min-h-64 place-items-center text-sm text-muted-foreground">Chargement de la page…</div>;
@@ -117,9 +118,16 @@ function NotFoundPage() {
 
 function AuthenticatedDesk() {
   const { user, isLoaded } = useUser();
+  const [location] = useLocation();
   const queryClient = useMemo(() => new QueryClient(), [user?.id]);
   useEffect(() => () => queryClient.clear(), [queryClient]);
   if (!isLoaded || !user) return <main className="grid min-h-[100dvh] place-items-center text-sm text-muted-foreground">Chargement du compte…</main>;
+  if (user.publicMetadata.itsmRole === 'REQUESTER') {
+    if (location !== '/user-portal') return <Redirect to="/user-portal" />;
+    return <QueryClientProvider client={queryClient}>
+      <Suspense fallback={<PageLoading />}><RequesterPortalPage /></Suspense>
+    </QueryClientProvider>;
+  }
   return <QueryClientProvider client={queryClient}><StoreProvider key={user.id} userId={user.id}>
     <Shell>
       <Suspense fallback={<PageLoading />}>
