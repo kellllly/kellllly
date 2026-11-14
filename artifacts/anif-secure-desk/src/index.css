@@ -139,3 +139,11 @@ main > header { border-color: hsl(var(--border) / .82) !important; }
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   align-items: start;
 }
+
+/* Impression du rapport ITIL (bouton « Imprimer / PDF ») : seul le rapport sort. */
+@media print {
+  html.print-kpis body * { visibility: hidden; }
+  html.print-kpis .ops-kpis, html.print-kpis .ops-kpis * { visibility: visible; }
+  html.print-kpis .ops-kpis { position: absolute; left: 0; top: 0; width: 100%; }
+  html.print-kpis .ops-kpis-head button { display: none; }
+}

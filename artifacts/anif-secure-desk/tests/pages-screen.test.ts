@@ -116,6 +116,14 @@ test('le tableau de bord classe la file de travail et le SLA attend les heures o
   assert.match(downloads[0]!, /^indicateurs-itil-\d{4}-\d{2}-\d{2}\.csv$/u);
   assert.match(await reports[0]!.text(), /"MTTR";"\d+";"minutes"/u);
   assert.equal(ui.logs.at(-1)!.action, 'Rapport des indicateurs ITIL exporté (CSV)');
+  let printed = 0;
+  (window as unknown as { print: () => void }).print = () => { printed += 1; };
+  await click('button-print-kpis');
+  assert.equal(printed, 1);
+  assert.ok(document.documentElement.classList.contains('print-kpis'), 'impression limitée au rapport');
+  window.dispatchEvent(new window.Event('afterprint'));
+  assert.ok(!document.documentElement.classList.contains('print-kpis'), 'classe retirée après impression');
+  assert.equal(ui.logs.at(-1)!.action, 'Rapport des indicateurs ITIL imprimé (PDF)');
   assert.match(text(), /3\/4 opérationnel\(s\) · 1 vigilance/u);
   assert.match(text(), /1 conversation\(s\) · 2 message\(s\) non lu\(s\)/u);
   assert.match(text(), /Activité récente/u);
